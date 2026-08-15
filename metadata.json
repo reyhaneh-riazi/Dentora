@@ -1,0 +1,6 @@
+{
+  "name": "Dentora Dental Clinic OS",
+  "description": "سیستم‌عامل کلینیک دندان‌پزشکی دنتورا - مدیریت کامل نوبت، پرونده طولی UDR، اودونتوگرام تعاملی، مالی و اقساط، هاب تصویر و لایه اتصال بیمه",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

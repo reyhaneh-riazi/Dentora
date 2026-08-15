@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --gold: #ffd200;
+    --mustard: #ffe552;
+    --porcelain: #fffffa;
+    --baby-blue: #72cdf4;
+    --baltic-blue: #005581;
+  }
+}
+
+@theme {
+  --font-sans: 'Vazirmatn', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Vazirmatn', monospace, sans-serif;
+  --color-gold: #ffd200;
+  --color-mustard: #ffe552;
+  --color-porcelain: #fffffa;
+  --color-baby-blue: #72cdf4;
+  --color-baltic-blue: #005581;
+}
+
+*, *::before, *::after, html, body, button, input, select, textarea, table, th, td {
+  font-family: 'Vazirmatn', system-ui, -apple-system, sans-serif !important;
+}
+
+body {
+  background-color: var(--porcelain);
+  color: #0f172a;
+  direction: rtl;
+  text-align: right;
+}
+
+

@@ -1,0 +1,436 @@
+import React, { useState } from 'react';
+import {
+  Building2,
+  ShieldCheck,
+  UserCheck,
+  PlusCircle,
+  Check,
+  ArrowLeft,
+  X,
+  Stethoscope,
+  Users,
+  DollarSign,
+  Sparkles,
+  ExternalLink,
+  ChevronLeft,
+} from 'lucide-react';
+import { ClinicRegistration, UserRole } from '../../types';
+
+interface DentoraLandingPageProps {
+  registeredClinics: ClinicRegistration[];
+  onRegisterClinic: (clinic: ClinicRegistration) => void;
+  onSelectClinic: (clinic: ClinicRegistration) => void;
+  onGoToInsurerPortal: () => void;
+}
+
+export const DentoraLandingPage: React.FC<DentoraLandingPageProps> = ({
+  registeredClinics,
+  onRegisterClinic,
+  onSelectClinic,
+  onGoToInsurerPortal,
+}) => {
+  const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
+
+  // Form state for Clinic Signup
+  const [clinicName, setClinicName] = useState('');
+  const [nationalCode, setNationalCode] = useState('');
+  const [ownerName, setOwnerName] = useState('');
+  const [ownerMobile, setOwnerMobile] = useState('');
+  const [ownerRole, setOwnerRole] = useState<'dentist' | 'manager'>('dentist');
+  
+  // Active roles selection: Receptionist and Dentist are MANDATORY, Accountant and Manager are OPTIONAL
+  const [activeAccountant, setActiveAccountant] = useState(true);
+  const [activeManager, setActiveManager] = useState(true);
+
+  const handleSubmitNewClinic = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!clinicName.trim() || !ownerName.trim() || !ownerMobile.trim()) {
+      alert('لطفاً تمامی فیلدهای ضروری را تکمیل فرمایید.');
+      return;
+    }
+
+    const activeRoles: UserRole[] = ['receptionist', 'dentist'];
+    if (activeAccountant) activeRoles.push('accountant');
+    if (activeManager) activeRoles.push('manager');
+
+    const newClinic: ClinicRegistration = {
+      id: `clinic-${Date.now()}`,
+      name: clinicName,
+      nationalCode: nationalCode || '۱۴۰۰۹۸۷۶۵۴۳',
+      ownerName,
+      ownerMobile,
+      ownerRole,
+      activeRoles,
+      createdAt: new Date().toLocaleDateString('fa-IR'),
+    };
+
+    onRegisterClinic(newClinic);
+    setIsRegisterModalOpen(false);
+    
+    // Reset form
+    setClinicName('');
+    setNationalCode('');
+    setOwnerName('');
+    setOwnerMobile('');
+    
+    alert(`کلینیک «${newClinic.name}» با موفقیت در دنتورا ثبت گردید.\nشما اکنون به عنوان مالک کلینیک وارد سیستم می‌شوید.`);
+    onSelectClinic(newClinic);
+  };
+
+  return (
+    <div className="min-h-screen bg-[#fffffa] text-slate-900 font-sans dir-rtl">
+      {/* Top Navbar */}
+      <header className="sticky top-0 z-40 bg-[#fffffa]/90 backdrop-blur-md border-b border-slate-200/80 shadow-xs">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between gap-4">
+          
+          {/* Brand */}
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#005581] to-[#0073a8] text-[#fffffa] flex items-center justify-center font-black text-2xl shadow-md ring-2 ring-[#ffd200]/50">
+              د
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-extrabold text-2xl tracking-tight text-[#005581]">دنتورا</span>
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-[#ffd200] text-[#005581] font-bold font-mono">
+                  Dental OS
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 font-medium">سیستم عامل یکپارچه کلینیک‌های دندان‌پزشکی</p>
+            </div>
+          </div>
+
+          {/* Nav Actions */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onGoToInsurerPortal}
+              className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-[#005581] font-bold text-xs transition cursor-pointer border border-slate-200"
+            >
+              <ShieldCheck className="w-4 h-4 text-[#005581]" />
+              <span>پورتال بیمه‌گران</span>
+            </button>
+
+            <button
+              onClick={() => setIsRegisterModalOpen(true)}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#ffd200] hover:bg-[#ffe552] text-[#005581] font-extrabold text-xs shadow-md transition cursor-pointer transform hover:-translate-y-0.5"
+            >
+              <PlusCircle className="w-4 h-4 text-[#005581]" />
+              <span>ثبت کلینیک جدید در دنتورا</span>
+            </button>
+          </div>
+
+        </div>
+      </header>
+
+      {/* Hero Section */}
+      <section className="relative overflow-hidden pt-12 pb-20 bg-gradient-to-b from-[#fffffa] via-[#72cdf4]/10 to-[#fffffa]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-6">
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#005581]/10 text-[#005581] text-xs font-bold border border-[#005581]/20">
+            <Sparkles className="w-4 h-4 text-[#ffd200]" />
+            <span>پلتفرم تخصصی دندان‌پزشکی، پرونده طولی UDR و تسویه بیمه‌ای</span>
+          </div>
+
+          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-slate-900 tracking-tight leading-tight max-w-4xl mx-auto">
+            مدیریت کامل کلینیک <span className="text-[#005581]">دندان‌پزشکی</span> با سیستم‌عامل <span className="relative inline-block text-[#005581]">دنتورا<span className="absolute bottom-1 right-0 left-0 h-3 bg-[#ffd200]/40 -z-10 rounded"></span></span>
+          </h1>
+
+          <p className="text-slate-600 text-base sm:text-lg max-w-2xl mx-auto leading-relaxed">
+            مدیریت هوشمند پرونده الکترونیک، نوبت‌دهی آنلاین، حسابداری، اقساط و ارتباط مستقیم با بیمه‌گر. کلینیک خود را ثبت کنید و به شبکه دنتورا بپیوندید.
+          </p>
+
+          <div className="flex flex-wrap items-center justify-center gap-4 pt-4">
+            <button
+              onClick={() => setIsRegisterModalOpen(true)}
+              className="px-8 py-3.5 rounded-2xl bg-[#005581] hover:bg-[#004266] text-[#fffffa] font-extrabold text-sm shadow-lg transition cursor-pointer flex items-center gap-2"
+            >
+              <PlusCircle className="w-5 h-5 text-[#ffd200]" />
+              <span>ثبت کلینیک در دنتورا</span>
+            </button>
+
+            <a
+              href="#registered-clinics"
+              className="px-8 py-3.5 rounded-2xl bg-white hover:bg-slate-50 text-[#005581] font-bold text-sm border-2 border-[#005581]/20 shadow-xs transition cursor-pointer flex items-center gap-2"
+            >
+              <span>مشاهده کلینیک‌های فعال</span>
+              <ChevronLeft className="w-4 h-4" />
+            </a>
+          </div>
+        </div>
+      </section>
+
+      {/* Featured Clinics Grid */}
+      <section id="registered-clinics" className="py-16 bg-slate-50 border-t border-slate-200/80">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
+          
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
+            <div>
+              <span className="text-xs font-bold text-[#005581] tracking-wider uppercase">کلینیک‌های عضو دنتورا</span>
+              <h2 className="text-2xl font-black text-slate-900 mt-1">
+                انتخاب کلینیک جهت ورود به پورتال
+              </h2>
+            </div>
+            <button
+              onClick={() => setIsRegisterModalOpen(true)}
+              className="px-4 py-2 rounded-xl bg-[#ffd200] hover:bg-[#ffe552] text-[#005581] font-bold text-xs shadow-xs transition cursor-pointer flex items-center gap-1.5"
+            >
+              <PlusCircle className="w-4 h-4" />
+              <span>کلینیک جدید</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {registeredClinics.map((clinic) => (
+              <div
+                key={clinic.id}
+                className="bg-white rounded-3xl border-2 border-slate-200 hover:border-[#005581] p-6 shadow-sm hover:shadow-md transition space-y-5 flex flex-col justify-between"
+              >
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-[#005581]/10 text-[#005581] flex items-center justify-center font-black text-xl">
+                      <Building2 className="w-6 h-6 text-[#005581]" />
+                    </div>
+                    <span className="text-[11px] px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 font-bold">
+                      فعال در دنتورا
+                    </span>
+                  </div>
+
+                  <div>
+                    <h3 className="text-lg font-black text-slate-900">{clinic.name}</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">شناسه ثبتی: {clinic.nationalCode}</p>
+                  </div>
+
+                  <div className="pt-2 space-y-1.5 text-xs text-slate-600">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-slate-400">مالک کلینیک:</span>
+                      <strong className="text-slate-800">{clinic.ownerName} ({clinic.ownerRole === 'dentist' ? 'پزشک' : 'مدیر'})</strong>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-slate-400">شماره تماس:</span>
+                      <span className="font-mono">{clinic.ownerMobile}</span>
+                    </div>
+                  </div>
+
+                  {/* Active Roles Badges */}
+                  <div className="pt-3 border-t border-slate-100">
+                    <span className="text-[11px] font-bold text-slate-400 block mb-2">نقش‌های فعال در این کلینیک:</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {clinic.activeRoles.map((role) => {
+                        const labels: Record<string, string> = {
+                          receptionist: 'منشی',
+                          dentist: 'پزشک',
+                          accountant: 'حسابدار',
+                          manager: 'مدیر',
+                          owner: 'مالک',
+                        };
+                        const isMandatory = role === 'receptionist' || role === 'dentist';
+                        return (
+                          <span
+                            key={role}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold ${
+                              isMandatory
+                                ? 'bg-[#005581] text-white'
+                                : 'bg-slate-100 text-slate-700'
+                            }`}
+                          >
+                            {labels[role] || role} {isMandatory && '(اجباری)'}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => onSelectClinic(clinic)}
+                  className="w-full py-3 rounded-2xl bg-[#005581] hover:bg-[#004266] text-[#fffffa] font-extrabold text-xs shadow-xs transition cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <span>ورود به صفحه کلینیک</span>
+                  <ArrowLeft className="w-4 h-4 text-[#ffd200]" />
+                </button>
+              </div>
+            ))}
+          </div>
+
+        </div>
+      </section>
+
+      {/* REGISTER CLINIC MODAL */}
+      {isRegisterModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white rounded-3xl border-2 border-slate-200 shadow-2xl max-w-lg w-full p-6 sm:p-8 space-y-6 relative max-h-[90vh] overflow-y-auto dir-rtl">
+            
+            <button
+              onClick={() => setIsRegisterModalOpen(false)}
+              className="absolute top-5 left-5 p-2 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="text-center space-y-2">
+              <div className="w-12 h-12 rounded-2xl bg-[#ffd200] text-[#005581] flex items-center justify-center font-black text-2xl mx-auto shadow-md">
+                د
+              </div>
+              <h3 className="text-xl font-black text-slate-900">ثبت نام کلینیک جدید در دنتورا</h3>
+              <p className="text-xs text-slate-500">مشخصات کلینیک و مالک را وارد کرده و نقش‌های فعال را مشخص نمایید.</p>
+            </div>
+
+            <form onSubmit={handleSubmitNewClinic} className="space-y-4">
+              
+              {/* Clinic Name */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  نام کلینیک دندان‌پزشکی <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="مثال: کلینیک تخصصی البرز"
+                  value={clinicName}
+                  onChange={(e) => setClinicName(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border-2 border-slate-200 focus:border-[#005581] text-sm outline-none transition"
+                />
+              </div>
+
+              {/* National Code / Reg ID */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  شناسه ملی / کد ثبتی کلینیک
+                </label>
+                <input
+                  type="text"
+                  placeholder="مثال: ۱۴۰۰۹۸۷۶۵۴۳"
+                  value={nationalCode}
+                  onChange={(e) => setNationalCode(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border-2 border-slate-200 focus:border-[#005581] text-sm font-mono outline-none transition"
+                />
+              </div>
+
+              {/* Owner Info */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    نام و نام خانوادگی مالک <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="مثال: دکتر علی محمدی"
+                    value={ownerName}
+                    onChange={(e) => setOwnerName(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border-2 border-slate-200 focus:border-[#005581] text-sm outline-none transition"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    موبایل مالک <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="tel"
+                    required
+                    placeholder="09121112233"
+                    value={ownerMobile}
+                    onChange={(e) => setOwnerMobile(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border-2 border-slate-200 focus:border-[#005581] text-sm font-mono outline-none transition"
+                  />
+                </div>
+              </div>
+
+              {/* Owner Role Select */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  نقش سازمانی مالک در کلینیک <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={ownerRole}
+                  onChange={(e) => setOwnerRole(e.target.value as 'dentist' | 'manager')}
+                  className="w-full px-4 py-2.5 rounded-xl border-2 border-slate-200 focus:border-[#005581] text-sm font-bold text-slate-800 outline-none transition bg-white"
+                >
+                  <option value="dentist">پزشک معالج و مالک کلینیک</option>
+                  <option value="manager">مدیر ارشد و مالک کلینیک</option>
+                </select>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  مالک کلینیک (Owner) حق دسترسی ویژه تنظیمات و فعال‌سازی ماژول بیمه را بر عهده دارد.
+                </p>
+              </div>
+
+              {/* Active Roles Selection */}
+              <div className="pt-3 border-t border-slate-200 space-y-2">
+                <label className="block text-xs font-extrabold text-slate-800">
+                  انتخاب نقش‌های فعال کلینیک در دنتورا:
+                </label>
+                
+                <div className="space-y-2 bg-slate-50 p-3.5 rounded-2xl border border-slate-200 text-xs">
+                  {/* Receptionist - Mandatory */}
+                  <label className="flex items-center justify-between p-2 rounded-xl bg-white border border-slate-200 cursor-not-allowed opacity-90">
+                    <span className="font-bold text-slate-800 flex items-center gap-2">
+                      <Check className="w-4 h-4 text-[#005581]" />
+                      <span>۱. منشی / پذیرش بیمار</span>
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-[#005581] text-white font-bold">
+                      اجباری
+                    </span>
+                  </label>
+
+                  {/* Dentist - Mandatory */}
+                  <label className="flex items-center justify-between p-2 rounded-xl bg-white border border-slate-200 cursor-not-allowed opacity-90">
+                    <span className="font-bold text-slate-800 flex items-center gap-2">
+                      <Check className="w-4 h-4 text-[#005581]" />
+                      <span>۲. پزشک معالج</span>
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-[#005581] text-white font-bold">
+                      اجباری
+                    </span>
+                  </label>
+
+                  {/* Accountant - Optional */}
+                  <label className="flex items-center justify-between p-2 rounded-xl bg-white border border-slate-200 cursor-pointer hover:bg-slate-100 transition">
+                    <span className="font-bold text-slate-800 flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={activeAccountant}
+                        onChange={(e) => setActiveAccountant(e.target.checked)}
+                        className="w-4 h-4 rounded text-[#005581] focus:ring-0 cursor-pointer"
+                      />
+                      <span>۳. حسابدار / مدیر مالی</span>
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-slate-200 text-slate-700 font-bold">
+                      اختیاری
+                    </span>
+                  </label>
+
+                  {/* Manager - Optional */}
+                  <label className="flex items-center justify-between p-2 rounded-xl bg-white border border-slate-200 cursor-pointer hover:bg-slate-100 transition">
+                    <span className="font-bold text-slate-800 flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={activeManager}
+                        onChange={(e) => setActiveManager(e.target.checked)}
+                        className="w-4 h-4 rounded text-[#005581] focus:ring-0 cursor-pointer"
+                      />
+                      <span>۴. مدیر ارشد کلینیک</span>
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-slate-200 text-slate-700 font-bold">
+                      اختیاری
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Submit Button */}
+              <button
+                type="submit"
+                className="w-full py-3.5 rounded-2xl bg-[#005581] hover:bg-[#004266] text-[#fffffa] font-extrabold text-sm shadow-md transition cursor-pointer flex items-center justify-center gap-2"
+              >
+                <PlusCircle className="w-5 h-5 text-[#ffd200]" />
+                <span>ثبت نهایی و ورود به پورتال کلینیک</span>
+              </button>
+
+            </form>
+
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+};

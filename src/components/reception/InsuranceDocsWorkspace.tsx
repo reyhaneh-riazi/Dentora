@@ -105,6 +105,13 @@ export const InsuranceDocsWorkspace: React.FC<InsuranceDocsWorkspaceProps> = ({
   const [hasAttachedRvg, setHasAttachedRvg] = useState<boolean>(true);
   const [hasAttachedNotes, setHasAttachedNotes] = useState<boolean>(true);
 
+  // Action feedback toast
+  const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'info' } | null>(null);
+  const showToast = (text: string, type: 'success' | 'info' = 'success') => {
+    setToastMessage({ text, type });
+    setTimeout(() => setToastMessage(null), 4000);
+  };
+
   // If a targetClaimId is passed from doctor submissions, automatically select it and switch to scrubber
   useEffect(() => {
     if (targetClaimId) {
@@ -177,6 +184,7 @@ export const InsuranceDocsWorkspace: React.FC<InsuranceDocsWorkspaceProps> = ({
       setActiveKanbanModalClaim(null);
       setActiveKanbanModalType(null);
     }
+    showToast('✅ مدارک پرونده با موفقیت تایید و به کارتابل حسابدار کلینیک ارسال گردید.');
     alert('پرونده و مدارک بیمه با موفقیت ارزیابی شد و به کارتابل مالی حسابدار ارجاع گردید.');
   };
 
@@ -201,12 +209,13 @@ export const InsuranceDocsWorkspace: React.FC<InsuranceDocsWorkspaceProps> = ({
       );
     }
     if (selectedClaimForDocReview && selectedClaimForDocReview.id === claimId) {
-      setSelectedClaimForDocReview((prev) => (prev ? { ...prev, status: 'submitted', receptionApproved: true } : null));
+      setSelectedClaimForDocReview((prev) => (prev ? { ...prev, status: 'submitted', receptionApproved: true, accountantApproved: true } : null));
     }
     if (activeKanbanModalClaim && activeKanbanModalClaim.id === claimId) {
       setActiveKanbanModalClaim(null);
       setActiveKanbanModalType(null);
     }
+    showToast('✅ ادعای بیمه با موفقیت تایید و مستقیماً به سازمان بیمه‌گر ارسال شد.');
     alert('ادعای بیمه با موفقیت بررسی و مستقیماً به پورتال سازمان بیمه‌گر ارسال شد.');
   };
 
@@ -434,8 +443,18 @@ export const InsuranceDocsWorkspace: React.FC<InsuranceDocsWorkspaceProps> = ({
                     </span>
                   )}
 
-                  {/* ACTION BUTTON BASED ON ACCOUNTANT ROLE */}
-                  {hasAccountantRole ? (
+                  {/* ACTION BUTTON BASED ON ACCOUNTANT ROLE & STATUS */}
+                  {selectedClaimForDocReview.status === 'queued' ? (
+                    <span className="px-4 py-2 rounded-xl bg-blue-100 dark:bg-blue-950/60 text-[#005581] dark:text-[#72cdf4] font-black text-xs flex items-center gap-1.5 border border-blue-300">
+                      <CheckCircle2 className="w-4 h-4 text-[#005581]" />
+                      <span>ارسال‌شده به حسابدار ✓</span>
+                    </span>
+                  ) : selectedClaimForDocReview.status === 'submitted' ? (
+                    <span className="px-4 py-2 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 font-black text-xs flex items-center gap-1.5 border border-emerald-300">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      <span>ارسال‌شده به سازمان بیمه‌گر ✓</span>
+                    </span>
+                  ) : hasAccountantRole ? (
                     <button
                       type="button"
                       onClick={() => handleReferClaimToAccountant(selectedClaimForDocReview.id)}
@@ -643,23 +662,28 @@ export const InsuranceDocsWorkspace: React.FC<InsuranceDocsWorkspaceProps> = ({
                         </td>
                         <td className="p-3">
                           {claim.status === 'draft' || claim.status === 'pending_reception' ? (
-                            <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 font-bold text-[10px]">
-                              در انتظار بررسی منشی
+                            <span className="px-2.5 py-1 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300 font-bold text-[10px] inline-flex items-center gap-1 border border-amber-300 dark:border-amber-800">
+                              <Clock className="w-3 h-3 text-amber-600" />
+                              در انتظار بررسی و ارسال
                             </span>
                           ) : claim.status === 'queued' ? (
-                            <span className="px-2.5 py-1 rounded-full bg-blue-100 text-blue-900 font-bold text-[10px]">
+                            <span className="px-2.5 py-1 rounded-full bg-blue-100 dark:bg-blue-950/60 text-[#005581] dark:text-[#72cdf4] font-bold text-[10px] inline-flex items-center gap-1 border border-blue-300 dark:border-blue-700">
+                              <CheckCircle2 className="w-3 h-3 text-[#005581]" />
                               ارسال‌شده به حسابداری
                             </span>
                           ) : claim.status === 'submitted' ? (
-                            <span className="px-2.5 py-1 rounded-full bg-sky-100 text-sky-900 font-bold text-[10px]">
-                              ارسال‌شده به بیمه‌گر
+                            <span className="px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 font-bold text-[10px] inline-flex items-center gap-1 border border-emerald-300 dark:border-emerald-700">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              ارسال‌شده به سازمان بیمه‌گر
                             </span>
                           ) : claim.status === 'settled' || claim.status === 'paid' ? (
-                            <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-900 font-bold text-[10px]">
+                            <span className="px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-200 font-bold text-[10px] inline-flex items-center gap-1 border border-emerald-300">
+                              <Check className="w-3 h-3 text-emerald-600" />
                               تسویه‌شده
                             </span>
                           ) : (
-                            <span className="px-2.5 py-1 rounded-full bg-rose-100 text-rose-900 font-bold text-[10px]">
+                            <span className="px-2.5 py-1 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-900 dark:text-rose-300 font-bold text-[10px] inline-flex items-center gap-1 border border-rose-300">
+                              <AlertTriangle className="w-3 h-3 text-rose-600" />
                               دارای کسورات / اعتراض
                             </span>
                           )}
@@ -678,8 +702,18 @@ export const InsuranceDocsWorkspace: React.FC<InsuranceDocsWorkspaceProps> = ({
                               <span>انتخاب پرونده</span>
                             </button>
 
-                            {/* ACTION BUTTON BASED ON ACCOUNTANT ROLE */}
-                            {hasAccountantRole ? (
+                            {/* ACTION BUTTON BASED ON ACCOUNTANT ROLE & STATUS */}
+                            {claim.status === 'queued' ? (
+                              <span className="px-2 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-[#005581] dark:text-[#72cdf4] font-bold text-[10px] inline-flex items-center gap-1 border border-blue-200 dark:border-blue-800">
+                                <Check className="w-3 h-3 text-[#005581]" />
+                                ارسال‌شده به حسابدار
+                              </span>
+                            ) : claim.status === 'submitted' ? (
+                              <span className="px-2 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 font-bold text-[10px] inline-flex items-center gap-1 border border-emerald-200 dark:border-emerald-800">
+                                <Check className="w-3 h-3 text-emerald-600" />
+                                ارسال‌شده به بیمه
+                              </span>
+                            ) : hasAccountantRole ? (
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -885,9 +919,9 @@ export const InsuranceDocsWorkspace: React.FC<InsuranceDocsWorkspaceProps> = ({
                 ].map((col) => {
                   const colClaims = claims.filter((c) => {
                     if (col.key === 'draft') return c.status === 'draft' || c.status === 'queued' || c.status === 'pending_reception';
-                    if (col.key === 'submitted') return c.status === 'submitted' || c.status === 'approved_by_insurer' || c.status === 'express_review';
-                    if (col.key === 'rejected') return c.status === 'rejected' || c.status === 'rejected_by_insurer' || c.status === 'appealed' || (c.deductionAmount || 0) > 0;
-                    if (col.key === 'settled') return c.status === 'settled' || c.status === 'paid' || c.status === 'accepted';
+                    if (col.key === 'submitted') return c.status === 'submitted' || c.status === 'approved_by_insurer' || c.status === 'express_review' || c.status === 'standard_review' || c.status === 'deep_review' || c.status === 'needs_fix' || c.status === 'needs_evidence';
+                    if (col.key === 'rejected') return c.status === 'rejected' || c.status === 'rejected_by_insurer' || c.status === 'partially_approved' || c.status === 'appealed';
+                    if (col.key === 'settled') return c.status === 'settled' || c.status === 'paid' || c.status === 'accepted' || c.status === 'approved';
                     return false;
                   });
 
@@ -1957,6 +1991,16 @@ export const InsuranceDocsWorkspace: React.FC<InsuranceDocsWorkspaceProps> = ({
                 بستن پنجره
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Action Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-fadeIn">
+          <div className="px-5 py-3 rounded-2xl bg-emerald-700 text-white font-bold text-xs shadow-2xl flex items-center gap-2.5 border border-emerald-500">
+            <CheckCircle2 className="w-5 h-5 text-[#ffd200] shrink-0" />
+            <span>{toastMessage.text}</span>
           </div>
         </div>
       )}

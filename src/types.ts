@@ -352,12 +352,15 @@ export interface ClaimEvidence {
 
 export interface ClaimAppeal {
   id: string;
+  claimId?: string;
   createdAt: string;
   submittedBy?: string;
+  dentistName?: string;
   reason: string;
   additionalEvidenceUrls?: string[];
   responseNotes?: string;
   status: 'pending' | 'reviewed' | 'accepted' | 'rejected';
+  [key: string]: any;
 }
 
 export interface PreAuthCertificate {

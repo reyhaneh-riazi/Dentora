@@ -16,7 +16,6 @@ import {
   X,
   RotateCcw,
   Download,
-  Printer,
   Share2,
   Info,
 } from 'lucide-react';
@@ -338,10 +337,6 @@ export const ImageXrayViewer: React.FC<ImageXrayViewerProps> = ({
 
     setExportNotice('فایل تصویر با کیفیت بالا دانلود شد.');
     setTimeout(() => setExportNotice(null), 3000);
-  };
-
-  const handlePrintReport = () => {
-    window.print();
   };
 
   const handleShareLink = () => {

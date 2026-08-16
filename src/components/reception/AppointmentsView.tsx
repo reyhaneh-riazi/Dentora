@@ -243,6 +243,13 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
   // User Messages & Appeals Sub-Tab
   const [userMessagesSubTab, setUserMessagesSubTab] = useState<'general_questions' | 'insurance_appeals'>('general_questions');
 
+  // Action feedback toast
+  const [receptionToast, setReceptionToast] = useState<{ text: string; type: 'success' | 'info' } | null>(null);
+  const showReceptionToast = (text: string, type: 'success' | 'info' = 'success') => {
+    setReceptionToast({ text, type });
+    setTimeout(() => setReceptionToast(null), 4000);
+  };
+
   // Mock initial Patient Questions for Receptionist (including appeal & complaint message with attached docs)
   const [localPatientQuestions, setLocalPatientQuestions] = useState<PatientQuestion[]>([
     {
@@ -1759,12 +1766,51 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                           </span>
                         </div>
 
-                        <div className="text-xs text-slate-600 dark:text-slate-400 space-y-1.5 pt-2 border-t border-slate-200 dark:border-slate-700">
+                        <div className="text-xs text-slate-600 dark:text-slate-400 space-y-2 pt-2 border-t border-slate-200 dark:border-slate-700">
                           <div className="flex items-center justify-between">
                             <span>کد ملی: <strong className="font-mono text-slate-800 dark:text-slate-200">{p.nationalId}</strong></span>
                             <span>شماره تماس: <strong className="font-mono text-slate-800 dark:text-slate-200">{p.phone}</strong></span>
                           </div>
-                          <div>سوابق پزشکی: <strong className="text-slate-800 dark:text-slate-200">{p.medicalHistory.join('، ') || 'بدون بیماری خاص'}</strong></div>
+
+                          <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700/80 space-y-1.5 shadow-2xs">
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1">
+                                <Activity className="w-3.5 h-3.5 text-rose-500" />
+                                <span>سوابق پزشکی و بیماری‌های زمینه‌ای:</span>
+                              </span>
+                              {p.allergies && (
+                                <span className="px-2 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 font-bold text-[10px] border border-rose-200 dark:border-rose-800">
+                                  حساسیت: {p.allergies}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex flex-wrap gap-1.5 pt-0.5">
+                              {p.medicalHistory && p.medicalHistory.length > 0 ? (
+                                p.medicalHistory.map((item, idx) => (
+                                  <span
+                                    key={idx}
+                                    className={`px-2 py-0.5 rounded-lg text-[11px] font-bold inline-flex items-center gap-1 ${
+                                      item.includes('فشار') || item.includes('قلب') || item.includes('سکته')
+                                        ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                                        : item.includes('دیابت') || item.includes('قند')
+                                        ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                                        : item.includes('آسم') || item.includes('تنفسی')
+                                        ? 'bg-sky-50 dark:bg-sky-950/40 text-sky-800 dark:text-sky-300 border border-sky-200 dark:border-sky-800'
+                                        : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+                                    }`}
+                                  >
+                                    <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
+                                    {item}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium inline-flex items-center gap-1">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                  بدون سابقه بیماری خاص
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </div>
 
                         <div className="pt-1">
@@ -3614,13 +3660,61 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                   <div>شماره دفترچه/بیمه‌نامه: <strong className="font-mono">{selectedPatientFile.primaryInsurance.policyNumber}</strong></div>
                 </div>
 
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 space-y-2">
-                  <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm border-b border-slate-200 dark:border-slate-700 pb-2">
-                    سوابق پزشکی و حساسیت‌ها:
-                  </h4>
-                  <div>سوابق بیماری‌ها: <strong className="text-[#005581]">{selectedPatientFile.medicalHistory.join('، ') || 'هیچ'}</strong></div>
-                  <div>حساسیت‌های دارویی ثبت‌شده: <strong className="text-rose-600">{editAllergies}</strong></div>
-                  <div>تماس اضطراری: <strong className="font-mono">{editEmergency}</strong></div>
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-2">
+                    <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm flex items-center gap-1.5">
+                      <Activity className="w-4 h-4 text-rose-500" />
+                      <span>سوابق پزشکی، بیماری‌های زمینه‌ای و حساسیت‌ها:</span>
+                    </h4>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/60 text-[#005581] dark:text-[#72cdf4] font-bold">
+                      پرونده سلامت
+                    </span>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    <div>
+                      <span className="text-slate-500 font-bold text-[11px] block mb-1">بیماری‌های زمینه‌ای ثبت‌شده:</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {selectedPatientFile.medicalHistory && selectedPatientFile.medicalHistory.length > 0 ? (
+                          selectedPatientFile.medicalHistory.map((mh, idx) => (
+                            <span
+                              key={idx}
+                              className={`px-2.5 py-1 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 shadow-2xs ${
+                                mh.includes('فشار') || mh.includes('قلب')
+                                  ? 'bg-rose-100 dark:bg-rose-950/50 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-800'
+                                  : mh.includes('دیابت') || mh.includes('قند')
+                                  ? 'bg-amber-100 dark:bg-amber-950/50 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+                                  : 'bg-sky-100 dark:bg-sky-950/50 text-[#005581] dark:text-sky-300 border border-sky-300 dark:border-sky-800'
+                              }`}
+                            >
+                              <span className="w-2 h-2 rounded-full bg-current"></span>
+                              {mh}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="px-2.5 py-1 rounded-xl bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 text-xs font-bold inline-flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            هیچ بیماری خاصی ثبت نشده است
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-200 dark:border-slate-700/60 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-900/50">
+                        <span className="text-slate-500 font-bold text-[11px] block">حساسیت دارویی ثبت‌شده:</span>
+                        <strong className="text-rose-600 dark:text-rose-400 font-bold text-xs mt-0.5 block">
+                          {editAllergies || 'بدون حساسیت دارویی'}
+                        </strong>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
+                        <span className="text-slate-500 font-bold text-[11px] block">تماس اضطراری:</span>
+                        <strong className="font-mono text-slate-800 dark:text-slate-200 text-xs mt-0.5 block">
+                          {editEmergency || 'ثبت نشده'}
+                        </strong>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
@@ -3775,13 +3869,24 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                       ))}
 
                       {selectedPatientFile.medicalHistory && selectedPatientFile.medicalHistory.length > 0 && (
-                        <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-1">
-                          <span className="text-[11px] font-bold text-slate-500 block">پیشینه پزشکی و پیوست‌ها:</span>
-                          {selectedPatientFile.medicalHistory.map((mh, idx) => (
-                            <div key={idx} className="text-xs text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-200 dark:border-slate-800">
-                              • {mh}
-                            </div>
-                          ))}
+                        <div className="pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2">
+                          <div className="flex items-center gap-1.5">
+                            <Activity className="w-4 h-4 text-rose-500" />
+                            <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                              پیشینه پزشکی و ملاحظات درمانی بیمار:
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {selectedPatientFile.medicalHistory.map((mh, idx) => (
+                              <div
+                                key={idx}
+                                className="text-xs font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center gap-2 shadow-2xs"
+                              >
+                                <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                                <span>{mh}</span>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -4380,6 +4485,7 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                       const pName = selectedClaimForDocReview.patientName;
                       const insName = selectedClaimForDocReview.insuranceCompany || selectedClaimForDocReview.insuranceProvider || 'سازمان بیمه‌گر';
                       setSelectedClaimForDocReview(null);
+                      showReceptionToast(`✅ پرونده بیمار ${pName} با موفقیت تایید و مستقیماً به سازمان بیمه‌گر (${insName}) ارسال گردید.`);
                       alert(`پرونده بیمار ${pName} با موفقیت به سازمان بیمه‌گر (${insName}) ارسال شد.`);
                     }}
                     className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md cursor-pointer transition flex items-center gap-1.5"
@@ -4407,6 +4513,7 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                       }
                       const pName = selectedClaimForDocReview.patientName;
                       setSelectedClaimForDocReview(null);
+                      showReceptionToast(`✅ مدارک پرونده ${pName} با موفقیت تایید و به کارتابل حسابداری کلینیک منتقل گردید.`);
                       alert(`مدارک پرونده ${pName} تایید و به کارتابل حسابداری کلینیک منتقل گردید.`);
                     }}
                     className="px-5 py-2 rounded-xl bg-[#005581] hover:bg-[#004266] text-white font-bold text-xs shadow-md cursor-pointer transition flex items-center gap-1.5"
@@ -4459,6 +4566,16 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                 تایید و بازگشت
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Reception Action Toast Notification */}
+      {receptionToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-fadeIn">
+          <div className="px-5 py-3 rounded-2xl bg-emerald-700 text-white font-bold text-xs shadow-2xl flex items-center gap-2.5 border border-emerald-500">
+            <CheckCircle2 className="w-5 h-5 text-[#ffd200] shrink-0" />
+            <span>{receptionToast.text}</span>
           </div>
         </div>
       )}

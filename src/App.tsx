@@ -7,6 +7,7 @@ import {
   Invoice,
   InstallmentPlan,
   Claim,
+  ClaimAppeal,
   TodayMoneyBoard,
   GreenLaneStatus,
   LabOrder,
@@ -1161,30 +1162,54 @@ export default function App() {
 
   // Insurance Bridge Handlers
   const handleSubmitAppeal = (claimId: string, appealText: string) => {
+    const todayFa = new Date().toLocaleDateString('fa-IR');
+    const newAppealId = `app-${Date.now()}`;
     setClaims((prev) =>
-      prev.map((c) =>
-        c.id === claimId
-          ? {
-              ...c,
-              status: 'appealed',
-              appealText,
-              appealHistory: [
-                ...(c.appealHistory || []),
-                {
-                  date: '۱۴۰۵/۰۵/۱۳',
-                  text: appealText,
-                  status: 'در انتظار بررسی مجدد',
-                },
-              ],
-            }
-          : c
-      )
+      prev.map((c) => {
+        if (c.id !== claimId) return c;
+        const newAppeal: ClaimAppeal = {
+          id: newAppealId,
+          claimId: c.id,
+          createdAt: todayFa,
+          reason: appealText,
+          status: 'pending',
+          dentistName: c.dentistName || 'دکتر کاویانی',
+          additionalEvidenceUrls: [
+            'https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?w=400&auto=format&fit=crop&q=80',
+          ],
+        };
+        return {
+          ...c,
+          status: 'appealed' as const,
+          appealReason: appealText,
+          appealText,
+          appeals: [newAppeal, ...(c.appeals || []).filter((a) => a.id !== newAppealId)],
+          appealHistory: [
+            ...(c.appealHistory || []),
+            {
+              date: todayFa,
+              text: appealText,
+              status: 'در انتظار بررسی مجدد توسط بازبین ادعا',
+            },
+          ],
+        };
+      })
     );
   };
 
   const handleSendClaimToInsurance = (claimId: string) => {
     setClaims((prev) =>
-      prev.map((c) => (c.id === claimId ? { ...c, status: 'express_review' } : c))
+      prev.map((c) =>
+        c.id === claimId
+          ? {
+              ...c,
+              status: 'submitted',
+              receptionApproved: true,
+              accountantApproved: true,
+              submittedDate: 'امروز',
+            }
+          : c
+      )
     );
   };
 
@@ -1195,15 +1220,35 @@ export default function App() {
     reason?: string
   ) => {
     setClaims((prev) =>
-      prev.map((c) =>
-        c.id === claimId
-          ? {
-              ...c,
-              status: decision,
-              deductionReason: reason,
-            }
-          : c
-      )
+      prev.map((c) => {
+        if (c.id !== claimId) return c;
+        if (decision === 'approved') {
+          return {
+            ...c,
+            status: 'settled' as const,
+            baseApprovedAmount: c.baseApprovedAmount || Math.round((c.claimedAmount || 5200000) * 0.3),
+            supplApprovedAmount: c.supplApprovedAmount || Math.round((c.claimedAmount || 5200000) * 0.7),
+            deductionAmount: 0,
+            deductionReason: undefined,
+            totalApprovedAmount: c.claimedAmount || c.totalClaimedAmount || 5200000,
+          };
+        } else {
+          return {
+            ...c,
+            status: 'rejected' as const,
+            deductionAmount:
+              c.deductionAmount ||
+              (decision === 'partially_approved'
+                ? Math.round((c.claimedAmount || 5200000) * 0.25)
+                : c.claimedAmount || 5200000),
+            deductionReason:
+              reason ||
+              (decision === 'partially_approved'
+                ? 'کسورات تعرفه‌ای مصوب بازبین بیمه'
+                : 'رد کامل ادعا به دلیل عدم تطابق با دستورالعمل‌های بیمه‌ای'),
+          };
+        }
+      })
     );
   };
 

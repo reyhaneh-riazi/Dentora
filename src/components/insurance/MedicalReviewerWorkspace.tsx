@@ -43,6 +43,7 @@ import {
   Ruler,
   Crosshair,
   Grid,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { mockClaims } from '../../data/mockData';
 import { Claim } from '../../types';
@@ -629,8 +630,101 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
 
   const activeLineItems = React.useMemo(() => {
     if (!selectedClaim) return [];
-    return claimLineItemsMap[selectedClaim.id] || claimLineItemsMap['clm-001'] || [];
-  }, [selectedClaim?.id, claimLineItemsMap]);
+    if (claimLineItemsMap[selectedClaim.id] && claimLineItemsMap[selectedClaim.id].length > 0) {
+      return claimLineItemsMap[selectedClaim.id];
+    }
+
+    // Dynamically derive from selectedClaim's actual patient and clinical data
+    const rawAmt = (selectedClaim as any).claimedAmount || (selectedClaim as any).totalAmount || (selectedClaim as any).totalClaimedAmount || 5200000;
+    const claimAmountInRials = rawAmt < 50000000 ? rawAmt * 10 : rawAmt;
+    const toothNum = selectedClaim.toothFdi || (selectedClaim.items && selectedClaim.items[0]?.toothNumber) || 16;
+    const treatName = selectedClaim.treatmentName || (selectedClaim.items && selectedClaim.items[0]?.procedureTitle) || 'درمان ریشه (عصب‌کشی تخصصی)';
+    const reviewerNotes = (selectedClaim as any).reviewerDiagnosis || (selectedClaim as any).reviewerNotes || (selectedClaim as any).narrativeText || 'پرونده از نظر سقف تعهدات و مدارک مالی احراز گردیده و جهت ارزیابی رادیولوژی و بالینی ارجاع شد.';
+
+    if (selectedClaim.items && selectedClaim.items.length > 0) {
+      return selectedClaim.items.map((item, idx) => ({
+        id: `line-${selectedClaim.id}-${idx + 1}`,
+        toothNumber: `دندان ${toFa(item.toothNumber || toothNum)} (فک ${item.toothNumber && Number(item.toothNumber) > 20 ? 'پایین' : 'بالا'})`,
+        fdiCode: String(item.toothNumber || toothNum),
+        serviceName: item.procedureTitle || treatName,
+        serviceCode: item.procedureCode || (idx === 0 ? 'END-3C' : 'CRN-PFM'),
+        claimedAmount: item.claimedAmount ? (item.claimedAmount < 50000000 ? item.claimedAmount * 10 : item.claimedAmount) : Math.round(claimAmountInRials / selectedClaim.items.length),
+        approvedAmount: item.claimedAmount ? (item.claimedAmount < 50000000 ? item.claimedAmount * 10 : item.claimedAmount) : Math.round(claimAmountInRials / selectedClaim.items.length),
+        status: 'pending_doctor' as const,
+        initialReviewerNote: reviewerNotes,
+        radiographyUrl: DEFAULT_RVG_XRAY,
+        radiographyTitle: `کلیشه رادیوگرافی RVG دندان ${toFa(item.toothNumber || toothNum)}`,
+        aiMarkers: [
+          {
+            id: `mark-${selectedClaim.id}-${idx + 1}-1`,
+            x: 48,
+            y: 72,
+            title: 'ارزیابی طول کانال و اپیکال سیل ریشه',
+            category: 'alert' as const,
+            aiConfidence: 89,
+            detectionText: `مواد پرکردگی تا فاصله ۰.۸ میلی‌متری آپکس رادیوگرافیک گسترش یافته است.`,
+            flagReason: 'بررسی عدم وجود آندر/اورفیلینگ',
+            linkedQuestionId: `q-${selectedClaim.id}-${idx + 1}-1`,
+            isOverridden: false,
+          },
+        ],
+        questions: [
+          {
+            id: `q-${selectedClaim.id}-${idx + 1}-1`,
+            questionText: `آیا عصب‌کشی و سیل اپیکال دندان ${toFa(item.toothNumber || toothNum)} از نظر طول و تراکم گوتاپرکا در رادیوگرافی مورد تأیید است؟`,
+            markerId: `mark-${selectedClaim.id}-${idx + 1}-1`,
+            options: [
+              { id: 'yes_complete', label: 'بلی - پرکردگی کامل و با تراکم استاندارد (Dense Obturation) ✅', isAiRecommended: true },
+              { id: 'no_underfilled', label: 'خیر - پرکردگی ناقص (Underfilled بیش از ۲ میلی‌متر)' },
+            ],
+            selectedAnswer: 'yes_complete',
+          },
+        ],
+      }));
+    }
+
+    return [
+      {
+        id: `line-${selectedClaim.id}-1`,
+        toothNumber: `دندان ${toFa(toothNum)} (موقعیت خلفی)`,
+        fdiCode: String(toothNum),
+        serviceName: treatName,
+        serviceCode: 'SRV-101',
+        claimedAmount: claimAmountInRials,
+        approvedAmount: claimAmountInRials,
+        status: 'pending_doctor' as const,
+        initialReviewerNote: reviewerNotes,
+        radiographyUrl: DEFAULT_RVG_XRAY,
+        radiographyTitle: `کلیشه رادیوگرافی دیجیتال RVG دندان ${toFa(toothNum)}`,
+        aiMarkers: [
+          {
+            id: `mark-${selectedClaim.id}-1-1`,
+            x: 48,
+            y: 72,
+            title: 'بررسی کیفیت رادیوگرافی و سیل انتهای ریشه',
+            category: 'alert' as const,
+            aiConfidence: 91,
+            detectionText: 'سیل اپیکال و تراکم رادیواپسیته در حد استاندارد بالینی است.',
+            flagReason: 'بررسی بالینی و تطبیق تصویر',
+            linkedQuestionId: `q-${selectedClaim.id}-1-1`,
+            isOverridden: false,
+          },
+        ],
+        questions: [
+          {
+            id: `q-${selectedClaim.id}-1-1`,
+            questionText: `آیا انجام خدمت «${treatName}» روی دندان ${toFa(toothNum)} از نظر شواهد رادیولوژی تایید می‌گردد؟`,
+            markerId: `mark-${selectedClaim.id}-1-1`,
+            options: [
+              { id: 'yes_ok', label: 'بلی - شواهد رادیوگرافی و بالینی کاملاً منطبق و تایید است ✅', isAiRecommended: true },
+              { id: 'no_defect', label: 'خیر - عدم انطباق با گرافی یا نقص در تکنیک' },
+            ],
+            selectedAnswer: 'yes_ok',
+          },
+        ],
+      },
+    ];
+  }, [selectedClaim, claimLineItemsMap]);
   const [activeLineItemIndex, setActiveLineItemIndex] = useState<number>(0);
   const activeLineItem = activeLineItems[activeLineItemIndex] || activeLineItems[0] || null;
 
@@ -660,6 +754,84 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
   const [overridePin, setOverridePin] = useState<string>('4321');
 
   const [showDeepReviewSignatureModal, setShowDeepReviewSignatureModal] = useState<boolean>(false);
+
+  // Appeal & Attached Evidence Handling
+  const [selectedPacsImageOverrideUrl, setSelectedPacsImageOverrideUrl] = useState<string | null>(null);
+  const [lightboxImageUrl, setLightboxImageUrl] = useState<string | null>(null);
+
+  // Derive whether the current claim has an appeal
+  const isClaimAppealed = React.useMemo(() => {
+    if (!selectedClaim) return false;
+    return (
+      selectedClaim.status === 'appealed' ||
+      (selectedClaim.appeals && selectedClaim.appeals.length > 0) ||
+      Boolean(selectedClaim.appealReason || selectedClaim.appealText) ||
+      Boolean(selectedClaim.reviewerDiagnosis?.includes('اعتراض')) ||
+      Boolean(selectedClaim.reviewerNotes?.includes('اعتراض'))
+    );
+  }, [selectedClaim]);
+
+  const activeAppeal = React.useMemo(() => {
+    if (!selectedClaim || !isClaimAppealed) return null;
+    const firstAppeal = selectedClaim.appeals?.[0];
+    return {
+      id: firstAppeal?.id || `app-${selectedClaim.id}`,
+      createdAt: firstAppeal?.createdAt || '۱۴۰۵/۰۵/۲۰',
+      reason: firstAppeal?.reason || selectedClaim.appealReason || selectedClaim.appealText || 'با استناد به تصویر گرافی RVG پیوست‌شده و بند ۱۲ آیین‌نامه بیمه، درمان کانال ریشه طبق پروتکل استاندارد انجام شده و کسورات فوق غیرمجاز می‌باشد.',
+      submittedBy: firstAppeal?.submittedBy || 'حسابداری و پذیرش کلینیک دنتورا',
+      dentistName: firstAppeal?.dentistName || selectedClaim.dentistName || 'دکتر کاویانی',
+      category: (firstAppeal as any)?.category || 'کسورات غیرمجاز تعرفه‌ای و تقاضای بازبینی رادیولوژی RVG',
+      ruleCitation: (firstAppeal as any)?.ruleCitation || 'بند ۱۲ آیین‌نامه تعرفه درمان شورای عالی بیمه',
+      additionalEvidenceUrls: firstAppeal?.additionalEvidenceUrls || selectedClaim.additionalEvidenceUrls || [
+        'https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?w=600&auto=format&fit=crop&q=80',
+      ],
+      responseNotes: firstAppeal?.responseNotes || selectedClaim.reviewerDiagnosis || selectedClaim.reviewerNotes || 'اعتراض کلینیک مورد تأیید اولیه بازبین ادعا قرار گرفت و جهت تأیید کارشناسی نهایی رادیولوژی به پزشک معتمد ارجاع شد.',
+    };
+  }, [selectedClaim, isClaimAppealed]);
+
+  // Unique appeal images attached by accountant / clinic
+  const appealAttachedImages = React.useMemo(() => {
+    if (!selectedClaim) return [];
+    const list: { id: string; title: string; url: string; uploader: string; date: string }[] = [];
+    
+    if (activeAppeal?.additionalEvidenceUrls && activeAppeal.additionalEvidenceUrls.length > 0) {
+      activeAppeal.additionalEvidenceUrls.forEach((url, i) => {
+        list.push({
+          id: `app-img-${i + 1}`,
+          title: `کلیشه رادیوگرافی RVG دندان ${toFa(selectedClaim.toothFdi || 16)} (پیوست لایحه اعتراض)`,
+          url,
+          uploader: 'حسابدار کلینیک',
+          date: activeAppeal.createdAt || '۱۴۰۵/۰۵/۲۰',
+        });
+      });
+    }
+
+    if (selectedClaim.evidences && selectedClaim.evidences.length > 0) {
+      selectedClaim.evidences.forEach((ev, i) => {
+        if (ev.fileUrl && !list.some((img) => img.url === ev.fileUrl)) {
+          list.push({
+            id: `ev-img-${i + 1}`,
+            title: ev.title || `مدرک تصویری پرونده ${toFa(i + 1)}`,
+            url: ev.fileUrl,
+            uploader: 'پذیرش / حسابدار',
+            date: '۱۴۰۵/۰۵/۲۰',
+          });
+        }
+      });
+    }
+
+    if (isClaimAppealed && list.length === 0) {
+      list.push({
+        id: 'app-default-rvg',
+        title: `گرافی RVG پری‌اپیکال ضمیمه‌شده به لایحه اعتراض دندان ${toFa(selectedClaim.toothFdi || 16)}`,
+        url: 'https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?w=600&auto=format&fit=crop&q=80',
+        uploader: 'حسابدار کلینیک',
+        date: '۱۴۰۵/۰۵/۲۰',
+      });
+    }
+
+    return list;
+  }, [selectedClaim, isClaimAppealed, activeAppeal]);
 
   const [aiOverridesLog, setAiOverridesLog] = useState<AIOverrideRecord[]>([
     {
@@ -993,14 +1165,41 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
     setAuditTrailLogs([newAuditRecord, ...auditTrailLogs]);
     setShowDeepReviewSignatureModal(false);
 
+    const mappedStatus: 'approved' | 'partially_approved' | 'rejected' =
+      finalVerdict === 'approved'
+        ? 'approved'
+        : finalVerdict === 'rejected'
+        ? 'rejected'
+        : 'partially_approved';
+
+    const claimAmount = selectedClaim.claimedAmount || selectedClaim.totalClaimedAmount || 5200000;
+    const deduction = mappedStatus === 'approved' ? 0 : (mappedStatus === 'partially_approved' ? Math.round(claimAmount * 0.25) : claimAmount);
+
+    setClaims((prev) =>
+      prev.map((c) => {
+        if (c.id !== selectedClaim.id) return c;
+        const updatedAppeals = (c.appeals || []).map((a) => ({
+          ...a,
+          status: mappedStatus === 'approved' ? ('accepted' as const) : ('rejected' as const),
+          responseNotes: `نظر نهایی بازبین پزشکی (${trustedDoctor.name}): ${reviewerSummaryText}`,
+        }));
+        return {
+          ...c,
+          appeals: updatedAppeals,
+          status: mappedStatus === 'approved' ? ('settled' as const) : ('rejected' as const),
+          deductionAmount: deduction,
+          totalApprovedAmount: mappedStatus === 'approved' ? claimAmount : 0,
+          baseApprovedAmount: mappedStatus === 'approved' ? (c.baseApprovedAmount || Math.round(claimAmount * 0.3)) : 0,
+          supplApprovedAmount: mappedStatus === 'approved' ? (c.supplApprovedAmount || Math.round(claimAmount * 0.7)) : 0,
+          deductionReason: mappedStatus === 'approved' ? undefined : reviewerSummaryText,
+          rejectionReason: mappedStatus === 'approved' ? undefined : reviewerSummaryText,
+          doctorReviewerDiagnosis: reviewerSummaryText,
+        };
+      })
+    );
+
     if (onReviewDecision) {
-      const mappedStatus: 'approved' | 'partially_approved' | 'rejected' =
-        finalVerdict === 'approved'
-          ? 'approved'
-          : finalVerdict === 'rejected'
-          ? 'rejected'
-          : 'partially_approved';
-      onReviewDecision(selectedClaim.id, mappedStatus, finalVerdict === 'approved' ? 0 : 300000, reviewerSummaryText);
+      onReviewDecision(selectedClaim.id, mappedStatus, deduction, reviewerSummaryText);
     }
 
     if (isSigned) {
@@ -1722,73 +1921,244 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#72cdf4] bg-white font-bold">
-                        {filteredClaims.map((claim) => (
-                          <tr
-                            key={claim.id}
-                            className={`hover:bg-[#72cdf4]/10 transition-colors ${
-                              selectedClaimId === claim.id ? 'bg-[#ffe552]/20 font-black' : ''
-                            }`}
-                          >
-                            <td className="p-3 text-[#005581] font-mono whitespace-nowrap">{claim.claimNumber}</td>
-                            <td className="p-3 text-[#005581] whitespace-nowrap">{claim.patientName}</td>
-                            <td className="p-3 text-[#005581] whitespace-nowrap">{claim.clinicName}</td>
-                            <td className="p-3 text-center whitespace-nowrap">
-                              <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 px-2 py-0.5 rounded-md text-[10px] font-black inline-block">
-                                L3 (Dentora Verified)
-                              </span>
-                            </td>
-                            <td className="p-3 text-[#005581] whitespace-nowrap">{toFa(((claim as any).claimedAmount ?? claim.totalClaimedAmount ?? 0).toLocaleString())} ریال</td>
-                            <td className="p-3 text-center whitespace-nowrap">
-                              <span
-                                className={`px-2.5 py-1 rounded-full text-[10px] font-black inline-block ${
-                                  claim.riskScore >= 70
-                                    ? 'bg-rose-100 text-rose-800 border border-rose-300'
-                                    : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                                }`}
-                              >
-                                ریسک {toFa(claim.riskScore)}٪
-                              </span>
-                            </td>
-                            <td className="p-3 text-center whitespace-nowrap">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSelectedClaimId(claim.id);
-                                  setActiveStep(2);
-                                }}
-                                className="bg-[#005581] text-white px-3 py-1.5 rounded-lg text-[11px] font-black hover:bg-[#003d5c] transition-all inline-flex items-center gap-1 cursor-pointer"
-                              >
-                                <span>انتخاب پرونده</span>
-                                <ChevronLeft className="w-3.5 h-3.5" />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
+                        {filteredClaims.map((claim) => {
+                          const isAppealedRow =
+                            claim.status === 'appealed' ||
+                            (claim.appeals && claim.appeals.length > 0) ||
+                            Boolean(claim.appealReason || claim.appealText);
+                          return (
+                            <tr
+                              key={claim.id}
+                              className={`hover:bg-[#72cdf4]/10 transition-colors ${
+                                selectedClaimId === claim.id ? 'bg-[#ffe552]/20 font-black' : ''
+                              }`}
+                            >
+                              <td className="p-3 text-[#005581] font-mono whitespace-nowrap">
+                                <div className="flex items-center gap-1.5">
+                                  <span>{claim.claimNumber}</span>
+                                  {isAppealedRow && (
+                                    <span className="bg-amber-500 text-slate-950 font-black text-[9px] px-1.5 py-0.5 rounded shadow-xs flex items-center gap-1 animate-pulse">
+                                      <span>⚡ اعتراض کلینیک</span>
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="p-3 text-[#005581] whitespace-nowrap">{claim.patientName}</td>
+                              <td className="p-3 text-[#005581] whitespace-nowrap">{claim.clinicName}</td>
+                              <td className="p-3 text-center whitespace-nowrap">
+                                <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 px-2 py-0.5 rounded-md text-[10px] font-black inline-block">
+                                  L3 (Dentora Verified)
+                                </span>
+                              </td>
+                              <td className="p-3 text-[#005581] whitespace-nowrap">{toFa(((claim as any).claimedAmount ?? claim.totalClaimedAmount ?? 0).toLocaleString())} ریال</td>
+                              <td className="p-3 text-center whitespace-nowrap">
+                                <span
+                                  className={`px-2.5 py-1 rounded-full text-[10px] font-black inline-block ${
+                                    claim.riskScore >= 70
+                                      ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                                      : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                  }`}
+                                >
+                                  ریسک {toFa(claim.riskScore)}٪
+                                </span>
+                              </td>
+                              <td className="p-3 text-center whitespace-nowrap">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedClaimId(claim.id);
+                                    setSelectedPacsImageOverrideUrl(null);
+                                    // Smooth scroll down to Table 2 (Section 2)
+                                    setTimeout(() => {
+                                      const table2El = document.getElementById('medical-claim-details-table');
+                                      if (table2El) {
+                                        table2El.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                        table2El.classList.add('ring-4', 'ring-[#ffd200]');
+                                        setTimeout(() => table2El.classList.remove('ring-4', 'ring-[#ffd200]'), 2000);
+                                      }
+                                    }, 50);
+                                  }}
+                                  className="bg-[#005581] text-white px-3 py-1.5 rounded-lg text-[11px] font-black hover:bg-[#003d5c] transition-all inline-flex items-center gap-1 cursor-pointer"
+                                >
+                                  <span>انتخاب پرونده</span>
+                                  <ChevronDown className="w-3.5 h-3.5" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
                 </div>
               </div>
 
-              {/* Reviewer Note */}
-              <div className="bg-[#fffffa] rounded-2xl p-5 border-2 border-[#005581] space-y-4 shadow-sm">
-                <div className="flex items-center justify-between pb-3 border-b border-[#72cdf4]">
-                  <h3 className="text-xs font-black text-[#005581] flex items-center gap-2">
-                    <User className="w-4 h-4 text-[#005581]" />
-                    <span>جدول ۲. جزئیات خدمات درمانی و نظریه بازبین ادعا جهت کارشناسی پزشک معتمد</span>
-                  </h3>
-                  <span className="text-[10px] font-mono bg-[#005581] text-white px-2.5 py-0.5 rounded">
-                    Claims Reviewer Form v2.1
-                  </span>
+              {/* Table 2: Selected Claim Details & Reviewer Findings */}
+              <div
+                id="medical-claim-details-table"
+                className="bg-[#fffffa] rounded-2xl p-5 border-2 border-[#005581] space-y-4 shadow-sm transition-all"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-[#72cdf4]">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 bg-[#005581] text-[#ffe552] rounded-lg">
+                      <User className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-black text-[#005581]">
+                        جدول ۲. جزئیات خدمات درمانی و نظریه بازبین ادعا جهت کارشناسی پزشک معتمد
+                      </h3>
+                      <span className="text-[11px] text-[#005581]/80 font-bold">
+                        بیمار انتخابی: <span className="text-[#005581] font-black">{selectedClaim.patientName}</span> (کد ملی: {toFa(selectedClaim.patientNationalId || selectedClaim.nationalId || '۰۰۲۱۹۴۰۸۲۱')}) • کلینیک: {selectedClaim.clinicName}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-mono bg-[#005581] text-white px-2.5 py-1 rounded-lg">
+                      پرونده: {selectedClaim.claimNumber}
+                    </span>
+                    <span className="text-[10px] bg-[#ffe552] text-[#005581] px-2.5 py-1 rounded-lg font-black border border-[#ffd200]">
+                      بیمه: {selectedClaim.insuranceCompany || selectedClaim.insuranceProvider || (selectedClaim.primaryInsurerName || 'بیمه ایران')}
+                    </span>
+                  </div>
                 </div>
 
+                {/* Reviewer Diagnosis & Narrative Box */}
                 <div className="bg-[#72cdf4]/15 border border-[#72cdf4] p-3.5 rounded-xl space-y-1 text-xs text-[#005581]">
-                  <div className="font-black flex items-center gap-2">
-                    <span>ارسال‌شده توسط بازبین ادعا: {claimReviewerInfo.name}</span>
-                    <span className="text-[10px] font-bold opacity-80">({claimReviewerInfo.title})</span>
+                  <div className="font-black flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span>ارسال‌شده توسط بازبین ادعا: {selectedClaim.claimReviewerName || claimReviewerInfo.name}</span>
+                      <span className="text-[10px] font-bold opacity-80">({selectedClaim.claimReviewerTitle || claimReviewerInfo.title})</span>
+                    </div>
+                    <span className="text-[10px] bg-white px-2 py-0.5 rounded border border-[#72cdf4] font-bold">
+                      تشخیص ثبت‌شده بازبین ادعا
+                    </span>
                   </div>
-                  <p className="text-[11px] font-bold leading-relaxed">{claimReviewerInfo.note}</p>
+                  <p className="text-[11px] font-bold leading-relaxed text-[#005581]">
+                    {selectedClaim.reviewerDiagnosis || selectedClaim.reviewerNotes || selectedClaim.narrativeText || claimReviewerInfo.note}
+                  </p>
                 </div>
+
+                {/* Appeal Dossier & Attached Evidence by Clinic/Accountant */}
+                {isClaimAppealed && activeAppeal && (
+                  <div className="p-4 rounded-2xl border-2 border-amber-400 bg-amber-50/70 space-y-3.5 shadow-sm">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-amber-200">
+                      <div className="flex items-center gap-2">
+                        <div className="p-1.5 bg-amber-500 text-slate-950 rounded-lg">
+                          <FileText className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-black text-amber-950 flex items-center gap-1.5">
+                            <span>لایحه دفاعیه و مدارک ضمیمه‌شده در بخش اعتراض توسط حسابدار / کلینیک</span>
+                            <span className="text-[10px] bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full font-bold">
+                              ارجاع کارشناسی رادیولوژی به پزشک معتمد
+                            </span>
+                          </h4>
+                          <span className="text-[10px] text-amber-800 font-medium">
+                            ثبت اعتراض: {activeAppeal.submittedBy || 'حسابداری و پذیرش کلینیک'} • پزشک معالج: {activeAppeal.dentistName || selectedClaim.dentistName || 'دکتر کاویانی'} • تاریخ ثبت: {toFa(activeAppeal.createdAt)}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] bg-amber-500/20 text-amber-900 border border-amber-400 px-2.5 py-1 rounded-lg font-black">
+                          موضوع: {activeAppeal.category || 'کسورات غیرمجاز تعرفه‌ای'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Appeal statement text */}
+                    <div className="bg-white p-3.5 rounded-xl border border-amber-300 space-y-1.5 shadow-xs">
+                      <div className="text-[10px] text-amber-900 font-extrabold flex items-center gap-1.5">
+                        <Scale className="w-3.5 h-3.5 text-amber-600" />
+                        <span>متن لایحه اعتراض ثبت‌شده توسط حسابدار / دندانپزشک معالج:</span>
+                      </div>
+                      <p className="text-xs font-bold leading-relaxed text-slate-800">
+                        «{activeAppeal.reason}»
+                      </p>
+                      {activeAppeal.ruleCitation && (
+                        <div className="text-[10px] text-slate-600 pt-1 font-medium border-t border-amber-100">
+                          مستندات قانونی / آیین‌نامه: <span className="font-bold text-amber-850">{activeAppeal.ruleCitation}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Claim reviewer handover note */}
+                    <div className="bg-sky-50 p-3 rounded-xl border border-sky-200 flex items-start gap-2.5">
+                      <ShieldCheck className="w-4 h-4 text-[#005581] mt-0.5 shrink-0" />
+                      <div className="text-xs">
+                        <span className="font-black text-[#005581] block mb-0.5">
+                          دستور ارجاع و تایید اولیه بازبین ادعا ({selectedClaim.claimReviewerName || claimReviewerInfo.name}):
+                        </span>
+                        <p className="text-[11px] text-slate-700 font-bold leading-relaxed">
+                          {activeAppeal.responseNotes || selectedClaim.reviewerDiagnosis || 'اعتراض کلینیک از حیث سقف تعهدات و مدارک اولیه مورد تأیید اولیه قرار گرفت و جهت انطباق تصویر گرافی و تصمیم‌گیری نهایی بالینی به پزشک معتمد ارجاع گردید.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Attached Images / Evidence by Accountant */}
+                    {appealAttachedImages.length > 0 && (
+                      <div className="space-y-2 pt-1 border-t border-amber-200">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-black text-amber-950 flex items-center gap-1.5">
+                            <ImageIcon className="w-4 h-4 text-amber-600" />
+                            <span>مدارک و تصاویر رادیولوژی ضمیمه‌شده در بخش اعتراض ({toFa(appealAttachedImages.length)} مدرک):</span>
+                          </span>
+                          <span className="text-[10px] text-amber-800 font-bold">
+                            جهت بررسی در ویوور PACS روی دکمه زیر هر تصویر کلیک کنید
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                          {appealAttachedImages.map((img) => (
+                            <div
+                              key={img.id}
+                              className="bg-white rounded-xl border border-amber-300 p-2.5 space-y-2 shadow-xs hover:border-amber-500 transition group"
+                            >
+                              <div
+                                className="relative rounded-lg overflow-hidden bg-slate-950 aspect-video cursor-pointer"
+                                onClick={() => setLightboxImageUrl(img.url)}
+                              >
+                                <img
+                                  src={img.url}
+                                  alt={img.title}
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                                  referrerPolicy="no-referrer"
+                                />
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                                  <span className="p-1.5 rounded-lg bg-white/90 text-slate-900 text-xs font-bold flex items-center gap-1">
+                                    <Eye className="w-3.5 h-3.5" /> بزرگنمایی مدرک
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="text-[10px] space-y-1">
+                                <div className="font-bold text-slate-800 line-clamp-1">
+                                  {img.title}
+                                </div>
+                                <div className="text-slate-500 flex items-center justify-between text-[9px]">
+                                  <span>بارگذاری: {img.uploader}</span>
+                                  <span>{toFa(img.date)}</span>
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedPacsImageOverrideUrl(img.url);
+                                  setActiveStep(2);
+                                }}
+                                className="w-full py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-[10px] transition flex items-center justify-center gap-1 cursor-pointer"
+                              >
+                                <Sparkles className="w-3 h-3" />
+                                <span>ارزیابی در ویوور PACS رادیولوژی</span>
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="overflow-x-auto rounded-xl border border-[#72cdf4]">
                   <table className="w-full text-xs text-right border-collapse">
@@ -1900,6 +2270,44 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
                         </span>
                       </div>
                     </div>
+
+                    {/* Evidence Radiography Switcher for Appealed Claims */}
+                    {appealAttachedImages.length > 0 && (
+                      <div className="bg-slate-900/90 border border-amber-400/60 p-2 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs text-white">
+                        <div className="flex items-center gap-1.5 font-bold text-[11px] text-amber-300">
+                          <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                          <span>انتخاب مدرک نمایشی در PACS:</span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedPacsImageOverrideUrl(null)}
+                            className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition cursor-pointer flex items-center gap-1 border ${
+                              selectedPacsImageOverrideUrl === null
+                                ? 'bg-[#ffe552] text-[#005581] border-[#ffd200] shadow-xs'
+                                : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                            }`}
+                          >
+                            <span>🦷 گرافی پایه دندان {activeLineItem?.toothNumber || '۱۶'}</span>
+                          </button>
+
+                          {appealAttachedImages.map((img, i) => (
+                            <button
+                              key={img.id}
+                              type="button"
+                              onClick={() => setSelectedPacsImageOverrideUrl(img.url)}
+                              className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition cursor-pointer flex items-center gap-1 border ${
+                                selectedPacsImageOverrideUrl === img.url
+                                  ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-xs'
+                                  : 'bg-slate-800 text-amber-200 border-amber-600/50 hover:bg-slate-700'
+                              }`}
+                            >
+                              <span>⚡ مدرک اعتراضی {toFa(i + 1)} ({img.uploader})</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Professional PACS Toolbar */}
                     <div className="bg-slate-900 text-slate-100 rounded-xl p-2.5 flex flex-wrap items-center justify-between gap-2 border border-slate-700 text-xs shadow-inner">
@@ -2044,13 +2452,32 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
 
                     {/* Main PACS Radiograph Viewport */}
                     <div className="relative rounded-2xl overflow-hidden border-2 border-[#005581] bg-slate-950 shadow-2xl min-h-[420px] flex items-center justify-center group select-none">
+                      {selectedPacsImageOverrideUrl && (
+                        <div className="absolute top-3 right-3 z-30 bg-amber-500 text-slate-950 px-3 py-1 rounded-full text-[10px] font-black shadow-md flex items-center gap-1 border border-amber-300">
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>در حال ارزیابی: تصویر ضمیمه لایحه اعتراض حسابدار</span>
+                        </div>
+                      )}
+
                       <div
                         className="w-full h-full flex items-center justify-center transition-transform duration-200"
                         style={{
                           transform: `scale(${pacsZoom})`,
                         }}
                       >
-                        {activeLineItem?.radiographyUrl?.startsWith('http') || activeLineItem?.radiographyUrl?.startsWith('data:image/png') ? (
+                        {selectedPacsImageOverrideUrl ? (
+                          <img
+                            src={selectedPacsImageOverrideUrl}
+                            alt="Appeal Evidence X-Ray"
+                            className="w-full h-[420px] object-cover transition-all duration-150"
+                            style={{
+                              filter: `contrast(${pacsContrast}%) brightness(${pacsBrightness}%) ${
+                                pacsInverted ? 'invert(100%)' : 'grayscale(100%)'
+                              }`,
+                            }}
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : activeLineItem?.radiographyUrl?.startsWith('http') || activeLineItem?.radiographyUrl?.startsWith('data:image/png') ? (
                           <img
                             src={activeLineItem.radiographyUrl}
                             alt="Radiology Dental X-Ray"
@@ -2847,6 +3274,60 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
                       ))}
                     </tbody>
                   </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Lightbox Modal for Evidence Images */}
+          {lightboxImageUrl && (
+            <div
+              className="fixed inset-0 z-50 bg-black/85 backdrop-blur-xs flex items-center justify-center p-4"
+              onClick={() => setLightboxImageUrl(null)}
+            >
+              <div
+                className="relative max-w-4xl w-full bg-slate-900 rounded-2xl overflow-hidden border-2 border-amber-400 p-4 space-y-3"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between text-white pb-2 border-b border-slate-700">
+                  <div className="flex items-center gap-2">
+                    <ImageIcon className="w-4 h-4 text-amber-400" />
+                    <span className="text-xs font-black">تصویر مدرک و گرافی ضمیمه‌شده به لایحه اعتراض کلینیک</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setLightboxImageUrl(null)}
+                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-900 text-slate-300 hover:text-white transition cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="relative rounded-xl overflow-hidden bg-black flex items-center justify-center min-h-[380px] max-h-[65vh]">
+                  <img
+                    src={lightboxImageUrl}
+                    alt="Evidence Preview"
+                    className="max-h-[65vh] w-auto object-contain select-none"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-1">
+                  <span className="text-[11px] text-slate-300 font-bold">
+                    جهت اعمال فیلترهای نگاتیو، روشنایی، کنتراست و خط‌کش کولیس، تصویر را در ویوور PACS باز کنید.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedPacsImageOverrideUrl(lightboxImageUrl);
+                      setLightboxImageUrl(null);
+                      setActiveStep(2);
+                    }}
+                    className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs transition flex items-center gap-1.5 cursor-pointer shadow-md"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>انتقال مستقیم به ویوور رادیولوژی PACS</span>
+                  </button>
                 </div>
               </div>
             </div>

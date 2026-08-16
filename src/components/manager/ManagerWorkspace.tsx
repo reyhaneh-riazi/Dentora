@@ -132,13 +132,22 @@ export const ManagerWorkspace: React.FC<ManagerWorkspaceProps> = ({
   const [employeeToDelete, setEmployeeToDelete] = useState<UserProfile | null>(null);
 
   const [empName, setEmpName] = useState('');
-  const [empRole, setEmpRole] = useState<'dentist' | 'receptionist' | 'accountant'>('dentist');
+  const [empRole, setEmpRole] = useState<'dentist' | 'receptionist' | 'accountant' | 'manager'>('dentist');
   const [empNationalId, setEmpNationalId] = useState('');
   const [empPhone, setEmpPhone] = useState('');
   const [empCommission, setEmpCommission] = useState(45);
 
-  // Single-Doctor / Multi-Doctor Mode derived automatically from staff count
-  const dentistCount = users.filter((u) => u.role === 'dentist').length;
+  // Filter clinic staff to only include authorized clinic roles (dentist, receptionist, manager, owner, and accountant if enabled)
+  const clinicStaffUsers = users.filter((usr) => {
+    const validClinicRoles: UserRole[] = ['dentist', 'receptionist', 'manager', 'owner'];
+    if (hasAccountantRole) {
+      validClinicRoles.push('accountant');
+    }
+    return validClinicRoles.includes(usr.role);
+  });
+
+  // Single-Doctor / Multi-Doctor Mode derived automatically from clinic dentist count
+  const dentistCount = clinicStaffUsers.filter((u) => u.role === 'dentist').length;
   const isMultiDoctorClinic = dentistCount > 1;
 
   // Sent SMS reminder tracking
@@ -878,12 +887,20 @@ export const ManagerWorkspace: React.FC<ManagerWorkspaceProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                      {users.map((usr) => (
+                      {clinicStaffUsers.map((usr) => (
                         <tr key={usr.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                           <td className="py-3 px-3 font-bold text-slate-900 dark:text-slate-100">{usr.name}</td>
                           <td className="py-3 px-3">
                             <span className="px-2.5 py-1 rounded-md bg-slate-100 dark:bg-slate-800 font-bold text-[11px]">
-                              {usr.role === 'dentist' ? 'دندان‌پزشک معالج' : usr.role === 'receptionist' ? 'منشی / پذیرش' : usr.role === 'accountant' ? 'حسابدار / مدیر مالی' : usr.role}
+                              {usr.role === 'dentist'
+                                ? 'دندان‌پزشک معالج'
+                                : usr.role === 'receptionist'
+                                ? 'منشی / پذیرش'
+                                : usr.role === 'accountant'
+                                ? 'حسابدار / مدیر مالی'
+                                : usr.role === 'manager' || usr.role === 'owner'
+                                ? 'مدیریت کلینیک'
+                                : usr.role}
                             </span>
                           </td>
                           <td className="py-3 px-3 font-mono">{toPersianDigits(usr.nationalId)}</td>
@@ -1839,9 +1856,12 @@ export const ManagerWorkspace: React.FC<ManagerWorkspaceProps> = ({
                   onChange={(e) => setEmpRole(e.target.value as any)}
                   className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-[#005581]"
                 >
-                  <option value="dentist">دندان‌پزشک معالج</option>
-                  <option value="receptionist">منشی / پذیرش</option>
-                  <option value="accountant">حسابدار / مدیر مالی</option>
+                  <option value="dentist">دندان‌پزشک معالج (Dentist)</option>
+                  <option value="receptionist">منشی / پذیرش (Receptionist)</option>
+                  {hasAccountantRole && (
+                    <option value="accountant">حسابدار / مدیر مالی (Accountant)</option>
+                  )}
+                  <option value="manager">مدیریت کلینیک (Manager)</option>
                 </select>
               </div>
 

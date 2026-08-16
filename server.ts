@@ -1,6 +1,5 @@
 import express from "express";
 import path from "path";
-import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
@@ -59,7 +58,7 @@ app.post("/api/copilot/analyze-dictation", async (req, res) => {
 }`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
+      model: "gemini-2.5-flash",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -96,7 +95,7 @@ ${JSON.stringify(patientContext || {}, null, 2)}
 پاسخ کوتاه، علمی، مبتنی بر دستورالعمل‌های دندان‌پزشکی و با لحن حرفه‌ای و فارسی ارائه دهید. در انتها تاکید کنید که تصمیم نهایی با دندان‌پزشک معالج است.`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
+      model: "gemini-2.5-flash",
       contents: prompt,
     });
 
@@ -122,7 +121,7 @@ app.post("/api/copilot/generate-narrative", async (req, res) => {
 شرح بیمه باید کوتاه، مستدل، حاوی اصطلاحات استاندارد دندان‌پزشکی و منطبق بر ضوابط تعرفه باشد.`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
+      model: "gemini-2.5-flash",
       contents: prompt,
     });
 
@@ -156,7 +155,7 @@ app.post("/api/copilot/triage-patient", async (req, res) => {
 }`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
+      model: "gemini-2.5-flash",
       contents: prompt,
       config: {
         responseMimeType: "application/json",

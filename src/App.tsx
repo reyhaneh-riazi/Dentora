@@ -18,6 +18,9 @@ import {
   SupplementaryInsuranceContract,
   DoctorSubmission,
   DoctorRequestReminder,
+  PatientQuestion,
+  PatientQuestionReply,
+  PatientInsuranceDispute,
 } from './types';
 import {
   mockPatients,
@@ -290,6 +293,199 @@ export default function App() {
     }));
   };
 
+  const [patientQuestions, setPatientQuestions] = useState<PatientQuestion[]>([
+    {
+      id: 'qa-1',
+      patientId: 'p-1',
+      patientName: 'علی رضایی',
+      patientPhone: '09129876543',
+      patientNationalId: '0012345678',
+      category: 'مراقبت‌های پس از درمان',
+      question: 'بعد از عصب‌کشی دیروز دندان شماره ۴۶ کمی احساس فشار دارم، چه مسکنی مصرف کنم؟',
+      createdAt: '۱۴۰۵/۰۵/۱۰',
+      status: 'answered',
+      isClinicalUrgent: false,
+      replies: [
+        {
+          id: 'rep-1',
+          senderRole: 'dentist',
+          senderName: 'دکتر کاویانی (دندانپزشک معالج)',
+          message: 'سلام بیمار گرامی. احساس فشار خفیف تا ۷۲ ساعت طبیعی است. می‌توانید هر ۸ ساعت یک عدد کپسول نوافن یا قرص ژلوفن مصرف کنید. در صورت بروز تورم یا درد شدید با مطب تماس بگیرید.',
+          createdAt: '۱۴۰۵/۰۵/۱۰ - ۱۱:۳۰',
+        },
+      ],
+      answer: 'سلام بیمار گرامی. احساس فشار خفیف تا ۷۲ ساعت طبیعی است. می‌توانید هر ۸ ساعت یک عدد کپسول نوافن یا قرص ژلوفن مصرف کنید. در صورت بروز تورم یا درد شدید با مطب تماس بگیرید.',
+      answeredAt: '۱۴۰۵/۰۵/۱۰ - ۱۱:۳۰',
+      repliedBy: 'دکتر کاویانی',
+    },
+    {
+      id: 'qa-2',
+      patientId: 'p-1',
+      patientName: 'علی رضایی',
+      patientPhone: '09129876543',
+      patientNationalId: '0012345678',
+      category: 'اقساط',
+      question: 'آیا قسط ماه آینده BNPL نیاز به ارائه چک جدید در مطب دارد؟',
+      createdAt: '۱۴۰۵/۰۵/۱۲',
+      status: 'answered',
+      isClinicalUrgent: false,
+      replies: [
+        {
+          id: 'rep-2',
+          senderRole: 'receptionist',
+          senderName: 'مریم امیری (پذیرش و منشی)',
+          message: 'خیر. اقساط اعتباری BNPL کاملاً خودکار و بی‌نیاز از چک بوده و مستقیماً با اپلیکیشن BNPL کسر می‌گردد.',
+          createdAt: '۱۴۰۵/۰۵/۱۲ - ۱۶:۴۵',
+        },
+      ],
+      answer: 'خیر. اقساط اعتباری BNPL کاملاً خودکار و بی‌نیاز از چک بوده و مستقیماً با اپلیکیشن BNPL کسر می‌گردد.',
+      answeredAt: '۱۴۰۵/۰۵/۱۲ - ۱۶:۴۵',
+      repliedBy: 'مریم امیری (منشی)',
+    },
+  ]);
+
+  const [insuranceDisputes, setInsuranceDisputes] = useState<PatientInsuranceDispute[]>([
+    {
+      id: 'obj-1',
+      patientId: 'p-1',
+      patientName: 'علی رضایی',
+      patientPhone: '09129876543',
+      nationalId: '0012345678',
+      claimNumber: 'CLM-9021',
+      insuranceProvider: 'بیمه تکمیلی دانا',
+      topic: 'اعتراض به عدم تایید مدرک رادیوگرافی OPG دندان ۴۶',
+      message: 'مبلغ ۳۵۰,۰۰۰ تومان بابت پریاپیکال و ریشه توسط ارزیاب کسر گردیده است. تصویر گرافی واضح مجدداً پیوست گردید.',
+      imageName: 'radiography_opg_46.jpg',
+      imageDesc: 'تصویر واضح گرافی پریاپیکال دندان ۴۶',
+      claimedAmount: 3500000,
+      deductionAmount: 350000,
+      createdAt: '۱۴۰۵/۰۵/۰۸',
+      status: 'under_review',
+      responseMessage: 'پیام شما در واحد بیمه کلینیک دریافت گردید و جهت بررسی مجدد مدارک به کمیسیون بیمه ارسال شد.',
+      lastUpdated: '۱۴۰۵/۰۵/۰۹',
+    },
+  ]);
+
+  const handleAskQuestion = (data: {
+    patientId: string;
+    patientName: string;
+    patientPhone: string;
+    patientNationalId: string;
+    category: string;
+    question: string;
+    dentistId?: string;
+    dentistName?: string;
+  }) => {
+    const todayFa = new Date().toLocaleDateString('fa-IR');
+    const newQ: PatientQuestion = {
+      id: `qa-${Date.now()}`,
+      patientId: data.patientId,
+      patientName: data.patientName,
+      patientPhone: data.patientPhone,
+      patientNationalId: data.patientNationalId,
+      dentistId: data.dentistId || 'u-dentist1',
+      dentistName: data.dentistName || 'دکتر کاویانی',
+      category: data.category,
+      question: data.question,
+      createdAt: todayFa,
+      status: 'pending',
+      isClinicalUrgent: data.category === 'درد' || data.category === 'پزشکی' || data.category === 'مراقبت‌های پس از درمان',
+      replies: [],
+    };
+    setPatientQuestions((prev) => [newQ, ...prev]);
+  };
+
+  const handleReplyQuestion = (
+    questionId: string,
+    replyMessage: string,
+    senderRole: 'receptionist' | 'dentist',
+    senderName: string
+  ) => {
+    const todayFa = new Date().toLocaleDateString('fa-IR');
+    const timeFa = new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+    const formattedTime = `${todayFa} - ${timeFa}`;
+
+    setPatientQuestions((prev) =>
+      prev.map((q) => {
+        if (q.id === questionId) {
+          const newReply: PatientQuestionReply = {
+            id: `rep-${Date.now()}`,
+            senderRole,
+            senderName,
+            message: replyMessage,
+            createdAt: formattedTime,
+          };
+          return {
+            ...q,
+            status: 'answered' as const,
+            answer: replyMessage,
+            answeredAt: formattedTime,
+            repliedBy: senderName,
+            replies: [...(q.replies || []), newReply],
+          };
+        }
+        return q;
+      })
+    );
+  };
+
+  const handleSubmitInsuranceDispute = (data: {
+    patientId: string;
+    patientName: string;
+    patientPhone: string;
+    nationalId: string;
+    claimNumber: string;
+    insuranceProvider: string;
+    topic: string;
+    message: string;
+    imageName?: string;
+    imageDesc?: string;
+    claimedAmount: number;
+    deductionAmount: number;
+  }) => {
+    const todayFa = new Date().toLocaleDateString('fa-IR');
+    const newDispute: PatientInsuranceDispute = {
+      id: `obj-${Date.now()}`,
+      patientId: data.patientId,
+      patientName: data.patientName,
+      patientPhone: data.patientPhone,
+      nationalId: data.nationalId,
+      claimNumber: data.claimNumber,
+      insuranceProvider: data.insuranceProvider,
+      topic: data.topic,
+      message: data.message,
+      imageName: data.imageName,
+      imageDesc: data.imageDesc,
+      claimedAmount: data.claimedAmount,
+      deductionAmount: data.deductionAmount,
+      status: 'under_review',
+      responseMessage: 'پیام اعتراض شما در واحد بیمه کلینیک دریافت گردید و به کارشناس ارجاع شد.',
+      lastUpdated: todayFa,
+      createdAt: todayFa,
+    };
+    setInsuranceDisputes((prev) => [newDispute, ...prev]);
+  };
+
+  const handleReplyInsuranceDispute = (
+    disputeId: string,
+    responseMessage: string,
+    status: 'under_review' | 'approved_pay' | 'need_docs' | 'rejected' = 'under_review'
+  ) => {
+    const todayFa = new Date().toLocaleDateString('fa-IR');
+    setInsuranceDisputes((prev) =>
+      prev.map((d) =>
+        d.id === disputeId
+          ? {
+              ...d,
+              status,
+              responseMessage,
+              lastUpdated: todayFa,
+            }
+          : d
+      )
+    );
+  };
+
   // Active Patient ID State
   const [activePatientId, setActivePatientId] = useState<string>('p-1');
 
@@ -346,6 +542,8 @@ export default function App() {
         fullName: newBookingDetails.patientName || 'بیمار جدید',
         phone: newBookingDetails.patientPhone || '09120000000',
         nationalId: newBookingDetails.patientNationalId || nationalId || '1270001122',
+        birthDate: newBookingDetails.birthDate || '۱۳۷۰/۰۱/۰۱',
+        address: '', // Address starts empty as requested
         age: 28,
         gender: 'مرد',
         medicalHistory: newBookingDetails.medicalHistory && newBookingDetails.medicalHistory.length > 0 
@@ -542,7 +740,36 @@ export default function App() {
       prev.map((a) => (a.patientId === patientObj.id ? { ...a, status: 'completed' as const } : a))
     );
 
-    // 3. Audit Log
+    // 3. Automatically create unpaid invoice for patient (creating debt until paid)
+    const cost = data.totalCost || 3200000;
+    const base = data.baseCovered || 0;
+    const suppl = data.supplCovered || 0;
+
+    const newInvoice: Invoice = {
+      id: `inv-${Date.now()}`,
+      patientId: patientObj.id,
+      patientName: patientObj.fullName,
+      dentistId: 'u-dentist1',
+      dentistName: currentUserName.includes('دکتر') ? currentUserName : 'دکتر کاویانی',
+      date: todayFa,
+      totalAmount: cost,
+      baseInsuranceCovered: base,
+      supplInsuranceCovered: suppl,
+      patientSharePaid: 0,
+      paymentMethod: 'cash',
+      status: 'pending_insurance',
+      doctorCommissionAmount: Math.round(cost * 0.45),
+      items: [
+        {
+          procedureName: data.treatmentPlan.split('\n')[0] || 'درمان دندان‌پزشکی تخصصی',
+          toothFdi: data.toothFdi || 16,
+          amount: cost,
+        },
+      ],
+    };
+    setInvoices((prev) => [newInvoice, ...prev]);
+
+    // 4. Audit Log
     const newLog: AuditLog = {
       id: `log-${Date.now()}`,
       timestamp: `${todayFa} ${timeFa}`,
@@ -556,7 +783,7 @@ export default function App() {
     setAuditLogs((prev) => [newLog, ...prev]);
 
     alert(
-      'اطلاعات درمان و کارنامه بیمار با موفقیت ثبت شد و به بخش «ارسال‌های جدید پزشک» نزد منشی انتقال یافت. همچنین درخواست نوبت بعدی به بخش یادآوری‌های منشی ارسال گردید.'
+      'اطلاعات درمان و کارنامه بیمار با موفقیت ثبت شد، فاکتور و بدهی پرونده ایجاد گردید و به بخش «ارسال‌های جدید پزشک» نزد منشی انتقال یافت.'
     );
   };
 
@@ -940,6 +1167,9 @@ export default function App() {
             hasAccountantRole={hasAccountantRole}
             onToggleHasAccountantRole={handleToggleHasAccountantRole}
             insuranceModuleActive={insuranceModuleActive}
+            onToggleInsuranceModule={() => setInsuranceModuleActive(!insuranceModuleActive)}
+            isInsuranceContracted={isInsuranceContracted}
+            onToggleInsuranceContracted={handleToggleInsuranceContracted}
             onSubmitAppeal={handleSubmitAppeal}
             onSendClaimToInsurance={handleSendClaimToInsurance}
             doctorSubmissions={doctorSubmissions}

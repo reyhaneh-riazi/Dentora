@@ -112,16 +112,30 @@ export interface ToothDetail {
   }[];
 }
 
+export interface SavedBankCard {
+  id: string;
+  bankName: string;
+  cardNumber: string; // 16 digits
+  cvv2: string;
+  expMonth: string;
+  expYear: string;
+  holderName?: string;
+  isDefault?: boolean;
+}
+
 export interface Patient {
   id: string;
   udrCode: string; // Universal Dental Record
   fullName: string;
   nationalId: string;
   phone: string;
+  birthDate?: string;
+  address?: string;
   age: number;
   gender: 'مرد' | 'زن';
   medicalHistory: string[];
   allergies: string[];
+  savedCards?: SavedBankCard[];
   isLegalGuardian?: boolean;
   guardianName?: string;
   guardianNationalId?: string;
@@ -509,4 +523,53 @@ export interface ProviderScorecard {
   isGreenLaneApproved: boolean;
   totalClaimsCount: number;
 }
+
+export interface PatientQuestionReply {
+  id: string;
+  senderRole: 'receptionist' | 'dentist' | 'patient';
+  senderName: string;
+  message: string;
+  createdAt: string;
+}
+
+export interface PatientQuestion {
+  id: string;
+  patientId: string;
+  patientName: string;
+  patientPhone: string;
+  patientNationalId: string;
+  dentistId?: string;
+  dentistName?: string;
+  category: 'نوبت' | 'درد' | 'پرداخت' | 'اقساط' | 'بیمه' | 'مراقبت‌های پس از درمان' | 'پزشکی' | string;
+  question: string;
+  createdAt: string;
+  status: 'pending' | 'answered' | 'referred_to_doctor';
+  isClinicalUrgent?: boolean;
+  replies: PatientQuestionReply[];
+  // Compatibility fields
+  answer?: string;
+  answeredAt?: string;
+  repliedBy?: string;
+}
+
+export interface PatientInsuranceDispute {
+  id: string;
+  patientId: string;
+  patientName: string;
+  patientPhone: string;
+  nationalId: string;
+  claimNumber: string;
+  insuranceProvider: string;
+  topic: string;
+  message: string;
+  imageName?: string;
+  imageDesc?: string;
+  claimedAmount: number;
+  deductionAmount: number;
+  status: 'under_review' | 'approved_pay' | 'need_docs' | 'rejected';
+  responseMessage?: string;
+  lastUpdated: string;
+  createdAt: string;
+}
+
 

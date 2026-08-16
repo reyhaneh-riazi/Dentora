@@ -88,7 +88,12 @@ export const ClinicPortalLanding: React.FC<ClinicPortalLandingProps> = ({
   const [patientTab, setPatientTab] = useState<'login' | 'signup'>('login');
   
   // Patient Form State
+  const [patientFullName, setPatientFullName] = useState('');
+  const [patientMobile, setPatientMobile] = useState('');
   const [patientNationalId, setPatientNationalId] = useState('');
+  const [patientBirthDate, setPatientBirthDate] = useState('۱۳۷۰/۰۱/۰۱');
+  const [patientPrimaryInsurance, setPatientPrimaryInsurance] = useState('بیمه تامین اجتماعی');
+  const [patientSupplInsurance, setPatientSupplInsurance] = useState('');
   const [patientPassword, setPatientPassword] = useState('');
   const [isLegalGuardian, setIsLegalGuardian] = useState(false);
   const [guardianName, setGuardianName] = useState('');
@@ -129,13 +134,31 @@ export const ClinicPortalLanding: React.FC<ClinicPortalLandingProps> = ({
           alert('لطفاً کد ملی سرپرست و کودک را وارد نمایید.');
           return;
         }
-        onPatientLogin(childNationalId, true);
+        onPatientLogin(childNationalId, true, {
+          patientName: childName || 'کودک بیمار',
+          patientPhone: guardianMobile,
+          patientNationalId: childNationalId,
+          birthDate: '۱۳۹۵/۰۱/۰۱',
+          isLegalGuardian: true,
+          guardianName,
+          guardianNationalId,
+          guardianPhone: guardianMobile,
+          primaryInsurance: patientPrimaryInsurance,
+          supplInsurance: patientSupplInsurance,
+        });
       } else {
         if (!patientNationalId.trim()) {
           alert('لطفاً کد ملی خود را وارد نمایید.');
           return;
         }
-        onPatientLogin(patientNationalId);
+        onPatientLogin(patientNationalId, false, {
+          patientName: patientFullName || 'بیمار جدید',
+          patientPhone: patientMobile || '09120000000',
+          patientNationalId,
+          birthDate: patientBirthDate,
+          primaryInsurance: patientPrimaryInsurance,
+          supplInsurance: patientSupplInsurance,
+        });
       }
     }
   };
@@ -615,18 +638,72 @@ export const ClinicPortalLanding: React.FC<ClinicPortalLandingProps> = ({
                     <input
                       type="text"
                       required
+                      placeholder="مثال: سارا احمدی"
+                      value={patientFullName}
+                      onChange={(e) => setPatientFullName(e.target.value)}
                       className="w-full px-3.5 py-2 rounded-xl border-2 border-slate-200 focus:border-[#005581] text-sm outline-none"
                     />
                   </div>
 
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">کد ملی بیمار</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="0012345678"
+                        value={patientNationalId}
+                        onChange={(e) => setPatientNationalId(e.target.value)}
+                        className="w-full px-3.5 py-2 rounded-xl border-2 border-slate-200 focus:border-[#005581] text-sm font-mono outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">شماره همراه</label>
+                      <input
+                        type="tel"
+                        required
+                        placeholder="۰۹۱۲..."
+                        value={patientMobile}
+                        onChange={(e) => setPatientMobile(e.target.value)}
+                        className="w-full px-3.5 py-2 rounded-xl border-2 border-slate-200 focus:border-[#005581] text-sm font-mono outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">تاریخ تولد</label>
+                      <input
+                        type="text"
+                        placeholder="۱۳۷۰/۰۵/۱۵"
+                        value={patientBirthDate}
+                        onChange={(e) => setPatientBirthDate(e.target.value)}
+                        className="w-full px-3.5 py-2 rounded-xl border-2 border-slate-200 focus:border-[#005581] text-sm font-mono outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">بیمه پایه</label>
+                      <select
+                        value={patientPrimaryInsurance}
+                        onChange={(e) => setPatientPrimaryInsurance(e.target.value)}
+                        className="w-full px-3.5 py-2 rounded-xl border-2 border-slate-200 focus:border-[#005581] text-xs font-bold outline-none"
+                      >
+                        <option value="بیمه تامین اجتماعی">تامین اجتماعی</option>
+                        <option value="بیمه خدمات درمانی (سلامت)">سلامت ایرانیان</option>
+                        <option value="بیمه نیروهای مسلح">نیروهای مسلح</option>
+                        <option value="فاقد بیمه پایه (آزاد)">فاقد بیمه (آزاد)</option>
+                      </select>
+                    </div>
+                  </div>
+
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">کد ملی بیمار</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">بیمه تکمیلی (اختیاری)</label>
                     <input
                       type="text"
-                      required
-                      value={patientNationalId}
-                      onChange={(e) => setPatientNationalId(e.target.value)}
-                      className="w-full px-3.5 py-2 rounded-xl border-2 border-slate-200 focus:border-[#005581] text-sm font-mono outline-none"
+                      placeholder="مثال: بیمه دانا، ایران، سامان یا خالی"
+                      value={patientSupplInsurance}
+                      onChange={(e) => setPatientSupplInsurance(e.target.value)}
+                      className="w-full px-3.5 py-2 rounded-xl border-2 border-slate-200 focus:border-[#005581] text-sm outline-none"
                     />
                   </div>
 
@@ -635,6 +712,7 @@ export const ClinicPortalLanding: React.FC<ClinicPortalLandingProps> = ({
                     <input
                       type="password"
                       required
+                      placeholder="حداقل ۶ کاراکتر"
                       value={patientPassword}
                       onChange={(e) => setPatientPassword(e.target.value)}
                       className="w-full px-3.5 py-2 rounded-xl border-2 border-slate-200 focus:border-[#005581] text-sm outline-none"

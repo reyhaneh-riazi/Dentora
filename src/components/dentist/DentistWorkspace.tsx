@@ -120,7 +120,7 @@ type DentistNavTab =
   | 'owner_settings';
 
 // Sequential Steps for Clinical Workbench
-type WorkbenchStep = 1 | 2 | 3 | 'imaging' | 4 | 5 | 6 | 7;
+type WorkbenchStep = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
   activePatient,
@@ -297,7 +297,7 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
       udrCode: 'UDR-8812',
       date: '۱۴۰۳/۰۵/۱۸ - ۱۰:۳۰',
       reason: 'ارجاع به مرکز تصویربرداری بیرونی جهت OPG پانورامیک',
-      stepToResume: 'imaging',
+      stepToResume: 4,
     },
   ]);
   const [isTreatmentPausedCurrent, setIsTreatmentPausedCurrent] = useState(false);
@@ -586,7 +586,7 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
       udrCode: activePatient.udrCode,
       date: new Date().toLocaleDateString('fa-IR') + ' - ' + new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
       reason: 'توقف درمان جهت مراجعه به مرکز تصویربرداری بیرونی و ارایه لینک/تصاویر',
-      stepToResume: 'imaging' as WorkbenchStep,
+      stepToResume: 4 as WorkbenchStep,
     };
     setPausedTreatments([newPaused, ...pausedTreatments]);
   };
@@ -594,7 +594,7 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
   const handleResumeTreatment = (id: string) => {
     setPausedTreatments(pausedTreatments.filter((p) => p.id !== id));
     setIsTreatmentPausedCurrent(false);
-    setWorkbenchStep('imaging');
+    setWorkbenchStep(4);
   };
 
   // Sidebar Menu Items
@@ -617,13 +617,12 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
   // Step metadata for sequential flow
   const stepsList = [
     { key: 1, title: '۱. پیشینه و پیام منشی', subtitle: 'اطلاعات اولیه و یادداشت پذیرش' },
-    { key: 2, title: '۲. ضبط، قلم نوری و تصویر', subtitle: 'دیکته صوتی و معاینه اولیه' },
-    { key: 3, title: '۳. اودنتوگرام و شرح AI', subtitle: 'ثبت ۶ سطح دندان و مشاوره AI' },
-    { key: 'imaging', title: 'تصویربرداری (اختیاری)', subtitle: 'داخلی (پل بریج) یا مرکز بیرونی', skippable: true },
-    { key: 4, title: '۴. نسخه و نوبت بعدی', subtitle: 'تنظیم نسخه دارویی و زمان مراجعه' },
-    { key: 5, title: '۵. بازبینی پرونده', subtitle: 'بررسی کل و سهم نقدی دندان‌پزشک' },
-    { key: 6, title: '۶. بازبینی شرح بیمه', subtitle: 'تولید و تأیید شرح بیمه توسط AI' },
-    { key: 7, title: '۷. اقدامات و صورتحساب', subtitle: 'تأیید نهایی و ارسال به منشی' },
+    { key: 2, title: '۲. دیکته صوتی و طرح درمان', subtitle: 'دیکته صوتی، قلم نوری و استخراج خودکار AI' },
+    { key: 3, title: '۳. اودنتوگرام و مشاوره AI', subtitle: 'ثبت ۶ سطح دندان و چت با Copilot' },
+    { key: 4, title: '۴. رادیوگرافی و تصویربرداری', subtitle: 'Web-PACS، علامت‌گذاری هوشمند و ارجاع' },
+    { key: 5, title: '۵. نسخه و زمان مراجعه بعدی', subtitle: 'تنظیم نسخه دارویی و ارسال پیگیری به منشی' },
+    { key: 6, title: '۶. بازبینی پرونده و مالی', subtitle: 'بررسی کل و سهم نقدی دندان‌پزشک' },
+    { key: 7, title: '۷. شرح بیمه و ارسال به منشی', subtitle: 'تأیید نهایی و ارسال کامل پرونده به منشی' },
   ];
 
   return (
@@ -806,7 +805,7 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
               </div>
 
               {/* Horizontal Stepper Buttons */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-1.5 text-center">
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-1.5 text-center">
                 {stepsList.map((stepItem) => {
                   const isCurrent = workbenchStep === stepItem.key;
                   return (
@@ -821,10 +820,10 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
                     >
                       <span
                         className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${
-                          isCurrent ? 'bg-[#ffd200] text-[#005581]' : 'bg-slate-200 dark:bg-slate-700 text-slate-700'
+                          isCurrent ? 'bg-[#ffd200] text-[#005581]' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
                         }`}
                       >
-                        {stepItem.key === 'imaging' ? <Camera className="w-3.5 h-3.5 text-[#005581]" /> : stepItem.key}
+                        {stepItem.key}
                       </span>
                       <span className="line-clamp-1 text-[10px]">{stepItem.title}</span>
                     </button>
@@ -886,24 +885,24 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
                     onClick={() => setWorkbenchStep(2)}
                     className="flex items-center gap-2 px-5 py-2.5 bg-[#005581] hover:bg-[#004266] text-white font-bold text-xs rounded-xl shadow cursor-pointer"
                   >
-                    <span>ادامه به مرحله ۲: ضبط، قلم نوری و تصویر</span>
+                    <span>ادامه به مرحله ۲: دیکته صوتی و طرح درمان</span>
                     <ArrowLeft className="w-4 h-4 text-[#ffd200]" />
                   </button>
                 </div>
               </div>
             )}
 
-            {/* STEP 2: ضبط، قلم نوری و تصویر */}
+            {/* STEP 2: دیکته صوتی، قلم نوری و طرح درمان (بدون تصویربرداری) */}
             {workbenchStep === 2 && (
               <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-4">
                 <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
                   <div>
                     <h3 className="font-bold text-slate-900 dark:text-slate-100 text-base flex items-center gap-2">
                       <Mic className="w-5 h-5 text-[#005581]" />
-                      <span>مرحله ۲: معاینه، دیکته صوتی فارسی و قلم نوری</span>
+                      <span>مرحله ۲: معاینه، دیکته صوتی فارسی و استخراج خودکار طرح درمان</span>
                     </h3>
                     <p className="text-xs text-slate-500">
-                      دیکته صوتی فارسی هوش مصنوعی با استخراج خودکار پیشنهاد درمان بلافاصله پس از اتمام ضبط
+                      دیکته صوتی هوش مصنوعی فارسی و قلم نوری با استخراج فوری طرح درمان و نسخه پیشنهادی
                     </p>
                   </div>
                   <span className="px-3 py-1 bg-[#005581] text-white font-bold text-xs rounded-lg">گام ۲ از ۷</span>
@@ -965,10 +964,10 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
                       <div className="flex items-center justify-between text-xs font-bold text-[#005581] dark:text-[#72cdf4]">
                         <span className="flex items-center gap-1.5">
                           <Sparkles className="w-4 h-4 text-[#005581] animate-spin" />
-                          <span>پیشنهاد استخراج‌شده هوش مصنوعی:</span>
+                          <span>طرح درمان و نسخه استخراج‌شده توسط AI:</span>
                         </span>
                         <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold inline-flex items-center gap-1">
-                          <Check className="w-3 h-3 text-emerald-700" /> استخراج شد
+                          <Check className="w-3 h-3 text-emerald-700" /> استخراج موفق
                         </span>
                       </div>
 
@@ -995,21 +994,6 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
                       </div>
                     </div>
                   )}
-
-                  {/* Radiograph & Web-PACS Imaging Suite */}
-                  <div className="pt-2">
-                    <ImageXrayViewer
-                      patientName={activePatient.fullName}
-                      toothFdi={selectedToothFdi || 16}
-                      onRevisionTreatmentPlan={() => {
-                        setProposedTreatmentPlan((prev) => `${prev}\n۴. نیاز به روکش پس از بررسی گرافی`);
-                        alert('طرح درمان با توجه به علائم گرافی به‌روزرسانی شد.');
-                      }}
-                      onSaveToDossier={(summary) => {
-                        setDictationText((prev) => `${prev ? prev + '\n' : ''}[یافته‌های تصویربرداری PACS]:\n${summary}`);
-                      }}
-                    />
-                  </div>
                 </div>
 
                 {/* Bottom Navigation */}
@@ -1019,13 +1003,13 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
                     className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl hover:bg-slate-200 cursor-pointer"
                   >
                     <ArrowRight className="w-4 h-4" />
-                    <span>مرحله قبلی</span>
+                    <span>مرحله قبلی (پیشینه بیمار)</span>
                   </button>
                   <button
                     onClick={() => setWorkbenchStep(3)}
                     className="flex items-center gap-2 px-5 py-2.5 bg-[#005581] hover:bg-[#004266] text-white font-bold text-xs rounded-xl shadow cursor-pointer"
                   >
-                    <span>ادامه به مرحله ۳: اودنتوگرام و شرح AI</span>
+                    <span>ادامه به مرحله ۳: اودنتوگرام و مشاوره AI</span>
                     <ArrowLeft className="w-4 h-4 text-[#ffd200]" />
                   </button>
                 </div>
@@ -1158,73 +1142,91 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
                     className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl hover:bg-slate-200 cursor-pointer"
                   >
                     <ArrowRight className="w-4 h-4" />
-                    <span>مرحله قبلی</span>
+                    <span>مرحله قبلی (دیکته صوتی)</span>
                   </button>
 
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setWorkbenchStep(4)}
-                      className="px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs rounded-xl hover:bg-slate-300 cursor-pointer"
-                    >
-                      رد شدن از تصویربرداری و رفتن به مرحله ۴
-                    </button>
-
-                    <button
-                      onClick={() => setWorkbenchStep('imaging')}
-                      className="flex items-center gap-2 px-5 py-2.5 bg-[#005581] hover:bg-[#004266] text-white font-bold text-xs rounded-xl shadow cursor-pointer"
-                    >
-                      <span>ادامه به تصویربرداری (اختیاری)</span>
-                      <ArrowLeft className="w-4 h-4 text-[#ffd200]" />
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => setWorkbenchStep(4)}
+                    className="flex items-center gap-2 px-5 py-2.5 bg-[#005581] hover:bg-[#004266] text-white font-bold text-xs rounded-xl shadow cursor-pointer"
+                  >
+                    <span>ادامه به مرحله ۴: رادیوگرافی و تصویربرداری</span>
+                    <ArrowLeft className="w-4 h-4 text-[#ffd200]" />
+                  </button>
                 </div>
               </div>
             )}
 
-            {/* SKIPPABLE STEP: تصویربرداری و Web-PACS (مرحله ۳.۵) */}
-            {workbenchStep === 'imaging' && (
+            {/* STEP 4: رادیوگرافی و تصویربرداری بالینی (محل انحصاری Web-PACS و ارجاع) */}
+            {workbenchStep === 4 && (
               <div className="space-y-4">
-                <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800 rounded-2xl p-3.5 text-xs flex items-center justify-between text-amber-900 dark:text-amber-200">
-                  <div className="flex items-center gap-2 font-bold">
-                    <Info className="w-5 h-5 text-amber-600" />
-                    <span>
-                      این مرحله تصویربرداری اختیاری است. در صورت عدم نیاز، می‌توانید از دکمه «رد شدن از تصویربرداری» استفاده کنید.
-                    </span>
+                <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm space-y-2">
+                  <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2.5">
+                    <div>
+                      <h3 className="font-bold text-slate-900 dark:text-slate-100 text-base flex items-center gap-2">
+                        <Camera className="w-5 h-5 text-[#005581]" />
+                        <span>مرحله ۴: رادیوگرافی و تصویربرداری بالینی (Web-PACS)</span>
+                      </h3>
+                      <p className="text-xs text-slate-500">
+                        بررسی گرافی‌های دندانی، علامت‌گذاری هوشمند روی عکس، مدیریت یادداشت‌ها و ارجاع به مرکز بیرونی
+                      </p>
+                    </div>
+                    <span className="px-3 py-1 bg-[#005581] text-white font-bold text-xs rounded-lg">گام ۴ از ۷</span>
                   </div>
-                  <button
-                    onClick={() => setWorkbenchStep(4)}
-                    className="px-3 py-1 bg-amber-600 text-white rounded-lg font-bold text-xs cursor-pointer shadow hover:bg-amber-700"
-                  >
-                    رد شدن از تصویربرداری ←
-                  </button>
                 </div>
 
-                {/* Internal / External Imaging Component */}
+                {/* Web-PACS Image Viewer with On-Image Markers, Visible Text & Interactive Edit Popover */}
                 <ImageXrayViewer
                   patientName={activePatient.fullName}
-                  toothFdi={selectedToothFdi}
-                  onRevisionTreatmentPlan={() => setWorkbenchStep(5)}
+                  toothFdi={selectedToothFdi || 16}
+                  onRevisionTreatmentPlan={() => {
+                    setProposedTreatmentPlan((prev) => `${prev}\n۴. نیاز به روکش پس از بررسی گرافی`);
+                    alert('طرح درمان با توجه به علائم گرافی به‌روزرسانی شد.');
+                  }}
+                  onSaveToDossier={(summary) => {
+                    setDictationText((prev) => `${prev ? prev + '\n' : ''}[یافته‌های تصویربرداری PACS]:\n${summary}`);
+                  }}
                 />
 
-                {/* Button for External Imaging Pause (توقف میان‌درمان و بازگشت به درمان نیمه‌رهاشده) */}
-                <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 flex flex-wrap items-center justify-between gap-3 text-xs">
+                {/* External Imaging Center Referral & Pause Card */}
+                <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 flex flex-wrap items-center justify-between gap-3 text-xs shadow-xs">
                   <div>
-                    <h4 className="font-bold text-slate-900 dark:text-slate-100">
-                      ارجاع به مرکز تصویربرداری بیرونی (خارج مطب)
+                    <h4 className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                      <PauseCircle className="w-4 h-4 text-amber-500" />
+                      <span>ارجاع به مرکز تصویربرداری بیرونی (خارج مطب):</span>
                     </h4>
-                    <p className="text-slate-500 text-[11px]">
-                      اگر بیمار برای تصویربرداری به مرکز بیرونی ارجاع می‌شود، درمان را توقف و ذخیره کنید تا پس از بازگشت بیمار ادامه یابد.
+                    <p className="text-slate-500 text-[11px] mt-0.5">
+                      اگر بیمار برای تصویربرداری به مرکز بیرونی ارجاع می‌شود، درمان را متوقف و ذخیره کنید تا پس از بازگشت بیمار در همین مرحله ادامه یابد.
                     </p>
                   </div>
 
                   <button
                     onClick={handlePauseTreatmentForExternalImaging}
-                    className="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl shadow flex items-center gap-2 cursor-pointer"
+                    className="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl shadow flex items-center gap-2 cursor-pointer transition"
                   >
                     <PauseCircle className="w-4 h-4 text-white" />
-                    <span>توقف میان‌درمان و ذخیره جهت بازگشت بعدی</span>
+                    <span>توقف میان‌درمان و ذخیره جهت بازگشت بعدی بیمار</span>
                   </button>
                 </div>
+
+                {/* Paused list notice if any */}
+                {pausedTreatments.length > 0 && (
+                  <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 text-xs flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-amber-900 dark:text-amber-200">
+                      <strong>درمان‌های متوقف‌شده جهت تصویربرداری بیرونی:</strong> {pausedTreatments.length} مورد در جریان است.
+                    </div>
+                    <div className="flex gap-2">
+                      {pausedTreatments.map((pt) => (
+                        <button
+                          key={pt.id}
+                          onClick={() => handleResumeTreatment(pt.id)}
+                          className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg cursor-pointer"
+                        >
+                          ادامه درمان {pt.patientName}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Bottom Navigation */}
                 <div className="flex justify-between items-center bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800">
@@ -1233,34 +1235,34 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
                     className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl hover:bg-slate-200 cursor-pointer"
                   >
                     <ArrowRight className="w-4 h-4" />
-                    <span>مرحله قبلی</span>
+                    <span>مرحله قبلی (اودنتوگرام)</span>
                   </button>
 
                   <button
-                    onClick={() => setWorkbenchStep(4)}
+                    onClick={() => setWorkbenchStep(5)}
                     className="flex items-center gap-2 px-5 py-2.5 bg-[#005581] hover:bg-[#004266] text-white font-bold text-xs rounded-xl shadow cursor-pointer"
                   >
-                    <span>ادامه به مرحله ۴: نسخه و نوبت بعدی</span>
+                    <span>ادامه به مرحله ۵: نسخه و زمان مراجعه بعدی</span>
                     <ArrowLeft className="w-4 h-4 text-[#ffd200]" />
                   </button>
                 </div>
               </div>
             )}
 
-            {/* STEP 4: نسخه و نوبت بعدی */}
-            {workbenchStep === 4 && (
+            {/* STEP 5: نسخه و نوبت بعدی */}
+            {workbenchStep === 5 && (
               <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-5">
                 <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
                   <div>
                     <h3 className="font-bold text-slate-900 dark:text-slate-100 text-base flex items-center gap-2">
                       <FileSpreadsheet className="w-5 h-5 text-[#005581]" />
-                      <span>مرحله ۴: تنظیم نسخه دارویی، نوت و زمان مراجعه بعدی</span>
+                      <span>مرحله ۵: تنظیم نسخه دارویی، نوت و زمان مراجعه بعدی</span>
                     </h3>
                     <p className="text-xs text-slate-500">
                       ویرایش نسخه پیشنهادی دارویی، ثبت یادداشت بالینی و ارسال پیام زمان مراجعه به منشی
                     </p>
                   </div>
-                  <span className="px-3 py-1 bg-[#005581] text-white font-bold text-xs rounded-lg">گام ۴ از ۷</span>
+                  <span className="px-3 py-1 bg-[#005581] text-white font-bold text-xs rounded-lg">گام ۵ از ۷</span>
                 </div>
 
                 {/* Editable Prescription List */}
@@ -1340,37 +1342,37 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
                 {/* Bottom Navigation */}
                 <div className="flex justify-between items-center pt-3 border-t border-slate-100 dark:border-slate-800">
                   <button
-                    onClick={() => setWorkbenchStep(3)}
+                    onClick={() => setWorkbenchStep(4)}
                     className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl hover:bg-slate-200 cursor-pointer"
                   >
                     <ArrowRight className="w-4 h-4" />
-                    <span>مرحله قبلی</span>
+                    <span>مرحله قبلی (تصویربرداری)</span>
                   </button>
                   <button
-                    onClick={() => setWorkbenchStep(5)}
+                    onClick={() => setWorkbenchStep(6)}
                     className="flex items-center gap-2 px-5 py-2.5 bg-[#005581] hover:bg-[#004266] text-white font-bold text-xs rounded-xl shadow cursor-pointer"
                   >
-                    <span>ادامه به مرحله ۵: بازبینی پرونده و محاسبه مالی</span>
+                    <span>ادامه به مرحله ۶: بازبینی پرونده و محاسبه مالی</span>
                     <ArrowLeft className="w-4 h-4 text-[#ffd200]" />
                   </button>
                 </div>
               </div>
             )}
 
-            {/* STEP 5: بازبینی پرونده و محاسبه سهم نقدی */}
-            {workbenchStep === 5 && (
+            {/* STEP 6: بازبینی پرونده و محاسبه سهم نقدی */}
+            {workbenchStep === 6 && (
               <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-5">
                 <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
                   <div>
                     <h3 className="font-bold text-slate-900 dark:text-slate-100 text-base flex items-center gap-2">
                       <DollarSign className="w-5 h-5 text-[#005581]" />
-                      <span>مرحله ۵: بازبینی پرونده بالینی و سهم نقدی دندان‌پزشک</span>
+                      <span>مرحله ۶: بازبینی پرونده بالینی و سهم نقدی دندان‌پزشک</span>
                     </h3>
                     <p className="text-xs text-slate-500">
                       محاسبه تفکیکی سهم مرکز / دندان‌پزشک بر اساس درصد تعیین‌شده مدیر کلینیک
                     </p>
                   </div>
-                  <span className="px-3 py-1 bg-[#005581] text-white font-bold text-xs rounded-lg">گام ۵ از ۷</span>
+                  <span className="px-3 py-1 bg-[#005581] text-white font-bold text-xs rounded-lg">گام ۶ از ۷</span>
                 </div>
 
                 {/* Case Summary Card */}
@@ -1425,39 +1427,40 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
                 {/* Bottom Navigation */}
                 <div className="flex justify-between items-center pt-3 border-t border-slate-100 dark:border-slate-800">
                   <button
-                    onClick={() => setWorkbenchStep(4)}
+                    onClick={() => setWorkbenchStep(5)}
                     className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl hover:bg-slate-200 cursor-pointer"
                   >
                     <ArrowRight className="w-4 h-4" />
-                    <span>مرحله قبلی</span>
+                    <span>مرحله قبلی (نسخه و نوبت بعدی)</span>
                   </button>
                   <button
-                    onClick={() => setWorkbenchStep(6)}
+                    onClick={() => setWorkbenchStep(7)}
                     className="flex items-center gap-2 px-5 py-2.5 bg-[#005581] hover:bg-[#004266] text-white font-bold text-xs rounded-xl shadow cursor-pointer"
                   >
-                    <span>ادامه به مرحله ۶: بازبینی شرح بیمه</span>
+                    <span>ادامه به مرحله ۷: شرح بیمه و ارسال نهایی</span>
                     <ArrowLeft className="w-4 h-4 text-[#ffd200]" />
                   </button>
                 </div>
               </div>
             )}
 
-            {/* STEP 6: بازبینی شرح بیمه */}
-            {workbenchStep === 6 && (
+            {/* STEP 7: شرح بیمه و ارسال نهایی به منشی */}
+            {workbenchStep === 7 && (
               <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-5">
                 <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
                   <div>
                     <h3 className="font-bold text-slate-900 dark:text-slate-100 text-base flex items-center gap-2">
-                      <ShieldAlert className="w-5 h-5 text-[#005581]" />
-                      <span>مرحله ۶: بازبینی شرح بیمه (تولیدشده توسط AI)</span>
+                      <SendHorizontal className="w-5 h-5 text-[#005581]" />
+                      <span>مرحله ۷: شرح بیمه و ارسال نهایی پرونده به پنل منشی</span>
                     </h3>
                     <p className="text-xs text-slate-500">
-                      بررسی و تأیید نهایی متن شرح خدمات برای تاییدیه بیمه پایه و تکمیلی
+                      بررسی و تأیید نهایی متن شرح خدمات برای تاییدیه بیمه پایه/تکمیلی و ارسال همزمان پرونده به پذیرش
                     </p>
                   </div>
-                  <span className="px-3 py-1 bg-[#005581] text-white font-bold text-xs rounded-lg">گام ۶ از ۷</span>
+                  <span className="px-3 py-1 bg-emerald-600 text-white font-bold text-xs rounded-lg">مرحله پایانی (گام ۷ از ۷)</span>
                 </div>
 
+                {/* AI Insurance Narrative Editor */}
                 <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-300 dark:border-amber-800 space-y-3 text-xs">
                   <div className="flex items-center justify-between">
                     <h4 className="font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
@@ -1481,47 +1484,11 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
                   </div>
 
                   <textarea
-                    rows={4}
+                    rows={3}
                     value={insuranceNarrative}
                     onChange={(e) => setInsuranceNarrative(e.target.value)}
                     className="w-full p-3 rounded-xl border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 text-xs focus:ring-2 focus:ring-[#005581]"
                   ></textarea>
-                </div>
-
-                {/* Bottom Navigation */}
-                <div className="flex justify-between items-center pt-3 border-t border-slate-100 dark:border-slate-800">
-                  <button
-                    onClick={() => setWorkbenchStep(5)}
-                    className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl hover:bg-slate-200 cursor-pointer"
-                  >
-                    <ArrowRight className="w-4 h-4" />
-                    <span>مرحله قبلی</span>
-                  </button>
-                  <button
-                    onClick={() => setWorkbenchStep(7)}
-                    className="flex items-center gap-2 px-5 py-2.5 bg-[#005581] hover:bg-[#004266] text-white font-bold text-xs rounded-xl shadow cursor-pointer"
-                  >
-                    <span>ادامه به مرحله ۷: اقدامات و ارسال نهایی پرونده</span>
-                    <ArrowLeft className="w-4 h-4 text-[#ffd200]" />
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 7: اقدامات و صورتحساب (ارسال پرونده کامل به منشی) */}
-            {workbenchStep === 7 && (
-              <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-5">
-                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-                  <div>
-                    <h3 className="font-bold text-slate-900 dark:text-slate-100 text-base flex items-center gap-2">
-                      <SendHorizontal className="w-5 h-5 text-[#005581]" />
-                      <span>مرحله ۷: اقدامات و صورتحساب (ارسال پرونده کامل به پنل منشی)</span>
-                    </h3>
-                    <p className="text-xs text-slate-500">
-                      ارسال همزمان پرونده کامل (نسخه + طرح درمان + شرح بیمه + سهم نقدی) به پنل منشی جهت بررسی و تسویه
-                    </p>
-                  </div>
-                  <span className="px-3 py-1 bg-emerald-600 text-white font-bold text-xs rounded-lg">مرحله پایانی</span>
                 </div>
 
                 {/* Full Review Checklist */}
@@ -1594,7 +1561,7 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
                     className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl hover:bg-slate-200 cursor-pointer"
                   >
                     <ArrowRight className="w-4 h-4" />
-                    <span>مرحله قبلی (بازبینی شرح بیمه)</span>
+                    <span>مرحله قبلی (بازبینی پرونده و مالی)</span>
                   </button>
                 </div>
               </div>

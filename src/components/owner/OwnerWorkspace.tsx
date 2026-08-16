@@ -113,6 +113,15 @@ export const OwnerWorkspace: React.FC<OwnerWorkspaceProps> = ({
   const [ownerMobileInput, setOwnerMobileInput] = useState(currentClinic.ownerMobile);
 
   const filteredUsers = users.filter((u) => {
+    // Only clinic roles (not insurance roles or external roles)
+    const validClinicRoles: UserRole[] = ['dentist', 'receptionist', 'manager', 'owner'];
+    if (hasAccountantRole) {
+      validClinicRoles.push('accountant');
+    }
+    if (!validClinicRoles.includes(u.role)) {
+      return false;
+    }
+
     const q = userSearchQuery.trim().toLowerCase();
     if (!q) return true;
     return (
@@ -736,7 +745,9 @@ export const OwnerWorkspace: React.FC<OwnerWorkspaceProps> = ({
                               <option value="manager">مدیر کلینیک (Manager)</option>
                               <option value="dentist">دندان‌پزشک معالج (Dentist)</option>
                               <option value="receptionist">مسئول پذیرش (Receptionist)</option>
-                              <option value="accountant">حسابدار / مدیر مالی (Accountant)</option>
+                              {hasAccountantRole && (
+                                <option value="accountant">حسابدار / مدیر مالی (Accountant)</option>
+                              )}
                             </select>
                           ) : (
                             <span className={`px-2.5 py-1 rounded-lg font-bold text-[11px] inline-block ${roleLabels[u.role]?.badgeColor || 'bg-slate-200'}`}>
@@ -992,7 +1003,9 @@ export const OwnerWorkspace: React.FC<OwnerWorkspaceProps> = ({
                 >
                   <option value="dentist">دندان‌پزشک معالج (Dentist)</option>
                   <option value="receptionist">مسئول پذیرش / منشی (Receptionist)</option>
-                  <option value="accountant">حسابدار / مدیر مالی (Accountant)</option>
+                  {hasAccountantRole && (
+                    <option value="accountant">حسابدار / مدیر مالی (Accountant)</option>
+                  )}
                   <option value="manager">مدیر کلینیک (Manager)</option>
                   <option value="owner">مالک کلینیک (Owner)</option>
                 </select>

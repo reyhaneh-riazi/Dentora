@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { toPersianDigits } from '../../utils/persianDigits';
+import { PersianBirthDatePicker } from '../common/PersianBirthDatePicker';
 import {
   Calendar,
   Clock,
@@ -17,6 +18,7 @@ import {
   Lock,
 } from 'lucide-react';
 import { SimulatedPaymentGatewayModal } from './SimulatedPaymentGatewayModal';
+import { UserProfile, SavedBankCard } from '../../types';
 
 interface OnlineBookingModalProps {
   isOpen: boolean;
@@ -24,6 +26,9 @@ interface OnlineBookingModalProps {
   clinicName: string;
   isLoggedInPatient?: boolean;
   loggedInPatientName?: string;
+  dentists?: UserProfile[];
+  savedCards?: SavedBankCard[];
+  onSaveNewCard?: (card: SavedBankCard) => void;
   onExistingPatientRedirect?: () => void;
   onCompleteBooking: (bookingDetails: {
     dentistId: string;
@@ -34,6 +39,7 @@ interface OnlineBookingModalProps {
     patientName: string;
     patientPhone: string;
     patientNationalId: string;
+    birthDate?: string;
     isFirstVisit: boolean;
     checkInCompleted: boolean;
     primaryInsurance: string;
@@ -52,17 +58,34 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
   clinicName,
   isLoggedInPatient = false,
   loggedInPatientName = 'بیمار محترم',
+  dentists = [],
+  savedCards = [],
+  onSaveNewCard,
   onExistingPatientRedirect,
   onCompleteBooking,
 }) => {
+  // Available Dentists list from Clinic / Users
+  const availableDentists = dentists.length > 0 ? dentists : [
+    { id: 'u-dentist1', name: 'دکتر کاویانی (جراح و دندانپزشک)', role: 'dentist' as const, nationalId: '0068899001', phone: '09123334455', branchIds: ['br-1'], specialty: 'درمان ریشه و جراحی' },
+    { id: 'u-dentist2', name: 'دکتر شریفی (متخصص ترمیم و زیبایی)', role: 'dentist' as const, nationalId: '0055566778', phone: '09124445566', branchIds: ['br-1'], specialty: 'ترمیم، زیبایی و ایمپلنت' },
+  ];
+
   // Step State
   // 'doctor_reason' | 'calendar_select' | 'auth_account' | 'visit_fee' | 'checkin_form' | 'confirmed'
   const [step, setStep] = useState<'doctor_reason' | 'calendar_select' | 'auth_account' | 'visit_fee' | 'checkin_form' | 'confirmed'>('doctor_reason');
 
   // Booking Parameters
-  const [dentistId, setDentistId] = useState('u-dentist1');
-  const [dentistName, setDentistName] = useState('دکتر کاویانی (جراح دندانپزشک)');
-  const [visitReason, setVisitReason] = useState('معاینه دوره‌ای، عصب‌کشی و جرم‌گیری');
+  const [dentistId, setDentistId] = useState(availableDentists[0]?.id || 'u-dentist1');
+  const [dentistName, setDentistName] = useState(availableDentists[0]?.name || 'دکتر کاویانی (جراح و دندانپزشک)');
+  const [visitReason, setVisitReason] = useState('');
+
+  // Keep dentist selection synced if list updates
+  useEffect(() => {
+    if (availableDentists.length > 0 && !availableDentists.some((d) => d.id === dentistId)) {
+      setDentistId(availableDentists[0].id);
+      setDentistName(availableDentists[0].name);
+    }
+  }, [dentists]);
 
   // Photo Calendar Selection State
   const [selectionType, setSelectionType] = useState<'fastest' | 'custom'>('custom');
@@ -74,29 +97,26 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
   const [lockTimer, setLockTimer] = useState(900); // 15 mins = 900s
   const [isTimerActive, setIsTimerActive] = useState(false);
 
-  // Authentication State for First-Time Patient
+  // Authentication State for First-Time Patient (with birth date)
   const [isFirstVisit, setIsFirstVisit] = useState(!isLoggedInPatient);
   const [patientFullName, setPatientFullName] = useState(isLoggedInPatient ? loggedInPatientName : '');
   const [patientNationalId, setPatientNationalId] = useState('');
   const [patientPhone, setPatientPhone] = useState('');
+  const [patientBirthDate, setPatientBirthDate] = useState('');
   const [otpCode, setOtpCode] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [otpCountdown, setOtpCountdown] = useState(0);
   const [resendNotification, setResendNotification] = useState<string | null>(null);
   const [isAuthConfirmed, setIsAuthConfirmed] = useState(isLoggedInPatient);
 
-  // Check-In Form State
-  const [checkInConditions, setCheckInConditions] = useState<string[]>([
-    'فشار خون بالا'
-  ]);
-  const [checkInAllergies, setCheckInAllergies] = useState<string[]>([
-    'پنی‌سیلین و آنتی‌بیوتیک'
-  ]);
-  const [checkInOtherNotes, setCheckInOtherNotes] = useState('حساسیت شدید به آموکسی‌سیلین و پنی‌سیلین (سابقه شوک خفیف). لطفاً داروی جایگزین تجویز شود.');
-  const [checkInMedications, setCheckInMedications] = useState('لوزارتان ۲۵ میلی‌گرم');
-  const [checkInEmergencyPhone, setCheckInEmergencyPhone] = useState('09121112233');
-  const [primaryInsurance, setPrimaryInsurance] = useState('بیمه تامین اجتماعی');
-  const [supplInsurance, setSupplInsurance] = useState('بیمه دانا (اختیاری)');
+  // Check-In Form State (DEFAULT EMPTY AS REQUESTED BY USER)
+  const [checkInConditions, setCheckInConditions] = useState<string[]>([]);
+  const [checkInAllergies, setCheckInAllergies] = useState<string[]>([]);
+  const [checkInOtherNotes, setCheckInOtherNotes] = useState('');
+  const [checkInMedications, setCheckInMedications] = useState('');
+  const [checkInEmergencyPhone, setCheckInEmergencyPhone] = useState('');
+  const [primaryInsurance, setPrimaryInsurance] = useState('');
+  const [supplInsurance, setSupplInsurance] = useState('');
 
   // Simulated Payment Gateway Dialog State
   const [isPaymentGatewayOpen, setIsPaymentGatewayOpen] = useState(false);
@@ -139,6 +159,10 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
   // Step 1 -> Step 2
   const handleProceedToCalendar = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!visitReason.trim()) {
+      alert('لطفاً علت اصلی مراجعه را وارد نمایید.');
+      return;
+    }
     setStep('calendar_select');
   };
 
@@ -188,6 +212,10 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
       alert('لطفاً نام کامل و کد ملی خود را وارد نمایید.');
       return;
     }
+    if (!patientBirthDate.trim()) {
+      alert('لطفاً تاریخ تولد خود را وارد نمایید.');
+      return;
+    }
     if (!otpCode) {
       alert('لطفاً کد تایید پیامک شده را وارد کنید.');
       return;
@@ -213,20 +241,24 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
 
   // Finalize Booking
   const handleFinalizeBooking = (skipCheckIn = false) => {
-    alert(`نوبت شما با موفقیت ثبت شد!\nکد رهگیری و مشخصات نوبت به شماره همراه شما پیامک گردید.`);
+    const chosenDoctor = availableDentists.find((d) => d.id === dentistId);
+    const finalDoctorName = chosenDoctor ? chosenDoctor.name : dentistName;
+
+    alert(`نوبت شما با موفقیت ثبت شد!\nپزشک: ${finalDoctorName}\nکد رهگیری و مشخصات نوبت به شماره همراه شما پیامک گردید.`);
     onCompleteBooking({
       dentistId,
-      dentistName: dentistId === 'u-dentist1' ? 'دکتر کاویانی' : 'دکتر شریفی',
+      dentistName: finalDoctorName,
       slot: selectedSlot,
       date: selectedDay,
-      reason: visitReason,
+      reason: visitReason || 'معاینه دوره‌ای',
       patientName: patientFullName || 'بیمار محترم',
       patientPhone: patientPhone || '09121112233',
       patientNationalId: patientNationalId || '1270001122',
+      birthDate: patientBirthDate || undefined,
       isFirstVisit,
       checkInCompleted: !skipCheckIn,
-      primaryInsurance,
-      supplInsurance: supplInsurance !== 'بدون بیمه تکمیلی' ? supplInsurance : undefined,
+      primaryInsurance: primaryInsurance || 'فاقد بیمه پایه (آزاد)',
+      supplInsurance: supplInsurance && supplInsurance !== 'بدون بیمه تکمیلی' ? supplInsurance : undefined,
       allergies: checkInAllergies,
       medicalHistory: checkInConditions,
       notes: checkInOtherNotes,
@@ -300,23 +332,27 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
             {step === 'doctor_reason' && (
               <form onSubmit={handleProceedToCalendar} className="space-y-5 text-xs">
                 <div>
-                  <h4 className="font-black text-slate-900 text-sm mb-1">گام اول: انتخاب پزشک و علت مراجعه</h4>
-                  <p className="text-slate-500 text-xs">لطفاً پزشک معالج و علت اصلی مراجعه جهت هماهنگی تجهیزات یونیت را مشخص کنید.</p>
+                  <h4 className="font-black text-slate-900 text-sm mb-1">گام اول: انتخاب پزشک معالج کلینیک و علت مراجعه</h4>
+                  <p className="text-slate-500 text-xs">پزشکان زیر اعضای معالج حاضر در {clinicName} هستند که توسط کلینیک تایید گردیده‌اند.</p>
                 </div>
 
                 <div className="space-y-4">
                   <div>
-                    <label className="block font-bold text-slate-700 mb-1.5">انتخاب پزشک معالج:</label>
+                    <label className="block font-bold text-slate-700 mb-1.5">انتخاب پزشک معالج کلینیک:</label>
                     <select
                       value={dentistId}
                       onChange={(e) => {
                         setDentistId(e.target.value);
-                        setDentistName(e.target.value === 'u-dentist1' ? 'دکتر کاویانی (جراح دندانپزشک)' : 'دکتر شریفی (متخصص ترمیم و زیبایی)');
+                        const selectedDoc = availableDentists.find((d) => d.id === e.target.value);
+                        if (selectedDoc) setDentistName(selectedDoc.name);
                       }}
                       className="w-full px-4 py-3 rounded-2xl border-2 border-slate-200 focus:border-[#005581] font-bold text-sm outline-none bg-slate-50 focus:bg-white cursor-pointer"
                     >
-                      <option value="u-dentist1">دکتر کاویانی (جراح و دندان‌پزشک معالج)</option>
-                      <option value="u-dentist2">دکتر شریفی (متخصص ترمیم، زیبایی و عصب‌کشی)</option>
+                      {availableDentists.map((doc) => (
+                        <option key={doc.id} value={doc.id}>
+                          {doc.name} {doc.specialty ? `(${doc.specialty})` : ''}
+                        </option>
+                      ))}
                     </select>
                   </div>
 
@@ -327,7 +363,7 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
                       required
                       value={visitReason}
                       onChange={(e) => setVisitReason(e.target.value)}
-                      placeholder="مثلاً معاینه دوره‌ای، عصب‌کشی دندان ۶، جرم‌گیری یا روکش"
+                      placeholder="مثلاً معاینه دوره‌ای، عصب‌کشی دندان ۶، جرم‌گیری، پرکردن یا روکش"
                       className="w-full px-4 py-3 rounded-2xl border-2 border-slate-200 focus:border-[#005581] text-xs font-bold outline-none bg-slate-50 focus:bg-white transition"
                     />
                   </div>
@@ -377,7 +413,7 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
             {step === 'calendar_select' && (
               <div className="space-y-4 text-xs dir-rtl">
                 <div className="text-center font-black text-slate-800 text-sm">
-                  انتخاب زمان نوبت
+                  انتخاب زمان نوبت برای {dentistName}
                 </div>
 
                 {/* Top Option 1: Fastest Available Slot */}
@@ -569,44 +605,55 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
                   </div>
                 </div>
 
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">شماره همراه جهت دریافت کد تایید (OTP):</label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <PersianBirthDatePicker
+                      value={patientBirthDate}
+                      onChange={(val) => setPatientBirthDate(val)}
+                      label="تاریخ تولد (شمسی):"
                       required
-                      value={patientPhone}
-                      onChange={(e) => setPatientPhone(e.target.value)}
-                      placeholder="09120000000"
-                      className="flex-1 px-3.5 py-2.5 rounded-xl border-2 border-slate-200 focus:border-[#005581] font-mono text-center text-xs font-bold outline-none bg-slate-50 focus:bg-white"
                     />
-                    {!otpSent ? (
-                      <button
-                        type="button"
-                        onClick={handleSendOtp}
-                        className="px-4 py-2.5 bg-[#005581] hover:bg-[#004266] text-white rounded-xl font-bold text-xs cursor-pointer shadow-xs whitespace-nowrap transition"
-                      >
-                        ارسال کد تایید
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={handleResendOtp}
-                        className="px-4 py-2.5 bg-blue-100 hover:bg-blue-200 text-[#005581] rounded-xl font-bold text-xs cursor-pointer border border-blue-300 whitespace-nowrap transition flex items-center gap-1.5"
-                      >
-                        <span>ارسال مجدد کد</span>
-                        {otpCountdown > 0 && (
-                          <span className="font-mono text-[11px] bg-white px-1.5 py-0.5 rounded-md text-[#005581] font-bold">
-                            ({otpCountdown}s)
-                          </span>
-                        )}
-                      </button>
-                    )}
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">شماره همراه جهت دریافت کد تایید (OTP):</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        required
+                        value={patientPhone}
+                        onChange={(e) => setPatientPhone(e.target.value)}
+                        placeholder="09120000000"
+                        className="flex-1 px-3.5 py-2.5 rounded-xl border-2 border-slate-200 focus:border-[#005581] font-mono text-center text-xs font-bold outline-none bg-slate-50 focus:bg-white"
+                      />
+                      {!otpSent ? (
+                        <button
+                          type="button"
+                          onClick={handleSendOtp}
+                          className="px-4 py-2.5 bg-[#005581] hover:bg-[#004266] text-white rounded-xl font-bold text-xs cursor-pointer shadow-xs whitespace-nowrap transition"
+                        >
+                          ارسال کد تایید
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleResendOtp}
+                          className="px-4 py-2.5 bg-blue-100 hover:bg-blue-200 text-[#005581] rounded-xl font-bold text-xs cursor-pointer border border-blue-300 whitespace-nowrap transition flex items-center gap-1.5"
+                        >
+                          <span>ارسال مجدد کد</span>
+                          {otpCountdown > 0 && (
+                            <span className="font-mono text-[11px] bg-white px-1.5 py-0.5 rounded-md text-[#005581] font-bold">
+                              ({otpCountdown}s)
+                            </span>
+                          )}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
 
                 {otpSent && (
-                  <div className="space-y-2 p-3 bg-blue-50/70 dark:bg-slate-800/80 rounded-2xl border border-blue-200 dark:border-slate-700 animate-fadeIn">
+                  <div className="space-y-2 p-3 bg-blue-50/70 rounded-2xl border border-blue-200 animate-fadeIn">
                     <div className="flex items-center justify-between text-xs text-[#005581] font-bold">
                       <span className="flex items-center gap-1">
                         <CheckCircle2 className="w-4 h-4 text-emerald-600" />
@@ -694,31 +741,31 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
                     className="px-8 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-xs shadow-md transition cursor-pointer flex items-center gap-2"
                   >
                     <CreditCard className="w-4 h-4" />
-                    <span>ورود به درگاه پرداخت شتاب (۵۰,۰۰۰ تومان)</span>
+                    <span>ورود به درگاه پرداخت و انتخاب کارت (۵۰,۰۰۰ تومان)</span>
                   </button>
                 </div>
               </div>
             )}
 
             {/* ========================================================== */}
-            {/* STEP 5: COMPREHENSIVE ONLINE CHECK-IN FORM                 */}
+            {/* STEP 5: COMPREHENSIVE ONLINE CHECK-IN FORM (EMPTY BY DEFAULT) */}
             {/* ========================================================== */}
             {step === 'checkin_form' && (
               <div className="space-y-4 text-xs">
                 <div className="border-b border-slate-200 pb-2">
                   <h4 className="font-black text-slate-900 text-sm flex items-center gap-2">
                     <FileCheck className="w-5 h-5 text-[#005581]" />
-                    <span>فرم چک‌این و تشکیل پرونده آنلاین</span>
+                    <span>فرم چک‌این و تشکیل پرونده آنلاین (اختیاری و قابل تکمیل توسط بیمار)</span>
                   </h4>
                   <p className="text-slate-500 text-[11px] mt-0.5">
-                    جهت تسریع در فرآیند پذیرش و حفظ سلامت بالینی، سوابق پزشکی خود را تکمیل فرمایید.
+                    فیلدهای زیر خالی می‌باشند و می‌توانید سوابق یا حساسیت‌های احتمالی خود را تکمیل کنید یا به صورت حضوری پر نمایید.
                   </p>
                 </div>
 
                 <div className="space-y-4 max-h-[340px] overflow-y-auto pl-1">
                   {/* Pre-existing conditions */}
                   <div className="space-y-2">
-                    <span className="font-bold text-slate-800 block">۱. سوابق بیماری‌های زمینه‌ای:</span>
+                    <span className="font-bold text-slate-800 block">۱. سوابق بیماری‌های زمینه‌ای (انتخاب در صورت وجود):</span>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                       {[
                         'دیابت / قند خون',
@@ -736,7 +783,7 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
                             className={`p-2 rounded-xl border text-[11px] flex items-center gap-2 cursor-pointer transition ${
                               isChecked
                                 ? 'border-[#005581] bg-blue-50 text-[#005581] font-bold'
-                                : 'border-slate-200 text-slate-700'
+                                : 'border-slate-200 text-slate-700 bg-white'
                             }`}
                           >
                             <input
@@ -757,7 +804,7 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
 
                   {/* Allergies */}
                   <div className="space-y-2">
-                    <span className="font-bold text-slate-800 block">۲. حساسیت‌های دارویی و بی‌حسی:</span>
+                    <span className="font-bold text-slate-800 block">۲. حساسیت‌های دارویی و بی‌حسی (انتخاب در صورت وجود):</span>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                       {['پنی‌سیلین و آنتی‌بیوتیک', 'بی‌حسی موضعی (لیدوکائین)', 'آسپیرین و مسکن‌ها', 'لاتکس'].map((alg) => {
                         const isChecked = checkInAllergies.includes(alg);
@@ -767,7 +814,7 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
                             className={`p-2 rounded-xl border text-[11px] flex items-center gap-2 cursor-pointer transition ${
                               isChecked
                                 ? 'border-rose-500 bg-rose-50 text-rose-700 font-bold'
-                                : 'border-slate-200 text-slate-700'
+                                : 'border-slate-200 text-slate-700 bg-white'
                             }`}
                           >
                             <input
@@ -786,17 +833,45 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Dedicated Textarea for Other Medical Notes / Allergies */}
+                  {/* Medications */}
                   <div>
                     <label className="block font-bold text-slate-800 mb-1">
-                      سایر موارد (توضیحات تکمیلی سوابق پزشکی، جراحی یا حساسیت‌ها):
+                      ۳. داروهای مصرفی فعلی:
+                    </label>
+                    <input
+                      type="text"
+                      value={checkInMedications}
+                      onChange={(e) => setCheckInMedications(e.target.value)}
+                      placeholder="در صورت مصرف داروهای خاص (وارفارین، آسپیرین، کورتون و...) یادداشت کنید..."
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs outline-none bg-slate-50 focus:bg-white"
+                    />
+                  </div>
+
+                  {/* Dedicated Textarea for Other Medical Notes */}
+                  <div>
+                    <label className="block font-bold text-slate-800 mb-1">
+                      ۴. سایر توضیحات بالینی یا پزشکی:
                     </label>
                     <textarea
                       rows={2}
                       value={checkInOtherNotes}
                       onChange={(e) => setCheckInOtherNotes(e.target.value)}
-                      placeholder="در صورت داشتن سابقه بیماری خاص، پیوند عضو، مصرف داروی اعصاب یا سایر توضیحات در این کادر یادداشت کنید..."
+                      placeholder="در صورت داشتن هرگونه سابقه جراحی، آلرژی خاص یا نکته قابل توجه اینجا وارد کنید..."
                       className="w-full p-3 rounded-xl border border-slate-300 text-xs outline-none bg-slate-50 focus:bg-white transition"
+                    />
+                  </div>
+
+                  {/* Emergency Contact */}
+                  <div>
+                    <label className="block font-bold text-slate-800 mb-1">
+                      ۵. شماره تماس اضطراری:
+                    </label>
+                    <input
+                      type="text"
+                      value={checkInEmergencyPhone}
+                      onChange={(e) => setCheckInEmergencyPhone(e.target.value)}
+                      placeholder="مثلاً ۰۹۱۲..."
+                      className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-mono outline-none bg-slate-50 focus:bg-white"
                     />
                   </div>
 
@@ -804,13 +879,14 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                     <div>
                       <label className="block font-bold text-slate-800 mb-1">
-                        بیمه پایه دندان‌پزشکی (اجباری):
+                        بیمه پایه دندان‌پزشکی:
                       </label>
                       <select
                         value={primaryInsurance}
                         onChange={(e) => setPrimaryInsurance(e.target.value)}
                         className="w-full p-2.5 rounded-xl border border-slate-300 bg-white font-bold text-xs outline-none cursor-pointer"
                       >
+                        <option value="">-- انتخاب کنید --</option>
                         <option value="بیمه تامین اجتماعی">بیمه تامین اجتماعی</option>
                         <option value="بیمه سلامت ایران">بیمه سلامت ایران</option>
                         <option value="بیمه نیروهای مسلح">بیمه نیروهای مسلح</option>
@@ -820,15 +896,17 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
 
                     <div>
                       <label className="block font-bold text-slate-800 mb-1">
-                        بیمه تکمیلی درمان (اختیاری):
+                        بیمه تکمیلی درمان:
                       </label>
                       <select
                         value={supplInsurance}
                         onChange={(e) => setSupplInsurance(e.target.value)}
                         className="w-full p-2.5 rounded-xl border border-slate-300 bg-white font-bold text-xs outline-none cursor-pointer"
                       >
-                        <option value="بیمه دانا (اختیاری)">بیمه دانا</option>
+                        <option value="">-- انتخاب کنید --</option>
+                        <option value="بیمه دانا">بیمه دانا</option>
                         <option value="بیمه ایران">بیمه ایران</option>
+                        <option value="بیمه سامان">بیمه سامان</option>
                         <option value="بیمه البرز">بیمه البرز</option>
                         <option value="بیمه آتیه‌سازان حافظ">بیمه آتیه‌سازان حافظ</option>
                         <option value="بیمه آسیا">بیمه آسیا</option>
@@ -845,7 +923,7 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
                     onClick={() => handleFinalizeBooking(true)}
                     className="w-full sm:w-auto px-4 py-2 border border-slate-300 rounded-xl font-bold text-slate-500 hover:text-slate-800 cursor-pointer text-xs"
                   >
-                    انصراف و تکمیل چکاین به صورت حضوری در کلینیک
+                    تکمیل چک‌این به صورت حضوری در کلینیک
                   </button>
 
                   <button
@@ -854,7 +932,7 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
                     className="w-full sm:w-auto px-6 py-2.5 bg-[#005581] hover:bg-[#004266] text-white rounded-xl font-black text-xs transition cursor-pointer flex items-center justify-center gap-1.5"
                   >
                     <CheckCircle2 className="w-4 h-4 text-[#ffd200]" />
-                    <span>ثبت نهایی فرم و تایید نوبت</span>
+                    <span>ثبت نهایی اطلاعات و تایید نوبت</span>
                   </button>
                 </div>
               </div>
@@ -898,13 +976,15 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
         </div>
       </div>
 
-      {/* Simulated Payment Gateway Integration */}
+      {/* Simulated Payment Gateway Integration with Saved Cards support */}
       <SimulatedPaymentGatewayModal
         isOpen={isPaymentGatewayOpen}
         onClose={() => setIsPaymentGatewayOpen(false)}
         onSuccess={handlePaymentSuccess}
         amount={50000}
         description={`پرداخت ویزیت اولیه آنلاین - ${clinicName}`}
+        savedCards={savedCards}
+        onSaveNewCard={onSaveNewCard}
       />
     </>
   );

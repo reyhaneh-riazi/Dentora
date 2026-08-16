@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Patient, Appointment, Invoice, InstallmentPlan, ToothDetail, Claim } from '../../types';
+import { Patient, Appointment, Invoice, InstallmentPlan, ToothDetail, Claim, UserProfile, PatientQuestion, PatientInsuranceDispute, SavedBankCard } from '../../types';
 import { OnlineBookingModal } from '../booking/OnlineBookingModal';
 import { SimulatedPaymentGatewayModal } from '../booking/SimulatedPaymentGatewayModal';
 import { OdontogramChart } from './OdontogramChart';
+import { PersianBirthDatePicker } from '../common/PersianBirthDatePicker';
 import { toPersianDigits, formatPricePersian } from '../../utils/persianDigits';
 import {
   Heart,
@@ -51,6 +52,35 @@ interface PatientPortalProps {
   claims?: Claim[];
   insuranceModuleActive?: boolean;
   isInsuranceContracted?: boolean;
+  users?: UserProfile[];
+  questions?: PatientQuestion[];
+  onAskQuestion?: (data: {
+    patientId: string;
+    patientName: string;
+    patientPhone: string;
+    patientNationalId: string;
+    category: string;
+    question: string;
+    dentistId?: string;
+    dentistName?: string;
+  }) => void;
+  insuranceDisputes?: PatientInsuranceDispute[];
+  onSubmitDispute?: (data: {
+    patientId: string;
+    patientName: string;
+    patientPhone: string;
+    nationalId: string;
+    claimNumber: string;
+    insuranceProvider: string;
+    topic: string;
+    message: string;
+    imageName?: string;
+    imageDesc?: string;
+    claimedAmount: number;
+    deductionAmount: number;
+  }) => void;
+  savedCards?: SavedBankCard[];
+  onSaveNewCard?: (card: SavedBankCard) => void;
   onBookOnline: (
     dentistId: string,
     timeSlot: string,
@@ -85,6 +115,13 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
   claims = [],
   insuranceModuleActive = true,
   isInsuranceContracted = true,
+  users = [],
+  questions = [],
+  onAskQuestion,
+  insuranceDisputes = [],
+  onSubmitDispute,
+  savedCards = [],
+  onSaveNewCard,
   onBookOnline,
   onGrantConsent,
   onRevokeConsent,
@@ -102,10 +139,19 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
   const [teethAgeGroup, setTeethAgeGroup] = useState<'adult' | 'pediatric'>('adult');
   const [selectedToothFdi, setSelectedToothFdi] = useState<number | null>(11);
 
+  // Doctors in Clinic (From users state)
+  const clinicDentists = (users || []).filter((u) => u.role === 'dentist');
+  const availableDentists = clinicDentists.length > 0
+    ? clinicDentists
+    : [
+        { id: 'u-dentist1', name: 'دکتر کاویانی (جراح و متخصص ترمیمی)' },
+        { id: 'u-dentist2', name: 'دکتر شریفی (متخصص عصب‌کشی و اطفال)' },
+      ];
+
   // Online Booking Modal / Flow State
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [bookingStep, setBookingStep] = useState<'doctor_reason' | 'calendar_select' | 'visit_fee' | 'checkin_form' | 'confirmed'>('doctor_reason');
-  const [bookingDentist, setBookingDentist] = useState('u-dentist1');
+  const [bookingDentist, setBookingDentist] = useState(availableDentists[0]?.id || 'u-dentist1');
   const [bookingSlot, setBookingSlot] = useState('۱۰:۳۰');
   const [bookingDate, setBookingDate] = useState('۲۰ مرداد');
   const [bookingReason, setBookingReason] = useState('معاینه دوره‌ای، عصب‌کشی و جرم‌گیری');
@@ -120,14 +166,14 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
   const [lockTimer, setLockTimer] = useState(900);
   const [isTimerActive, setIsTimerActive] = useState(false);
 
-  // Comprehensive Check-in Form State
+  // Comprehensive Check-in Form State (Default empty for patient to fill)
   const [checkInConditions, setCheckInConditions] = useState<string[]>([]);
   const [checkInAllergies, setCheckInAllergies] = useState<string[]>([]);
   const [checkInMedications, setCheckInMedications] = useState('');
   const [checkInIsPregnant, setCheckInIsPregnant] = useState(false);
   const [checkInEmergencyContact, setCheckInEmergencyContact] = useState('');
   const [checkInEmergencyPhone, setCheckInEmergencyPhone] = useState('');
-  const [checkInSupplInsurance, setCheckInSupplInsurance] = useState('بیمه دانا');
+  const [checkInSupplInsurance, setCheckInSupplInsurance] = useState('');
 
   // Online Payment Modal & Loading Delay State
   const [isConnectingPayment, setIsConnectingPayment] = useState(false);
@@ -147,30 +193,21 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
   const totalAvailableQa = FREE_QA_LIMIT + purchasedQaQuota;
   const [showQaPackageModal, setShowQaPackageModal] = useState(false);
 
-  // Categorized Q&A State
-  const [qaList, setQaList] = useState<QAItem[]>([
-    {
-      id: 'qa-1',
-      category: 'مراقبت‌های پس از درمان',
-      question: 'بعد از عصب‌کشی دیروز دندان شماره ۴۶ کمی احساس فشار دارم، چه مسکنی مصرف کنم؟',
-      answer: 'سلام بیمار گرامی. احساس فشار خفیف تا ۷۲ ساعت طبیعی است. می‌توانید هر ۸ ساعت یک عدد کپسول نوافن یا قرص ژلوفن مصرف کنید. در صورت بروز تورم یا درد شدید با مطب تماس بگیرید.',
-      createdAt: '۱۴۰۵/۰۵/۱۰',
-      answeredAt: '۱۴۰۵/۰۵/۱۰',
-      status: 'answered',
-      isClinicalUrgent: false,
-    },
-    {
-      id: 'qa-2',
-      category: 'اقساط',
-      question: 'آیا قسط ماه آینده BNPL نیاز به ارائه چک جدید در مطب دارد؟',
-      answer: 'خیر. اقساط اعتباری BNPL کاملاً خودکار و بی‌نیاز از چک بوده و مستقیماً با اپلیکیشن BNPL کسر می‌گردد.',
-      createdAt: '۱۴۰۵/۰۵/۱۲',
-      answeredAt: '۱۴۰۵/۰۵/۱۲',
-      status: 'answered',
-      isClinicalUrgent: false,
-    },
-  ]);
-  const [newQaCategory, setNewQaCategory] = useState<QAItem['category']>('مراقبت‌های پس از درمان');
+  // Derive patient's questions from props or local fallback
+  const patientQuestionsList = (questions && questions.length > 0)
+    ? questions.filter(
+        (q) =>
+          q.patientId === patient.id ||
+          q.patientNationalId === patient.nationalId ||
+          (q.patientName && q.patientName === patient.fullName)
+      )
+    : [];
+
+  const [localQaList, setLocalQaList] = useState<QAItem[]>([]);
+  const activeQaItems = patientQuestionsList.length > 0 ? patientQuestionsList : localQaList;
+  const remainingQaQuota = Math.max(0, totalAvailableQa - activeQaItems.length);
+
+  const [newQaCategory, setNewQaCategory] = useState<string>('مراقبت‌های پس از درمان');
   const [newQaQuestion, setNewQaQuestion] = useState('');
 
   // Consent Token Form State (According to 6-part specification)
@@ -182,53 +219,33 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
   const [consentSubTab, setConsentSubTab] = useState<'insurance' | 'ai_assistant'>('insurance');
   const [aiConsentGranted, setAiConsentGranted] = useState(true);
 
-  // Insurance Claims List State
-  const [insuranceClaimsList] = useState([
-    {
-      id: 'clm-9021',
-      code: 'CLM-9021',
-      treatmentName: 'عصب‌کشی ۳ کانال و پرکردن دندان ۴۶',
-      insurerName: 'بیمه تکمیلی دانا',
-      date: '۱۴۰۵/۰۵/۰۵',
-      status: 'rejected' as const,
-      statusLabel: 'رد شده توسط ارزیاب بیمه',
-      reason: 'عدم ارائه/عدم انطباق مدرک رادیوگرافی OPG اولیه',
-      amount: 350000,
-      deductedAmount: 350000,
-    },
-    {
-      id: 'clm-8842',
-      code: 'CLM-8842',
-      treatmentName: 'ترمیم کامپوزیت خلفی دندان ۳۶',
-      insurerName: 'بیمه تکمیلی آرمان',
-      date: '۱۴۰۵/۰۴/۲۸',
-      status: 'deducted' as const,
-      statusLabel: 'کسورات غیرمجاز فرانشیز',
-      reason: 'کسر سقف تعهد ریالی ارزیاب بیمه تکمیلی',
-      amount: 450000,
-      deductedAmount: 120000,
-    },
-    {
-      id: 'clm-7105',
-      code: 'CLM-7105',
-      treatmentName: 'جرم‌گیری و بروساژ کامل دو فک',
-      insurerName: 'بیمه سلامت ایرانیان',
-      date: '۱۴۰۵/۰۴/۱۰',
-      status: 'approved' as const,
-      statusLabel: 'تأییدشده و تسویه کامل',
-      reason: 'سهم بیمه مستقیماً به حساب کلینیک واریز شد',
-      amount: 200000,
-      deductedAmount: 0,
-    },
-  ]);
+  // Derive Insurance Claims from props (filtered for this patient)
+  const patientClaimsList = (claims || []).filter(
+    (c) =>
+      c.patientId === patient.id ||
+      c.nationalId === patient.nationalId ||
+      c.patientNationalId === patient.nationalId ||
+      (c.patientName && c.patientName === patient.fullName)
+  );
+
+  // Derive Insurance Disputes from props (filtered for this patient)
+  const patientDisputesList = (insuranceDisputes || []).filter(
+    (d) =>
+      d.patientId === patient.id ||
+      d.nationalId === patient.nationalId ||
+      (d.patientName && d.patientName === patient.fullName)
+  );
 
   // Insurance Objections State
-  const [selectedClaimForObjection, setSelectedClaimForObjection] = useState<string | null>('CLM-9021');
-  const [objectionTopic, setObjectionTopic] = useState('اعتراض به رد شده توسط ارزیاب بیمه (CLM-9021)');
+  const [showStandaloneDisputeModal, setShowStandaloneDisputeModal] = useState(false);
+  const [selectedClaimForObjection, setSelectedClaimForObjection] = useState<string | null>(null);
+  const [objectionTopic, setObjectionTopic] = useState('اعتراض به رد شدن هزینه توسط بیمه / عدم قرارداد کلینیک');
   const [objectionMessage, setObjectionMessage] = useState('');
+  const [objectionClaimedAmount, setObjectionClaimedAmount] = useState<number>(0);
+  const [objectionDeductionAmount, setObjectionDeductionAmount] = useState<number>(0);
   const [objectionImageName, setObjectionImageName] = useState<string | null>(null);
   const [objectionImageDesc, setObjectionImageDesc] = useState('');
-  const [objectionsList, setObjectionsList] = useState<Array<{
+  const [localObjectionsList, setLocalObjectionsList] = useState<Array<{
     id: string;
     trackingCode: string;
     topic: string;
@@ -236,33 +253,42 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
     imageName?: string;
     imageDesc?: string;
     createdAt: string;
-    status: 'under_review' | 'approved' | 'need_docs' | 'rejected';
+    status: 'under_review' | 'approved_pay' | 'need_docs' | 'rejected';
     responseMessage?: string;
-  }>>([
-    {
-      id: 'obj-1',
-      trackingCode: 'CLM-9021',
-      topic: 'اعتراض به عدم تایید مدرک رادیوگرافی OPG دندان ۴۶',
-      message: 'مبلغ ۳۵۰,۰۰۰ تومان بابت پریاپیکال و ریشه توسط ارزیاب کسر گردیده است. تصویر گرافی واضح مجدداً پیوست گردید.',
-      imageName: 'radiography_opg_46.jpg',
-      imageDesc: 'تصویر واضح گرافی پریاپیکال دندان ۴۶',
-      createdAt: '۱۴۰۵/۰۵/۰۸',
-      status: 'under_review',
-      responseMessage: 'پیام شما در واحد بیمه کلینیک دریافت گردید و جهت بررسی مجدد مدارک به کمیسیون بیمه ارسال شد.',
-    },
-  ]);
+  }>>([]);
 
   // Profile Form & Details State
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [editFullName, setEditFullName] = useState(patient.fullName);
   const [editPhone, setEditPhone] = useState(patient.phone);
   const [editNationalId, setEditNationalId] = useState(patient.nationalId);
-  const [editBirthDate, setEditBirthDate] = useState('۱۳۶۵/۰۵/۱۰');
-  const [editAddress, setEditAddress] = useState('تهران، خیابان ولیعصر، بالاتر از ظفر، پلاک ۱۲۴');
-  const [insuranceBaseName, setInsuranceBaseName] = useState('بیمه سلامت ایرانیان');
-  const [insuranceBaseExpiry, setInsuranceBaseExpiry] = useState('تا سال ۱۴۰۵');
-  const [insuranceSuppName, setInsuranceSuppName] = useState('بیمه تکمیلی آرمان');
-  const [insuranceSuppExpiry, setInsuranceSuppExpiry] = useState('تا ۲۰ اردیبهشت ۱۴۰۵');
+  const [editBirthDate, setEditBirthDate] = useState(patient.birthDate || '۱۳۶۵/۰۵/۱۰');
+  const [editAddress, setEditAddress] = useState(patient.address || '');
+  const [insuranceBaseName, setInsuranceBaseName] = useState(patient.primaryInsurance?.provider || 'بیمه تامین اجتماعی');
+  const [insuranceBaseExpiry, setInsuranceBaseExpiry] = useState('تا پایان سال ۱۴۰۵');
+  const [insuranceSuppName, setInsuranceSuppName] = useState(patient.supplementaryInsurance?.provider || (patient.supplementaryInsurance?.active ? 'بیمه تکمیلی سامان' : 'فاقد پوشش تکمیلی'));
+  const [insuranceSuppExpiry, setInsuranceSuppExpiry] = useState(patient.supplementaryInsurance?.active ? 'تا ۲۰ اردیبهشت ۱۴۰۵' : 'غیرفعال');
+
+  // Keep Profile state synced with patient prop changes
+  useEffect(() => {
+    setEditFullName(patient.fullName);
+    setEditPhone(patient.phone);
+    setEditNationalId(patient.nationalId);
+    if (patient.birthDate) {
+      setEditBirthDate(patient.birthDate);
+    }
+    if (patient.address !== undefined) {
+      setEditAddress(patient.address);
+    }
+    if (patient.primaryInsurance?.provider) {
+      setInsuranceBaseName(patient.primaryInsurance.provider);
+    }
+    if (patient.supplementaryInsurance?.provider) {
+      setInsuranceSuppName(patient.supplementaryInsurance.provider);
+    } else if (!patient.supplementaryInsurance?.active) {
+      setInsuranceSuppName('فاقد پوشش تکمیلی');
+    }
+  }, [patient]);
 
   // Submit Objection Handler
   const handleAddObjection = (e: React.FormEvent) => {
@@ -281,10 +307,28 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
       responseMessage: 'پیام اعتراض شما ثبت گردید و به کارشناسان بیمه کلینیک ارجاع داده شد.',
     };
 
-    setObjectionsList([newObj, ...objectionsList]);
+    if (onSubmitDispute) {
+      onSubmitDispute({
+        patientId: patient.id,
+        patientName: patient.fullName,
+        patientPhone: patient.phone,
+        nationalId: patient.nationalId,
+        claimNumber: selectedClaimForObjection || `CLM-${Math.floor(1000 + Math.random() * 9000)}`,
+        insuranceProvider: patient.supplementaryInsurance?.provider || patient.primaryInsurance?.provider || 'بیمه تکمیلی',
+        topic: objectionTopic,
+        message: objectionMessage,
+        imageName: objectionImageName || undefined,
+        imageDesc: objectionImageDesc || undefined,
+        claimedAmount: objectionClaimedAmount || 0,
+        deductionAmount: objectionDeductionAmount || 0,
+      });
+    }
+
+    setLocalObjectionsList([newObj, ...localObjectionsList]);
     setObjectionMessage('');
     setObjectionImageName(null);
     setObjectionImageDesc('');
+    setSelectedClaimForObjection(null);
     alert('اعتراض بیمه‌ای شما با موفقیت ثبت گردید و به واحد بیمه کلینیک ارسال شد. کد پیگیری: ' + newObj.trackingCode);
   };
 
@@ -388,7 +432,7 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
     if (!newQaQuestion.trim()) return;
 
     // Check Question Quota
-    if (qaList.length >= totalAvailableQa) {
+    if (activeQaItems.length >= totalAvailableQa) {
       setShowQaPackageModal(true);
       return;
     }
@@ -397,7 +441,7 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
 
     const newQA: QAItem = {
       id: `qa-${Date.now()}`,
-      category: newQaCategory,
+      category: newQaCategory as any,
       question: newQaQuestion,
       createdAt: new Date().toLocaleDateString('fa-IR'),
       status: 'referred_to_doctor',
@@ -406,7 +450,19 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
       answeredAt: undefined,
     };
 
-    setQaList([newQA, ...qaList]);
+    if (onAskQuestion) {
+      onAskQuestion({
+        patientId: patient.id,
+        patientName: patient.fullName,
+        patientPhone: patient.phone,
+        patientNationalId: patient.nationalId,
+        category: newQaCategory,
+        question: newQaQuestion,
+        isClinicalUrgent: isClinical,
+      });
+    }
+
+    setLocalQaList([newQA, ...localQaList]);
     setNewQaQuestion('');
   };
 
@@ -436,9 +492,12 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
         fullName: editFullName,
         phone: editPhone,
         nationalId: editNationalId,
+        birthDate: editBirthDate,
+        address: editAddress,
       });
     }
-    alert('اطلاعات شخصی با موفقیت بروزرسانی گردید.');
+    setIsEditingProfile(false);
+    alert('اطلاعات شخصی و پرونده با موفقیت ذخیره گردید.');
   };
 
   // FDI Tooth Lists
@@ -451,9 +510,139 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
     ? patient.teethMap[selectedToothFdi]
     : undefined;
 
-  // Available slots array
-  const morningSlots = ['۱۰:۳۰', '۱۰:۴۵', '۱۱:۰۰', '۱۱:۱۵', '۱۱:۳۰', '۱۱:۴۵'];
-  const eveningSlots = ['۱۶:۰۰', '۱۶:۳۰', '۱۷:۰۰', '۱۷:۳۰', '۱۸:۰۰', '۱۸:۳۰'];
+  // Filtered Financial items for current patient
+  const patientInvoices = invoices.filter(
+    (inv) =>
+      inv.patientId === patient.id ||
+      inv.patientNationalId === patient.nationalId ||
+      (inv.patientName && inv.patientName === patient.fullName)
+  );
+
+  const patientInstallments = installments.filter(
+    (inst) =>
+      inst.patientId === patient.id ||
+      inst.patientNationalId === patient.nationalId ||
+      (inst.patientName && inst.patientName === patient.fullName)
+  );
+
+  // Q&A list to render
+  const combinedQaList = activeQaItems;
+
+  // Combined disputes list
+  const combinedDisputesList = [
+    ...patientDisputesList.map((d) => ({
+      id: d.id,
+      trackingCode: d.claimNumber || d.id,
+      topic: d.topic,
+      message: d.message,
+      imageName: d.imageName,
+      imageDesc: d.imageDesc,
+      claimedAmount: d.claimedAmount,
+      deductionAmount: d.deductionAmount,
+      createdAt: d.createdAt,
+      status: d.status,
+      responseMessage: d.responseMessage,
+    })),
+    ...localObjectionsList,
+  ];
+
+  const fallbackClaims = [
+    {
+      id: 'clm-9021',
+      code: 'CLM-9021',
+      claimNumber: 'CLM-9021',
+      treatmentName: 'عصب‌کشی ۳ کانال و پرکردن دندان ۴۶',
+      insurerName: patient.supplementaryInsurance?.provider || 'بیمه تکمیلی دانا',
+      insuranceProvider: patient.supplementaryInsurance?.provider || 'بیمه تکمیلی دانا',
+      date: '۱۴۰۵/۰۵/۰۵',
+      status: 'rejected' as const,
+      statusLabel: 'رد شده توسط ارزیاب بیمه',
+      reason: 'عدم ارائه/عدم انطباق مدرک رادیوگرافی OPG اولیه',
+      amount: 350000,
+      deductedAmount: 350000,
+    },
+    {
+      id: 'clm-8842',
+      code: 'CLM-8842',
+      claimNumber: 'CLM-8842',
+      treatmentName: 'ترمیم کامپوزیت خلفی دندان ۳۶',
+      insurerName: patient.supplementaryInsurance?.provider || 'بیمه تکمیلی آرمان',
+      insuranceProvider: patient.supplementaryInsurance?.provider || 'بیمه تکمیلی آرمان',
+      date: '۱۴۰۵/۰۴/۲۸',
+      status: 'deducted' as const,
+      statusLabel: 'کسورات غیرمجاز فرانشیز',
+      reason: 'کسر سقف تعهد ریالی ارزیاب بیمه تکمیلی',
+      amount: 450000,
+      deductedAmount: 120000,
+    },
+    {
+      id: 'clm-7105',
+      code: 'CLM-7105',
+      claimNumber: 'CLM-7105',
+      treatmentName: 'جرم‌گیری و بروساژ کامل دو فک',
+      insurerName: patient.primaryInsurance?.provider || 'بیمه سلامت ایرانیان',
+      insuranceProvider: patient.primaryInsurance?.provider || 'بیمه سلامت ایرانیان',
+      date: '۱۴۰۵/۰۴/۱۰',
+      status: 'approved' as const,
+      statusLabel: 'تأییدشده و تسویه کامل',
+      reason: 'سهم بیمه مستقیماً به حساب کلینیک واریز شد',
+      amount: 200000,
+      deductedAmount: 0,
+    },
+  ];
+
+  const displayClaims = patientClaimsList.length > 0
+    ? patientClaimsList.map((c) => ({
+        id: c.id,
+        code: c.claimNumber || c.id,
+        claimNumber: c.claimNumber || c.id,
+        treatmentName: c.treatmentName || 'درمان دندان‌پزشکی',
+        insurerName: c.insuranceProvider || c.supplementaryInsurerName || c.primaryInsurerName || 'بیمه طرف قرارداد',
+        date: c.dateOfService || c.serviceDate || '۱۴۰۵/۰۵/۰۱',
+        status: (c.status === 'rejected' ? 'rejected' : c.status === 'approved' ? 'approved' : 'deducted') as 'rejected' | 'deducted' | 'approved',
+        statusLabel: c.status === 'rejected' ? 'رد شده توسط ارزیاب بیمه' : c.status === 'approved' ? 'تأییدشده و تسویه کامل' : 'کسورات غیرمجاز فرانشیز',
+        reason: c.deductionReason || c.narrativeText || 'بررسی شده در سامانه رسیدگی اسناد الکترونیک',
+        amount: c.claimedAmount || c.totalClaimedAmount || 0,
+        deductedAmount: c.deductionAmount || 0,
+      }))
+    : fallbackClaims;
+
+  // Requirement: Insurance Claims & Disputes tab is only active/visible when clinic is NOT contracted with insurance, but Dentora Insurance module is active.
+  const isInsuranceClaimsTabVisible = insuranceModuleActive && !isInsuranceContracted;
+
+  // Auto-switch away from insurance_claims if condition is no longer met
+  useEffect(() => {
+    if (activeTab === 'insurance_claims' && !isInsuranceClaimsTabVisible) {
+      setActiveTab('dashboard');
+    }
+  }, [activeTab, isInsuranceClaimsTabVisible]);
+
+  // Dynamic slot calculation: Show empty/available timeslots determined by doctor & receptionist schedule
+  const defaultMorningMasterSlots = ['۰۹:۰۰', '۰۹:۳۰', '۱۰:۰۰', '۱۰:۳۰', '۱۱:۰۰', '۱۱:۳۰', '۱۲:۰۰'];
+  const defaultEveningMasterSlots = ['۱۶:۰۰', '۱۶:۳۰', '۱۷:۰۰', '۱۷:۳۰', '۱۸:۰۰', '۱۸:۳۰', '۱۹:۰۰', '۱۹:۳۰'];
+
+  const selectedDentistObj = availableDentists.find((d) => d.id === bookingDentist) || availableDentists[0];
+  const selectedDentistName = selectedDentistObj?.name || '';
+
+  // Filter out slots that are already booked for this doctor on this day
+  const bookedSlotsOnDay = (appointments || [])
+    .filter((apt) => {
+      if (apt.status === 'cancelled') return false;
+      const isDocMatch =
+        apt.dentistId === bookingDentist ||
+        (selectedDentistName && apt.dentistName && selectedDentistName.includes(apt.dentistName)) ||
+        (apt.dentistName && selectedDentistName && apt.dentistName.includes(selectedDentistName));
+      return isDocMatch;
+    })
+    .map((apt) => apt.time);
+
+  const availableMorningSlots = defaultMorningMasterSlots.filter((slot) => !bookedSlotsOnDay.includes(slot));
+  const availableEveningSlots = defaultEveningMasterSlots.filter((slot) => !bookedSlotsOnDay.includes(slot));
+
+  const morningSlots = availableMorningSlots.length > 0 ? availableMorningSlots : ['۰۹:۳۰', '۱۰:۳۰', '۱۱:۳۰'];
+  const eveningSlots = availableEveningSlots.length > 0 ? availableEveningSlots : ['۱۶:۳۰', '۱۷:۳۰', '۱۸:۳۰'];
+
+  const fastestAvailableSlot = morningSlots[0] || eveningSlots[0] || '۱۰:۳۰';
 
   const daysList = [
     { title: 'امروز', dateStr: '۲۰ مرداد' },
@@ -579,7 +768,7 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
             <span>پورتال پرسش و پاسخ تخصصی</span>
           </button>
 
-          {insuranceModuleActive && (
+          {isInsuranceClaimsTabVisible && (
             <button
               onClick={() => setActiveTab('insurance_claims')}
               className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-xs font-bold transition cursor-pointer ${
@@ -857,83 +1046,95 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
                   <span>صورت‌حساب‌ها و فاکتورهای درمان (تفکیک چندسهمی)</span>
                 </h3>
 
-                <div className="space-y-3">
-                  {invoices.map((inv) => {
-                    const patientNet = inv.totalAmount - inv.baseInsuranceCovered - inv.supplInsuranceCovered;
-                    const isPaid = inv.status === 'paid';
+                {patientInvoices.length === 0 ? (
+                  <div className="p-8 text-center bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 space-y-2">
+                    <Receipt className="w-10 h-10 mx-auto text-slate-300 dark:text-slate-600" />
+                    <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                      هیچ بدهی یا صورت‌حساب درمانی ثبت‌نشده است.
+                    </p>
+                    <p className="text-[11px] text-slate-400 max-w-md mx-auto leading-relaxed">
+                      پس از حضور در کلینیک، انجام اقدامات درمانی توسط دندان‌پزشک و ارسال گزارش به پذیرش، صورت‌حساب مربوط به سهم شما در این بخش صادر و امکان پرداخت آنلاین فعال خواهد شد.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {patientInvoices.map((inv) => {
+                      const patientNet = inv.totalAmount - inv.baseInsuranceCovered - inv.supplInsuranceCovered;
+                      const isPaid = inv.status === 'paid';
 
-                    return (
-                      <div
-                        key={inv.id}
-                        className={`p-4 rounded-2xl border text-xs space-y-3 transition ${
-                          isPaid
-                            ? 'border-emerald-200 bg-emerald-50/20 dark:bg-emerald-950/20'
-                            : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs'
-                        }`}
-                      >
-                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
-                          <div>
-                            <strong className="text-slate-900 dark:text-slate-100 text-sm block">
-                              فاکتور شماره {inv.id}
-                            </strong>
-                            <span className="text-slate-500 text-[11px]">
-                              پزشک: {inv.dentistName} | تاریخ صادرشده: {inv.date}
-                            </span>
-                          </div>
+                      return (
+                        <div
+                          key={inv.id}
+                          className={`p-4 rounded-2xl border text-xs space-y-3 transition ${
+                            isPaid
+                              ? 'border-emerald-200 bg-emerald-50/20 dark:bg-emerald-950/20'
+                              : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs'
+                          }`}
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
+                            <div>
+                              <strong className="text-slate-900 dark:text-slate-100 text-sm block">
+                                فاکتور شماره {inv.id}
+                              </strong>
+                              <span className="text-slate-500 text-[11px]">
+                                پزشک: {inv.dentistName} | تاریخ صادرشده: {inv.date}
+                              </span>
+                            </div>
 
-                          <div className="flex items-center gap-2">
-                            <span
-                              className={`px-3 py-1 rounded-full text-xs font-black ${
-                                isPaid ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'
-                              }`}
-                            >
-                              {isPaid ? (
-                                <span className="inline-flex items-center gap-1">
-                                  <Check className="w-3.5 h-3.5" /> تسویه‌شده آنلاین
-                                </span>
-                              ) : (
-                                'پرداخت‌نشده (بدهکار)'
-                              )}
-                            </span>
-
-                            {!isPaid && (
-                              <button
-                                onClick={() =>
-                                  handleInitiatePayment({
-                                    type: 'invoice',
-                                    id: inv.id,
-                                    title: `فاکتور ${inv.id}`,
-                                    amount: patientNet,
-                                  })
-                                }
-                                className="px-4 py-2 bg-[#005581] hover:bg-[#004266] text-white rounded-xl font-bold text-xs shadow transition cursor-pointer flex items-center gap-1.5"
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`px-3 py-1 rounded-full text-xs font-black ${
+                                  isPaid ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'
+                                }`}
                               >
-                                <CreditCard className="w-4 h-4" />
-                                <span>پرداخت آنلاین ({patientNet.toLocaleString()} تومان)</span>
-                              </button>
-                            )}
-                          </div>
-                        </div>
+                                {isPaid ? (
+                                  <span className="inline-flex items-center gap-1">
+                                    <Check className="w-3.5 h-3.5" /> تسویه‌شده آنلاین
+                                  </span>
+                                ) : (
+                                  'پرداخت‌نشده (بدهکار)'
+                                )}
+                              </span>
 
-                        {/* Multi-Share Financial Breakdown */}
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-slate-700 text-[11px]">
-                          <div>
-                            مبلغ کل فاکتور: <strong className="font-mono text-slate-800 dark:text-slate-200">{inv.totalAmount.toLocaleString()} تومان</strong>
+                              {!isPaid && (
+                                <button
+                                  onClick={() =>
+                                    handleInitiatePayment({
+                                      type: 'invoice',
+                                      id: inv.id,
+                                      title: `فاکتور ${inv.id}`,
+                                      amount: patientNet,
+                                    })
+                                  }
+                                  className="px-4 py-2 bg-[#005581] hover:bg-[#004266] text-white rounded-xl font-bold text-xs shadow transition cursor-pointer flex items-center gap-1.5"
+                                >
+                                  <CreditCard className="w-4 h-4" />
+                                  <span>پرداخت آنلاین ({patientNet.toLocaleString()} تومان)</span>
+                                </button>
+                              )}
+                            </div>
                           </div>
-                          <div>
-                            سهم بیمه پایه: <strong className="font-mono text-cyan-600">{inv.baseInsuranceCovered.toLocaleString()} تومان</strong>
-                          </div>
-                          <div>
-                            سهم بیمه تکمیلی: <strong className="font-mono text-[#005581]">{inv.supplInsuranceCovered.toLocaleString()} تومان</strong>
-                          </div>
-                          <div>
-                            خالص سهم بیمار: <strong className="font-mono text-rose-600 font-extrabold">{patientNet.toLocaleString()} تومان</strong>
+
+                          {/* Multi-Share Financial Breakdown */}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-slate-700 text-[11px]">
+                            <div>
+                              مبلغ کل فاکتور: <strong className="font-mono text-slate-800 dark:text-slate-200">{inv.totalAmount.toLocaleString()} تومان</strong>
+                            </div>
+                            <div>
+                              سهم بیمه پایه: <strong className="font-mono text-cyan-600">{inv.baseInsuranceCovered.toLocaleString()} تومان</strong>
+                            </div>
+                            <div>
+                              سهم بیمه تکمیلی: <strong className="font-mono text-[#005581]">{inv.supplInsuranceCovered.toLocaleString()} تومان</strong>
+                            </div>
+                            <div>
+                              خالص سهم بیمار: <strong className="font-mono text-rose-600 font-extrabold">{patientNet.toLocaleString()} تومان</strong>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* Installments & BNPL Section */}
@@ -943,8 +1144,13 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
                   <span>پلان اقساط و تسهیلات BNPL (پرداخت به ترتیب الزامی است)</span>
                 </h3>
 
-                <div className="space-y-4">
-                  {installments.map((plan) => (
+                {patientInstallments.length === 0 ? (
+                  <div className="p-6 text-center text-slate-400 text-xs bg-slate-50 dark:bg-slate-800/30 rounded-2xl">
+                    هیچ طرح اقساط فعال یا بدهی تقسیط‌شده‌ای برای پرونده شما ثبت نشده است.
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {patientInstallments.map((plan) => (
                     <div
                       key={plan.id}
                       className={`p-4 rounded-2xl border space-y-3 ${
@@ -1052,9 +1258,10 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
                     </div>
                   ))}
                 </div>
-              </div>
+              )}
             </div>
-          )}
+          </div>
+        )}
 
           {/* ========================================================== */}
           {/* TAB 4: CATEGORIZED Q&A PORTAL                               */}
@@ -1082,8 +1289,8 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
                       سهمیه مشاوره تخصصی آنلاین شما
                     </span>
                     <span className="text-slate-600 dark:text-slate-300 text-[11px]">
-                      {qaList.length < totalAvailableQa
-                        ? `${totalAvailableQa - qaList.length} سوال از کل سهمیه ${totalAvailableQa} عددی شما باقی مانده است.`
+                      {activeQaItems.length < totalAvailableQa
+                        ? `${totalAvailableQa - activeQaItems.length} سوال از کل سهمیه ${totalAvailableQa} عددی شما باقی مانده است.`
                         : 'سهمیه سوالات رایگان شما به پایان رسیده است.'}
                     </span>
                   </div>
@@ -1147,7 +1354,7 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
               {/* QA History List */}
               <div className="space-y-3">
                 <span className="text-xs font-black text-slate-700 dark:text-slate-300 block">پرسش‌های قبلی شما:</span>
-                {qaList.map((item) => (
+                {activeQaItems.map((item) => (
                   <div
                     key={item.id}
                     className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-2 text-xs"
@@ -1192,7 +1399,7 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
           {/* ========================================================== */}
           {/* TAB 5: INSURANCE CLAIMS & DISPUTES                          */}
           {/* ========================================================== */}
-          {activeTab === 'insurance_claims' && (
+          {isInsuranceClaimsTabVisible && activeTab === 'insurance_claims' && (
             <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 shadow-xs space-y-6">
               <div className="border-b border-slate-200 dark:border-slate-800 pb-3">
                 <h3 className="font-black text-slate-900 dark:text-slate-100 text-base flex items-center gap-2">
@@ -1239,7 +1446,7 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
                 </h4>
 
                 <div className="space-y-4">
-                  {insuranceClaimsList.map((claim) => {
+                  {displayClaims.map((claim) => {
                     const isFormOpen = selectedClaimForObjection === claim.code;
                     return (
                       <div
@@ -1422,13 +1629,13 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
                   <span>بخش پیگیری و تاریخچه اعتراضات ثبت‌شده</span>
                 </h4>
 
-                {objectionsList.length === 0 ? (
+                {combinedDisputesList.length === 0 ? (
                   <div className="text-xs text-slate-400 py-4 text-center">
                     هیچ پیام اعتراضی ثبت نشده است.
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {objectionsList.map((obj) => (
+                    {combinedDisputesList.map((obj) => (
                       <div
                         key={obj.id}
                         className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs space-y-3 shadow-xs"
@@ -1824,7 +2031,11 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
 
                     <div className="flex items-center justify-between pt-2">
                       <span className="text-slate-500 font-bold">آدرس منزل:</span>
-                      <span className="text-slate-900 dark:text-slate-100 font-bold text-left">{editAddress}</span>
+                      {editAddress ? (
+                        <span className="text-slate-900 dark:text-slate-100 font-bold text-left">{editAddress}</span>
+                      ) : (
+                        <span className="text-slate-400 dark:text-slate-500 italic text-left">ثبت نشده (جهت ثبت دکمه ویرایش را بزنید)</span>
+                      )}
                     </div>
                   </div>
                 ) : (
@@ -1866,15 +2077,11 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
                       />
                     </div>
 
-                    <div>
-                      <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">تاریخ تولد:</label>
-                      <input
-                        type="text"
-                        value={editBirthDate}
-                        onChange={(e) => setEditBirthDate(e.target.value)}
-                        className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-mono outline-none focus:border-[#005581]"
-                      />
-                    </div>
+                    <PersianBirthDatePicker
+                      value={editBirthDate}
+                      onChange={(val) => setEditBirthDate(val)}
+                      label="تاریخ تولد:"
+                    />
 
                     <div>
                       <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">آدرس منزل:</label>
@@ -1992,11 +2199,18 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
                       </label>
                       <select
                         value={bookingDentist}
-                        onChange={(e) => setBookingDentist(e.target.value)}
+                        onChange={(e) => {
+                          setBookingDentist(e.target.value);
+                          const doc = availableDentists.find((d) => d.id === e.target.value);
+                          if (doc) setBookingReason(`ویزیت و درمان توسط ${doc.name}`);
+                        }}
                         className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs outline-none focus:border-[#005581]"
                       >
-                        <option value="u-dentist1">دکتر کاویانی (جراح و متخصص ترمیمی)</option>
-                        <option value="u-dentist2">دکتر شریفی (متخصص عصب‌کشی و اطفال)</option>
+                        {availableDentists.map((d) => (
+                          <option key={d.id} value={d.id}>
+                            {d.name} {('specialty' in d && d.specialty) ? `(${d.specialty})` : ''}
+                          </option>
+                        ))}
                       </select>
                     </div>
 
@@ -2048,7 +2262,11 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
 
                   {/* Radio Box 1: Fastest Available Slot */}
                   <div
-                    onClick={() => setSelectionType('fastest')}
+                    onClick={() => {
+                      setSelectionType('fastest');
+                      setBookingSlot(fastestAvailableSlot);
+                      setSelectedDay('امروز ۲۰ مرداد');
+                    }}
                     className={`p-4 rounded-2xl border transition cursor-pointer flex items-center justify-between ${
                       selectionType === 'fastest'
                         ? 'border-blue-500 bg-blue-50/40 dark:bg-slate-800/80 ring-2 ring-blue-400'
@@ -2058,7 +2276,7 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
                     <div>
                       <span className="text-slate-500 text-[11px] block">زودترین زمان نوبت خالی:</span>
                       <strong className="text-slate-900 dark:text-slate-100 font-bold text-xs">
-                        امروز (سه‌شنبه) - ساعت ۱۰:۳۰
+                        امروز (سه‌شنبه) - ساعت {fastestAvailableSlot}
                       </strong>
                     </div>
                     <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${

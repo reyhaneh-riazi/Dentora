@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Appointment, Patient, WaitlistEntry, ToothDetail, Claim, ClaimStatus, GreenLaneStatus, DoctorSubmission, DoctorRequestReminder } from '../../types';
 import { Odontogram } from '../dentist/Odontogram';
 import { ImageXrayViewer } from '../dentist/ImageXrayViewer';
+import { InsuranceDocsWorkspace } from './InsuranceDocsWorkspace';
 import {
   Search,
   Plus,
@@ -73,6 +74,9 @@ interface AppointmentsViewProps {
   hasAccountantRole?: boolean;
   onToggleHasAccountantRole?: () => void;
   insuranceModuleActive?: boolean;
+  onToggleInsuranceModule?: () => void;
+  isInsuranceContracted?: boolean;
+  onToggleInsuranceContracted?: () => void;
   onSubmitAppeal?: (claimId: string, appealText: string) => void;
   onSendClaimToInsurance?: (claimId: string) => void;
   doctorSubmissions?: DoctorSubmission[];
@@ -198,6 +202,9 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
   hasAccountantRole = true,
   onToggleHasAccountantRole,
   insuranceModuleActive = true,
+  onToggleInsuranceModule,
+  isInsuranceContracted = true,
+  onToggleInsuranceContracted,
   onSubmitAppeal,
   onSendClaimToInsurance,
   doctorSubmissions: propsDoctorSubmissions,
@@ -327,6 +334,7 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
   const [bookingSlotCount, setBookingSlotCount] = useState<number>(1);
 
   // Raw Patient File Creation Form State
+  const [targetClaimIdForReview, setTargetClaimIdForReview] = useState<string | null>(null);
   const [rawFullName, setRawFullName] = useState('');
   const [rawNationalId, setRawNationalId] = useState('');
   const [rawPhone, setRawPhone] = useState('');
@@ -1141,22 +1149,24 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
               </button>
             )}
 
-            <button
-              onClick={() => setActiveTab('insurance_inquiry')}
-              className={`w-full text-right p-3 rounded-xl font-bold text-xs transition flex items-center justify-between cursor-pointer ${
-                activeTab === 'insurance_inquiry'
-                  ? 'bg-[#005581] text-white shadow-md'
-                  : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <ShieldCheck className={`w-4 h-4 ${activeTab === 'insurance_inquiry' ? 'text-[#ffd200]' : 'text-[#005581]'}`} />
-                <span>استعلام آنلاین استحقاق بیمه</span>
-              </div>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-100 text-[#005581] font-bold">
-                آنلاین
-              </span>
-            </button>
+            {insuranceModuleActive && (
+              <button
+                onClick={() => setActiveTab('insurance_inquiry')}
+                className={`w-full text-right p-3 rounded-xl font-bold text-xs transition flex items-center justify-between cursor-pointer ${
+                  activeTab === 'insurance_inquiry'
+                    ? 'bg-[#005581] text-white shadow-md'
+                    : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <ShieldCheck className={`w-4 h-4 ${activeTab === 'insurance_inquiry' ? 'text-[#ffd200]' : 'text-[#005581]'}`} />
+                  <span>استعلام آنلاین استحقاق بیمه</span>
+                </div>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-100 text-[#005581] font-bold">
+                  آنلاین
+                </span>
+              </button>
+            )}
 
             <button
               onClick={() => setActiveTab('calendar_slots')}
@@ -1762,11 +1772,49 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                             <button
                               type="button"
                               onClick={() => {
-                                setSelectedSubmissionForInsuranceReview(sub);
-                                setNarrativeEditText(
-                                  sub.clinicalNotes ||
-                                  `بیمار ${sub.patientName} با کد ملی ${sub.nationalId} با شکایت از درد و ناراحتی دندان ${sub.toothFdi || 16} مراجعه نمود. بر اساس معاینات بالینی و رادیوگرافی RVG، درمان ${sub.treatmentSummary} انجام شد. مستندات بالینی، تعرفه مصوب و ادله توجیهی جهت درج در سامانه بیمه مورد تایید است.`
+                                // Find or create matching claim for this submission
+                                let existingClaim = claims.find(
+                                  (c) => c.patientName === sub.patientName || c.nationalId === sub.nationalId
                                 );
+                                if (!existingClaim) {
+                                  const generatedClaim: Claim = {
+                                    id: `CLM-SUB-${sub.id}`,
+                                    claimNumber: `CLM-1405-${sub.id.slice(-4) || '9901'}`,
+                                    patientId: `pat-${sub.id}`,
+                                    patientName: sub.patientName,
+                                    nationalId: sub.nationalId,
+                                    patientPhone: sub.patientPhone,
+                                    insuranceCompany: 'بیمه سامان (طرح طلایی)',
+                                    insuranceProvider: 'بیمه سامان (طرح طلایی)',
+                                    treatmentName: sub.treatmentSummary,
+                                    toothFdi: sub.toothFdi || 16,
+                                    dateOfService: '۱۴۰۴/۱۱/۲۰',
+                                    totalAmount: 4500000,
+                                    claimedAmount: 4500000,
+                                    coveredAmount: 3150000,
+                                    baseApprovedAmount: 1350000,
+                                    supplApprovedAmount: 1800000,
+                                    deductionAmount: 0,
+                                    status: 'draft',
+                                    riskScore: 12,
+                                    submittedDate: sub.submittedAt,
+                                    autoApprovalConfidence: 94,
+                                    greenLaneEligible: true,
+                                    evidences: [
+                                      { id: 'ev-1', title: 'گرافی RVG دیجیتال قبل و بعد', type: 'xray', uploaded: true, required: true },
+                                      { id: 'ev-2', title: 'احراز هویت و استعلام آنلاین استحقاق', type: 'pre_auth_certificate', uploaded: true, required: true },
+                                    ],
+                                    narrativeText:
+                                      sub.clinicalNotes ||
+                                      `بیمار ${sub.patientName} با کد ملی ${sub.nationalId} با شکایت از درد و ناراحتی دندان ${sub.toothFdi || 16} مراجعه نمود. بر اساس معاینات بالینی و رادیوگرافی RVG، درمان ${sub.treatmentSummary} انجام شد. مستندات بالینی، تعرفه مصوب و ادله توجیهی جهت درج در سامانه بیمه مورد تایید است.`,
+                                  };
+                                  if (setClaims) {
+                                    setClaims((prev) => [generatedClaim, ...prev]);
+                                  }
+                                  existingClaim = generatedClaim;
+                                }
+                                setTargetClaimIdForReview(existingClaim.id);
+                                setActiveTab('insurance_docs');
                               }}
                               className="px-4 py-2 rounded-xl bg-[#ffd200] hover:bg-amber-400 text-[#005581] font-black text-xs shadow transition cursor-pointer flex items-center gap-1.5 shrink-0"
                             >
@@ -2087,244 +2135,22 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
 
 
           {/* TAB: INSURANCE DOCUMENTS & CLAIMS (مدارک و پرونده‌های بیمه) */}
-          {activeTab === 'insurance_docs' && insuranceModuleActive && (
-            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-5">
-              {/* Header */}
-              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-2xl bg-[#005581] text-[#ffd200] flex items-center justify-center font-bold shadow-md">
-                    <FileCheck className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-black text-slate-900 dark:text-slate-100 text-base">
-                        مدیریت مدارک، پرونده‌ها و اسناد بیمه
-                      </h3>
-                      <span className="px-2.5 py-0.5 rounded-full bg-[#ffd200] text-[#005581] text-xs font-black">
-                        {claims.length} پرونده ثبت‌شده
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-500 mt-1">
-                      {hasAccountantRole
-                        ? 'بررسی ضمائم بالینی، تصاویر رادیوگرافی و آماده‌سازی اسناد جهت تایید نهایی و ارسال به حسابدار کلینیک'
-                        : 'مدیریت یکپارچه اسناد بیمه، تایید مستندات بالینی، ارسال مستقیم پرونده‌ها و پیگیری کسورات توسط منشی (کلینیک بدون حسابدار)'}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <span className={`text-xs px-3 py-1.5 rounded-xl font-bold border ${
-                    hasAccountantRole
-                      ? 'bg-blue-50 border-blue-200 text-[#005581] dark:bg-blue-950/40 dark:border-blue-800'
-                      : 'bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-950/40 dark:border-emerald-800'
-                  }`}>
-                    {hasAccountantRole ? 'حالت کلینیک: دارای حسابدار مستقل' : 'حالت کلینیک: بدون حسابدار (مدیریت مستقیم منشی)'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Status and Filter Bar */}
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-xs">
-                  <button
-                    type="button"
-                    onClick={() => setInsuranceDocFilter('all')}
-                    className={`px-3 py-1.5 rounded-lg font-bold transition cursor-pointer ${
-                      insuranceDocFilter === 'all'
-                        ? 'bg-[#005581] text-white shadow-xs'
-                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                    }`}
-                  >
-                    همه ({claims.length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setInsuranceDocFilter('pending')}
-                    className={`px-3 py-1.5 rounded-lg font-bold transition cursor-pointer ${
-                      insuranceDocFilter === 'pending'
-                        ? 'bg-[#005581] text-white shadow-xs'
-                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                    }`}
-                  >
-                    در انتظار مدارک ({claims.filter((c) => c.status === 'draft' || c.status === 'pending_reception').length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setInsuranceDocFilter('greenlane')}
-                    className={`px-3 py-1.5 rounded-lg font-bold transition cursor-pointer ${
-                      insuranceDocFilter === 'greenlane'
-                        ? 'bg-[#005581] text-white shadow-xs'
-                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                    }`}
-                  >
-                    مسیر سبز هوشمند ({claims.filter((c) => c.autoApprovalConfidence && c.autoApprovalConfidence >= 80).length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setInsuranceDocFilter('appeals')}
-                    className={`px-3 py-1.5 rounded-lg font-bold transition cursor-pointer ${
-                      insuranceDocFilter === 'appeals'
-                        ? 'bg-[#005581] text-white shadow-xs'
-                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                    }`}
-                  >
-                    اعتراضات و کسورات ({claims.filter((c) => c.status === 'appealed' || c.status === 'disputed' || c.deductionAmount).length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setInsuranceDocFilter('settled')}
-                    className={`px-3 py-1.5 rounded-lg font-bold transition cursor-pointer ${
-                      insuranceDocFilter === 'settled'
-                        ? 'bg-[#005581] text-white shadow-xs'
-                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                    }`}
-                  >
-                    تسویه شده ({claims.filter((c) => c.status === 'paid' || c.status === 'accepted').length})
-                  </button>
-                </div>
-
-                <div className="text-xs text-slate-500 font-mono">
-                  پورتال متصل: دندانپزشکی یکپارچه
-                </div>
-              </div>
-
-              {/* Claims Document Table */}
-              <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
-                <table className="w-full text-right text-xs">
-                  <thead className="bg-[#005581] text-white font-bold">
-                    <tr>
-                      <th className="p-3">بیمار و کد پرونده</th>
-                      <th className="p-3">شرکت بیمه / تعرفه</th>
-                      <th className="p-3">مبلغ کل / سهم بیمه</th>
-                      <th className="p-3">مدارک و ضمائم بالینی</th>
-                      <th className="p-3">وضعیت پرونده</th>
-                      <th className="p-3 text-center">عملیات منشی</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-medium">
-                    {claims.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="p-8 text-center text-slate-400">
-                          هیچ پرونده بیمه‌ای ثبت نشده است.
-                        </td>
-                      </tr>
-                    ) : (
-                      claims
-                        .filter((c) => {
-                          if (insuranceDocFilter === 'pending') return c.status === 'draft' || c.status === 'pending_reception';
-                          if (insuranceDocFilter === 'greenlane') return c.autoApprovalConfidence && c.autoApprovalConfidence >= 80;
-                          if (insuranceDocFilter === 'appeals') return c.status === 'appealed' || c.status === 'disputed' || !!c.deductionAmount;
-                          if (insuranceDocFilter === 'settled') return c.status === 'paid' || c.status === 'accepted';
-                          return true;
-                        })
-                        .map((claim) => (
-                          <tr key={claim.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">
-                            <td className="p-3">
-                              <div className="font-bold text-slate-900 dark:text-slate-100">{claim.patientName}</div>
-                              <div className="text-[11px] font-mono text-slate-400 mt-0.5">
-                                {claim.nationalId || '0012345678'} | {claim.id}
-                              </div>
-                            </td>
-                            <td className="p-3">
-                              <span className="font-bold text-slate-800 dark:text-slate-200 block">{claim.insuranceCompany}</span>
-                              <span className="text-[10px] text-slate-400">
-                                {claim.items?.map((it) => it.description).join('، ') || 'خدمات دندانپزشکی'}
-                              </span>
-                            </td>
-                            <td className="p-3">
-                              <div className="font-bold text-slate-900 dark:text-slate-100">
-                                {(claim.totalAmount || 0).toLocaleString('fa-IR')} تومان
-                              </div>
-                              <div className="text-[11px] font-bold text-[#005581] dark:text-sky-300">
-                                سهم بیمه: {(claim.coveredAmount || claim.totalAmount * 0.7 || 0).toLocaleString('fa-IR')} تومان
-                              </div>
-                            </td>
-                            <td className="p-3">
-                              <div className="flex flex-wrap gap-1">
-                                {claim.evidences && claim.evidences.length > 0 ? (
-                                  claim.evidences.map((ev, idx) => (
-                                    <button
-                                      key={idx}
-                                      type="button"
-                                      onClick={() => setShowEvidencePreviewModal(ev)}
-                                      className="px-2 py-0.5 rounded bg-sky-50 dark:bg-sky-950 text-[#005581] dark:text-sky-300 font-bold text-[10px] border border-sky-200 dark:border-sky-800 hover:bg-sky-100 cursor-pointer flex items-center gap-1"
-                                    >
-                                      <Eye className="w-3 h-3" />
-                                      <span>{ev.title}</span>
-                                    </button>
-                                  ))
-                                ) : (
-                                  <span className="text-[11px] text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                                    نیاز به پیوست گرافی RVG
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                            <td className="p-3">
-                              {claim.autoApprovalConfidence && claim.autoApprovalConfidence >= 80 ? (
-                                <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px] inline-flex items-center gap-1">
-                                  <ShieldCheck className="w-3.5 h-3.5" /> مسیر سبز ({claim.autoApprovalConfidence}٪)
-                                </span>
-                              ) : claim.status === 'paid' || claim.status === 'accepted' ? (
-                                <span className="px-2.5 py-1 rounded-full bg-blue-100 text-blue-800 font-bold text-[10px]">
-                                  تسویه شده
-                                </span>
-                              ) : claim.status === 'appealed' ? (
-                                <span className="px-2.5 py-1 rounded-full bg-rose-100 text-rose-800 font-bold text-[10px] animate-pulse">
-                                  اعتراض در جریان
-                                </span>
-                              ) : (
-                                <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 font-bold text-[10px]">
-                                  در انتظار بررسی مدارک
-                                </span>
-                              )}
-                            </td>
-                            <td className="p-3 text-center">
-                              <div className="flex items-center justify-center gap-1.5 flex-wrap">
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedClaimForDocReview(claim)}
-                                  className="px-3 py-1.5 rounded-lg bg-[#005581] hover:bg-[#004266] text-white font-bold text-[11px] shadow-xs cursor-pointer transition flex items-center gap-1"
-                                >
-                                  <FileText className="w-3.5 h-3.5 text-[#ffd200]" />
-                                  <span>بررسی اسناد و شرح</span>
-                                </button>
-
-                                {!hasAccountantRole ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      if (onSendClaimToInsurance) {
-                                        onSendClaimToInsurance(claim.id);
-                                      }
-                                      alert(`پرونده بیمه بیمار ${claim.patientName} مستقیماً به پورتال آنلاین ${claim.insuranceCompany} ارسال شد.`);
-                                    }}
-                                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] shadow-xs cursor-pointer transition flex items-center gap-1"
-                                  >
-                                    <Send className="w-3.5 h-3.5 text-white" />
-                                    <span>ارسال به پورتال بیمه</span>
-                                  </button>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      alert(`مدارک و پرونده بیمار ${claim.patientName} تایید و جهت بررسی مالی به کارتابل حسابدار کلینیک منتقل شد.`);
-                                    }}
-                                    className="px-3 py-1.5 rounded-lg bg-sky-100 hover:bg-sky-200 text-[#005581] font-bold text-[11px] cursor-pointer transition flex items-center gap-1"
-                                  >
-                                    <Check className="w-3.5 h-3.5 text-[#005581]" />
-                                    <span>تایید و ارسال به حسابداری</span>
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+          {activeTab === 'insurance_docs' && (
+            <InsuranceDocsWorkspace
+              claims={claims}
+              setClaims={setClaims}
+              patients={patients}
+              hasAccountantRole={hasAccountantRole}
+              onToggleHasAccountantRole={onToggleHasAccountantRole}
+              insuranceModuleActive={insuranceModuleActive}
+              onToggleInsuranceModule={onToggleInsuranceModule}
+              isInsuranceContracted={isInsuranceContracted}
+              onToggleInsuranceContracted={onToggleInsuranceContracted}
+              onSubmitAppeal={onSubmitAppeal}
+              onSendClaimToInsurance={onSendClaimToInsurance}
+              greenLane={greenLane}
+              targetClaimId={targetClaimIdForReview}
+            />
           )}
           {activeTab === 'user_messages' && (
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-5">
@@ -2342,7 +2168,9 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                       </span>
                     </h3>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      پاسخگویی به سوالات عمومی بیماران و پیگیری مستقل اعتراضات بیمه‌ای و کسورات
+                      {insuranceModuleActive && !isInsuranceContracted
+                        ? 'پاسخگویی به سوالات عمومی بیماران و پیگیری مستقیم اعتراضات بیمه‌ای بیماران آزاد و دارای کسورات'
+                        : 'پاسخگویی سریع به سوالات، درخواست‌ها و پیام‌های ارسالی بیماران کلینیک'}
                     </p>
                   </div>
                 </div>
@@ -2366,25 +2194,28 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                     )}
                   </button>
 
-                  <button
-                    onClick={() => setUserMessagesSubTab('insurance_appeals')}
-                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
-                      userMessagesSubTab === 'insurance_appeals'
-                        ? 'bg-[#005581] text-white shadow-xs'
-                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                    }`}
-                  >
-                    <ShieldAlert className="w-4 h-4 text-[#ffd200]" />
-                    <span>پیگیری اعتراضات بیمه‌ای بیماران</span>
-                    <span className="px-1.5 py-0.2 rounded-full bg-sky-100 text-[#005581] text-[10px] font-mono font-bold">
-                      {patientAppeals.length} مورد
-                    </span>
-                  </button>
+                  {/* ONLY SHOW INSURANCE APPEALS WHEN INSURANCE MODULE IS ACTIVE AND NOT CONTRACTED */}
+                  {insuranceModuleActive && !isInsuranceContracted && (
+                    <button
+                      onClick={() => setUserMessagesSubTab('insurance_appeals')}
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                        userMessagesSubTab === 'insurance_appeals'
+                          ? 'bg-[#005581] text-white shadow-xs'
+                          : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      <ShieldAlert className="w-4 h-4 text-[#ffd200]" />
+                      <span>پیگیری اعتراضات بیمه‌ای بیماران</span>
+                      <span className="px-1.5 py-0.2 rounded-full bg-sky-100 text-[#005581] text-[10px] font-mono font-bold">
+                        {patientAppeals.length} مورد
+                      </span>
+                    </button>
+                  )}
                 </div>
               </div>
 
               {/* SUB-TAB 1: GENERAL PATIENT QUESTIONS & COMPLAINTS WITH ATTACHED DOCS */}
-              {userMessagesSubTab === 'general_questions' && (
+              {(userMessagesSubTab === 'general_questions' || isInsuranceContracted || !insuranceModuleActive) && (
                 <div className="space-y-4 text-xs">
                   <div className="p-3.5 rounded-xl bg-sky-50 dark:bg-sky-950/30 border border-sky-200 text-[#005581] dark:text-sky-200 font-medium flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-[#005581] shrink-0" />
@@ -2497,7 +2328,7 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
               )}
 
               {/* SUB-TAB 2: PATIENT INSURANCE APPEAL FOLLOW-UPS */}
-              {userMessagesSubTab === 'insurance_appeals' && (
+              {insuranceModuleActive && !isInsuranceContracted && userMessagesSubTab === 'insurance_appeals' && (
                 <div className="space-y-4 text-xs">
                   <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-300 text-amber-900 dark:text-amber-200 font-medium flex items-center gap-2">
                     <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />

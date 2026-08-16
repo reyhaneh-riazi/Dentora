@@ -623,8 +623,14 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
     ],
   });
 
-  const selectedClaim = claims.find((c) => c.id === selectedClaimId) || claims[0] || mockClaims[0];
-  const activeLineItems = selectedClaim ? (claimLineItemsMap[selectedClaim.id] || claimLineItemsMap['clm-001'] || []) : [];
+  const selectedClaim = React.useMemo(() => {
+    return claims.find((c) => c.id === selectedClaimId) || claims[0] || mockClaims[0];
+  }, [claims, selectedClaimId]);
+
+  const activeLineItems = React.useMemo(() => {
+    if (!selectedClaim) return [];
+    return claimLineItemsMap[selectedClaim.id] || claimLineItemsMap['clm-001'] || [];
+  }, [selectedClaim?.id, claimLineItemsMap]);
   const [activeLineItemIndex, setActiveLineItemIndex] = useState<number>(0);
   const activeLineItem = activeLineItems[activeLineItemIndex] || activeLineItems[0] || null;
 

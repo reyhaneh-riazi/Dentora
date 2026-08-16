@@ -8,6 +8,9 @@ import {
   ClinicRegistration,
   BaseInsuranceContract,
   SupplementaryInsuranceContract,
+  LabOrder,
+  PatientQuestion,
+  PatientImageRecord,
 } from '../../types';
 import { mockPatients } from '../../data/mockData';
 import { Odontogram } from './Odontogram';
@@ -53,6 +56,7 @@ import {
   History,
   Info,
   Crown,
+  X,
 } from 'lucide-react';
 
 interface DentistWorkspaceProps {
@@ -83,8 +87,24 @@ interface DentistWorkspaceProps {
   }) => void;
   onNextPatient: () => void;
   onUpdatePatientTeeth: (updatedTeeth: Record<number, ToothDetail>) => void;
+  onSavePatientImage?: (patientId: string, imageRecord: PatientImageRecord) => void;
   insuranceModuleActive?: boolean;
   initialTab?: DentistNavTab;
+  currentUserName?: string;
+
+  // Lab Orders & Cross-Panel Sync
+  labOrders?: LabOrder[];
+  onAddLabOrder?: (newOrder: LabOrder) => void;
+  onUpdateLabOrderStatus?: (orderId: string, status: LabOrder['status'], milestone: string) => void;
+
+  // Patient Q&A Cross-Panel Sync
+  patientQuestions?: PatientQuestion[];
+  onReplyQuestion?: (
+    questionId: string,
+    replyMessage: string,
+    senderRole: 'receptionist' | 'dentist',
+    senderName: string
+  ) => void;
 
   // Owner Props
   isOwner?: boolean;
@@ -133,6 +153,7 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
   onAddDoctorReminder,
   onNextPatient,
   onUpdatePatientTeeth,
+  onSavePatientImage,
   insuranceModuleActive = true,
   isOwner = true,
   currentClinic,
@@ -156,6 +177,12 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
   onToggleSupplementaryFastSettlement,
   onUpdateSupplementaryMaxCoverage,
   initialTab,
+  currentUserName,
+  labOrders = [],
+  onAddLabOrder,
+  onUpdateLabOrderStatus,
+  patientQuestions = [],
+  onReplyQuestion,
 }) => {
   // Main Navigation Tab
   const [activeNavTab, setActiveNavTab] = useState<DentistNavTab>(initialTab || 'clinical_workbench');
@@ -302,25 +329,84 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
   ]);
   const [isTreatmentPausedCurrent, setIsTreatmentPausedCurrent] = useState(false);
 
-  // Step 12.3: Lab Order States with Transparent Construction Stages
-  const [labOrders, setLabOrders] = useState([
-    {
-      id: 'LAB-201',
-      patient: activePatient.fullName,
-      tooth: 16,
-      type: 'روکش زيرکونيا کامل',
-      shade: 'A2',
-      labName: 'لابراتوار تخصصی آریا',
-      status: 'در حال ساخت کست اولیه',
-      deliveryDate: '۱۴۰۳/۰۵/۲۵',
+  // Lab Orders State & Modal Form State
+  const [isNewLabModalOpen, setIsNewLabModalOpen] = useState(false);
+  const [labPatientId, setLabPatientId] = useState(activePatient.id);
+  const [labPatientName, setLabPatientName] = useState(activePatient.fullName);
+  const [labToothFdi, setLabToothFdi] = useState<number>(selectedToothFdi || 16);
+  const [labItemType, setLabItemType] = useState<string>('روکش زيرکونيا کامل');
+  const [labShade, setLabShade] = useState<string>('A2');
+  const [labAlloy, setLabAlloy] = useState<string>('زیرکونیا چند لایه (Multi-layer Zirconia)');
+  const [labName, setLabName] = useState<string>('لابراتوار تخصصی پارس دنتال');
+  const [labExpectedDate, setLabExpectedDate] = useState<string>('۱۴۰۵/۰۵/۲۵');
+  const [labDoctorNotes, setLabDoctorNotes] = useState<string>('مارجین چمفر، شیدینگ رنگ طبیعی مطابق دندان مجاور، چک کانتکت مزیال و دیستال');
+
+  // Active Lab Orders (from prop or default)
+  const currentLabOrders: LabOrder[] = labOrders && labOrders.length > 0
+    ? labOrders
+    : [
+        {
+          id: 'LAB-201',
+          orderNumber: 'LAB-201',
+          patientId: activePatient.id,
+          patientName: activePatient.fullName,
+          dentistName: currentClinic?.ownerRole === 'dentist' ? currentClinic.ownerName : 'دکتر کاویانی',
+          toothFdi: 16,
+          itemType: 'روکش زيرکونيا کامل',
+          shade: 'A2',
+          alloyOrMaterial: 'زیرکونیا چندلایه',
+          labName: 'لابراتوار تخصصی آریا',
+          status: 'designing',
+          orderedDate: '۱۴۰۵/۰۵/۱۸',
+          expectedDeliveryDate: '۱۴۰۵/۰۵/۲۵',
+          currentMilestone: 'در حال ساخت کست اولیه و طراحی 3D',
+          doctorNotes: 'مارجین چمفر، چک اکلوژن',
+          stages: [
+            { name: 'ثبت سفارش و دریافت قالب در لابراتوار', done: true },
+            { name: 'ریخته‌گری کست و دیجیتایز ۳D (CAD/CAM)', done: true },
+            { name: 'تراش فرز و پخت در کوره سانتر رنگ A2', done: false, delayReason: 'در انتظار نوبت کوره پخت' },
+            { name: 'کنترل کیفیت، استریلیزاسیون و ارسال به مطب', done: false },
+          ],
+        },
+      ];
+
+  const handleCreateNewLabOrder = (e: React.FormEvent) => {
+    e.preventDefault();
+    const orderNum = `LAB-${Math.floor(1000 + Math.random() * 9000)}`;
+    const docName = currentUserName || (currentClinic?.ownerRole === 'dentist' ? currentClinic.ownerName : 'دکتر معالج');
+    const targetPatient = allPatients.find(p => p.id === labPatientId) || activePatient;
+
+    const newOrder: LabOrder = {
+      id: orderNum,
+      orderNumber: orderNum,
+      patientId: targetPatient.id,
+      patientName: targetPatient.fullName,
+      dentistName: docName,
+      toothFdi: labToothFdi,
+      itemType: labItemType,
+      shade: labShade,
+      alloyOrMaterial: labAlloy,
+      labName: labName,
+      status: 'ordered',
+      orderedDate: new Date().toLocaleDateString('fa-IR'),
+      expectedDeliveryDate: labExpectedDate,
+      currentMilestone: 'ثبت سفارش در مطب و ارسال به لابراتوار',
+      doctorNotes: labDoctorNotes,
       stages: [
-        { name: 'ثبت سفارش و دریافت قالب', done: true, delayReason: '' },
-        { name: 'ریخته‌گری کست و دیجیتایز ۳D', done: true, delayReason: '' },
-        { name: 'تراش فرز و شیدینگ رنگ A2', done: false, delayReason: 'در انتظار تامین پودر سرامیک زیرکونیا' },
-        { name: 'کنترل کیفیت و ارسال به مطب', done: false, delayReason: '' },
+        { name: 'ثبت سفارش و دریافت قالب / اسکن در لابراتوار', done: true },
+        { name: 'طراحی 3D CAD/CAM و کست دیجیتال', done: false },
+        { name: `پخت کوره سانتر و شیدینگ رنگ ${labShade}`, done: false },
+        { name: 'کنترل نهایی کیفیت و ارسال به مطب', done: false },
       ],
-    },
-  ]);
+    };
+
+    if (onAddLabOrder) {
+      onAddLabOrder(newOrder);
+    }
+
+    setIsNewLabModalOpen(false);
+    alert(`سفارش لابراتوار شماره ${orderNum} برای بیمار «${targetPatient.fullName}» با موفقیت ثبت شد و به کارتابل مسئول لابراتوار انتقال یافت.`);
+  };
 
   // Search in Patient Records
   const [searchRecordQuery, setSearchRecordQuery] = useState('');
@@ -332,66 +418,138 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
     { id: '2', sender: 'doctor', text: 'سلام و وقت بخیر. بله تا ۲۴ ساعت آینده احساس درد هنگام جویدن طبیعی است. یک عدد ژلوفن ۴۰۰ مصرف کنید.', time: '۰۹:۲۵' },
   ]);
 
-  // Patient Q&A Items with Doctor Answer Registration
-  const [qaItems, setQaItems] = useState([
-    {
-      id: 'q1',
-      patientName: 'مریم حسینی',
-      udr: 'UDR-8841',
-      category: 'پروتز و روکش',
-      question: 'دکتر جان آیا بعد از تحویل روکش زيرکونيا می‌تونم غذای سفت بخورم؟',
-      status: 'pending' as 'pending' | 'answered',
-      time: '۱۰:۲۰ - امروز',
-      aiSuggestion: 'تا ۲۴ ساعت اول پس از چسباندن نهایی روکش از فشار آوردن با اجسام بسیار سفت خودداری شود و شستشو با آب‌نمک ولرم انجام گیرد.',
-      doctorAnswer: '',
-      answeredAt: '',
-    },
-    {
-      id: 'q2',
-      patientName: 'علی محمدی',
-      udr: 'UDR-7012',
-      category: 'جراحی و عصب‌کشی',
-      question: 'سلام آقای دکتر، ۲ روز از جراحی عصب‌کشی می‌گذره ولی هنوز موقع جویدن احساس تیر کشیدن دارم. طبیعیه؟',
-      status: 'pending' as 'pending' | 'answered',
-      time: '۰۸:۴۵ - امروز',
-      aiSuggestion: 'احساس درد و حساسیت تا ۳ الی ۵ روز پس از درمان ریشه (RCT) هنگام جویدن طبیعی است. مصرف مسکن ژلوفن ۴۰۰ هر ۸ ساعت توصیه می‌شود.',
-      doctorAnswer: '',
-      answeredAt: '',
-    },
-    {
-      id: 'q3',
-      patientName: 'سارا امیری',
-      udr: 'UDR-9102',
-      category: 'ترمیم و زیبایی',
-      question: 'سلام وقت بخیر، بعد از انجام جرم‌گیری دندان‌هام به آب سرد حساس شدند. آیا خمیردندان خاصی پیشنهاد می‌کنید؟',
-      status: 'answered' as 'pending' | 'answered',
-      time: 'دیروز ۱۶:۳۰',
-      aiSuggestion: 'استفاده از خمیردندان ضدحساسیت (سنسوداین یا کرست) به مدت ۲ هفته و خودداری از آشامیدن نوشیدنی‌های داغ یا بسیار سرد.',
-      doctorAnswer: 'سلام خانم امیری. حساسیت کوتاه‌مدت پس از برطرف شدن جرم‌های عمقی کاملاً طبیعی است. حتماً از خمیردندان ضدحساسیت مانند سنسوداین روزی ۲ بار استفاده فرمایید.',
-      answeredAt: 'دیروز ۱۷:۱۰ - دکتر کاویانی',
-    },
-  ]);
+  // Clinical AI Suggestion Generator based on keyword & category
+  const generateClinicalAiSuggestion = (category?: string, question?: string) => {
+    const qLower = `${question || ''} ${category || ''}`.toLowerCase();
+    
+    // 1. RCT, Nerve, Pulp, Pain after root canal
+    if (qLower.includes('عصب') || qLower.includes('rct') || qLower.includes('ریشه') || qLower.includes('فشار') || qLower.includes('تیر کشیدن') || qLower.includes('پانسمان')) {
+      return 'احساس درد، تیر کشیدن یا احساس فشار هنگام جویدن تا ۳ الی ۵ روز پس از درمان ریشه (RCT) کاملاً طبیعی است. مصرف کپسول نوافن یا قرص ژلوفن ۴۰۰ هر ۸ ساعت همراه غذا توصیه می‌شود. از جویدن خوراکی‌های سفت با این سمت دهان تا اتمام ترمیم نهایی خودداری فرمایید. در صورت افتادن کامل پانسمان با مطب هماهنگ شوید.';
+    }
+    
+    // 2. Crown, Veneer, Prosthesis, Zirconia, Emax
+    if (qLower.includes('روکش') || qLower.includes('پروتز') || qLower.includes('زیرکونیا') || qLower.includes('چسب') || qLower.includes('لمینت') || qLower.includes('emax') || qLower.includes('شید')) {
+      return 'تا ۲۴ ساعت اول پس از چسباندن نهایی روکش از جویدن خوراکی‌های بسیار چسبنده یا سفت (مانند آدامس و ته دیگ) خودداری فرمایید. شستشوی آرام با آب‌نمک ولرم و استفاده از نخ دندان مخصوص (Super Floss) از طرفین توصیه می‌شود. در صورت احساس بلندی در بایت یا تماس نامتعارف دندان مقابل، جهت تنظیم در مطب حضور یابید.';
+    }
+    
+    // 3. Sensitivity, Cold/Hot, Scaling, Bleaching
+    if (qLower.includes('حساس') || qLower.includes('سرد') || qLower.includes('گرم') || qLower.includes('جرم') || qLower.includes('بروساژ') || qLower.includes('سفید کردن') || qLower.includes('بلیچینگ')) {
+      return 'حساسیت موقت دندان‌ها به آب سرد یا گرم پس از جرم‌گیری عمقی یا ترمیم‌های جدید کلاس ۲ کاملاً گذرا است. مصرف روزانه ۲ بار خمیردندان ضدحساسیت (سنسوداین یا کرست Pro-Relief) به مدت ۲ هفته و پرهیز از نوشیدنی‌های یخ‌زده یا بیش از حد داغ توصیه می‌شود.';
+    }
+    
+    // 4. Surgery, Extraction, Bleeding, Sutures, Implant fixture
+    if (qLower.includes('خون') || qLower.includes('جراحی') || qLower.includes('کشیدن') || qLower.includes('بخیه') || qLower.includes('ایمپلنت') || qLower.includes('دندان عقل') || qLower.includes('فیکسچر')) {
+      return 'گاز استریل را تا ۱ ساعت با فشار ملایم فک نگه داشته و آب دهان را تف نکنید (بلع آرام). تا ۲۴ ساعت از نوشیدنی‌های داغ، استفاده از نی و استعمال دخانیات اکیداً پرهیز شود. کمپرس سرد از روی گونه (۱۰ دقیقه بگذارید و ۵ دقیقه بردارید) تورم را مهار می‌کند. از روز دوم شستشوی ملایم با دهان‌شویه کلرهگزیدین ۰.۱۲٪ دو بار در روز را آغاز فرمایید.';
+    }
+    
+    // 5. Antibiotics, Prescriptions, Allergy, Swelling
+    if (qLower.includes('آنتی‌بیوتیک') || qLower.includes('چرک') || qLower.includes('عفونت') || qLower.includes('دارو') || qLower.includes('مسکن') || qLower.includes('آموکسی') || qLower.includes('مترونیدازول') || qLower.includes('ورم') || qLower.includes('تورم')) {
+      return 'دوره آنتی‌بیوتیک تجویزی (آموکسی‌سیلین ۵۰۰ هر ۸ ساعت یا مترونیدازول ۲۵۰) را دقیقاً سر موعد تا اتمام کامل بسته‌ها مصرف فرمایید و از قطع زودهنگام خودداری نمایید. برای کاهش التهاب و تسکین درد، از مسکن مفنامیک اسید یا نوافن به همراه یک لیوان پر آب استفاده کنید. در صورت بروز تنگی نفس یا کهیر بلافاصله دارو را متوقف کرده و اطلاع دهید.';
+    }
+    
+    // Default clinical response
+    return 'پاسخ بالینی پزشک: وضعیت شرح‌داده‌شده بررسی گردید. با رعایت دقیق بهداشت دهان، مسواک نرم و مصرف داروهای تجویزی در ساعات مقرر، بهبود حاصل خواهد شد. در صورت تداوم، افزایش شدت درد یا مشاهده تورم لثه، جهت معاینه بالینی حضوری با کلینیک هماهنگ فرمایید.';
+  };
 
+  // Merged Patient Q&A Items with Doctor Answer Registration
   const [doctorAnswerDrafts, setDoctorAnswerDrafts] = useState<Record<string, string>>({});
   const [qaFilter, setQaFilter] = useState<'all' | 'pending' | 'answered'>('all');
 
+  // Strictly filter CLINICAL & TREATMENT questions for dentist workspace (exclude finance, disputes, insurance, billing, appointments)
+  const isClinicalCategory = (cat?: string, questionText?: string) => {
+    const textToCheck = `${cat || ''} ${questionText || ''}`.toLowerCase();
+    
+    // Non-clinical keywords to strictly reject from Doctor Q&A
+    const nonClinical = ['اقساط', 'مالی', 'بیمه', 'پرداخت', 'نوبت', 'حسابداری', 'هزینه', 'قبض', 'اعتراض', 'bnpl', 'صندوق', 'فاکتور', 'کسورات', 'تعرفه'];
+    if (nonClinical.some(nc => textToCheck.includes(nc))) {
+      return false;
+    }
+    
+    return true;
+  };
+
+  const rawQuestions = patientQuestions && patientQuestions.length > 0
+    ? patientQuestions.filter(q => isClinicalCategory(q.category, q.question))
+    : [
+        {
+          id: 'qa-1',
+          patientName: 'علی رضایی',
+          patientPhone: '09129876543',
+          patientNationalId: '0012345678',
+          category: 'مراقبت‌های پس از درمان',
+          question: 'بعد از عصب‌کشی دیروز دندان شماره ۴۶ کمی احساس فشار دارم، چه مسکنی مصرف کنم؟',
+          createdAt: '۱۴۰۵/۰۵/۱۰',
+          status: 'answered' as const,
+          isClinicalUrgent: false,
+          replies: [],
+          answer: 'سلام بیمار گرامی. احساس فشار خفیف تا ۷۲ ساعت طبیعی است. می‌توانید هر ۸ ساعت یک عدد کپسول نوافن یا قرص ژلوفن مصرف کنید. در صورت بروز تورم یا درد شدید با مطب تماس بگیرید.',
+          answeredAt: '۱۴۰۵/۰۵/۱۰ - ۱۱:۳۰',
+          repliedBy: 'دکتر کاویانی',
+        },
+        {
+          id: 'q1',
+          patientName: 'مریم حسینی',
+          patientPhone: '09351112233',
+          patientNationalId: '0088419922',
+          category: 'پروتز و روکش',
+          question: 'دکتر جان آیا بعد از تحویل روکش زيرکونيا می‌تونم غذای سفت بخورم؟',
+          status: 'pending' as const,
+          createdAt: '۱۰:۲۰ - امروز',
+          isClinicalUrgent: false,
+          replies: [],
+        },
+        {
+          id: 'q2',
+          patientName: 'علی محمدی',
+          patientPhone: '09127012345',
+          patientNationalId: '0070125544',
+          category: 'جراحی و عصب‌کشی',
+          question: 'سلام آقای دکتر، ۲ روز از جراحی عصب‌کشی می‌گذره ولی هنوز موقع جویدن احساس تیر کشیدن دارم. طبیعیه؟',
+          status: 'pending' as const,
+          createdAt: '۰۸:۴۵ - امروز',
+          isClinicalUrgent: true,
+          replies: [],
+        },
+      ];
+
+  const combinedQaList = rawQuestions.map((q) => {
+    const aiDraft = generateClinicalAiSuggestion(q.category, q.question);
+    const lastReply = q.replies && q.replies.length > 0 ? q.replies[q.replies.length - 1] : undefined;
+    const finalAnswer = q.answer || lastReply?.message || '';
+    const finalAnsweredAt = q.answeredAt || lastReply?.createdAt || '';
+    const finalRepliedBy = q.repliedBy || lastReply?.senderName || '';
+
+    return {
+      id: q.id,
+      patientName: q.patientName,
+      udr: `UDR-${q.patientPhone ? q.patientPhone.slice(-4) : (q.patientNationalId ? q.patientNationalId.slice(-4) : '0000')}`,
+      category: q.category || 'مراقبت‌های بالینی و درمانی',
+      question: q.question,
+      status: (q.status === 'answered' || !!finalAnswer) ? ('answered' as const) : ('pending' as const),
+      time: q.createdAt,
+      aiSuggestion: aiDraft,
+      doctorAnswer: finalAnswer,
+      answeredAt: finalAnsweredAt,
+      repliedBy: finalRepliedBy,
+      isClinicalUrgent: q.isClinicalUrgent,
+    };
+  });
+
   const handleSaveDoctorAnswer = (qId: string) => {
     const text = doctorAnswerDrafts[qId];
-    if (!text || !text.trim()) return;
+    if (!text || !text.trim()) {
+      alert('لطفاً متن پاسخ دندان‌پزشک را تایپ کنید یا از دکمه پیش‌نویس هوش مصنوعی استفاده نمایید.');
+      return;
+    }
 
-    setQaItems((prev) =>
-      prev.map((item) => {
-        if (item.id === qId) {
-          return {
-            ...item,
-            status: 'answered',
-            doctorAnswer: text,
-            answeredAt: 'هم‌اکنون - توسط دکتر کاویانی',
-          };
-        }
-        return item;
-      })
-    );
+    const docName = currentUserName || (currentClinic?.ownerRole === 'dentist' ? currentClinic.ownerName : 'دکتر معالج');
+
+    if (onReplyQuestion) {
+      onReplyQuestion(qId, text, 'dentist', docName);
+    }
+
+    setDoctorAnswerDrafts((prev) => ({ ...prev, [qId]: '' }));
+    alert(`پاسخ تخصصی دندان‌پزشک (${docName}) با موفقیت ثبت شد و بلافاصله در پورتال بیمار نمایش داده خواهد شد.`);
   };
 
   // Schedule Appointments list state for Doctor Calendar
@@ -598,13 +756,19 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
   };
 
   // Sidebar Menu Items
+  const pendingClinicalCount = combinedQaList.filter((q) => q.status === 'pending').length;
   const menuItems = [
     { id: 'clinical_workbench', label: 'میز کار بالینی (۷ مرحله)', icon: Stethoscope, badge: 'مرحله ۱۲.۲' },
     { id: 'patient_records', label: 'پرونده بیماران', icon: FolderOpen, badge: 'UDR' },
     { id: 'patient_comm', label: 'ارتباط با بیماران', icon: MessageSquare, badge: 'پیام‌ها' },
     { id: 'my_schedule', label: 'برنامه زمانی من', icon: Calendar, badge: 'تقویم' },
-    { id: 'lab_section', label: 'بخش لابراتوار', icon: FlaskConical, badge: 'مرحله ۱۲.۳' },
-    { id: 'patient_qa', label: 'میز پرسش‌های بیماران', icon: HelpCircle, badge: 'مشاوره' },
+    { id: 'lab_section', label: 'بخش لابراتوار', icon: FlaskConical, badge: 'سفارشات' },
+    {
+      id: 'patient_qa',
+      label: 'پرسش‌های بالینی بیماران',
+      icon: HelpCircle,
+      badge: pendingClinicalCount > 0 ? `${pendingClinicalCount} نیاز به پاسخ` : 'مشاوره',
+    },
     ...(isOwner
       ? [{ id: 'owner_settings', label: 'تنظیمات مالک کلینیک', icon: Crown, badge: 'Owner' }]
       : []),
@@ -1177,13 +1341,28 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
                 {/* Web-PACS Image Viewer with On-Image Markers, Visible Text & Interactive Edit Popover */}
                 <ImageXrayViewer
                   patientName={activePatient.fullName}
+                  patientId={activePatient.id}
+                  doctorName={currentUserName || (currentClinic?.ownerRole === 'dentist' ? currentClinic.ownerName : 'دکتر کاویانی')}
                   toothFdi={selectedToothFdi || 16}
+                  patientImages={activePatient.patientImages || []}
                   onRevisionTreatmentPlan={() => {
                     setProposedTreatmentPlan((prev) => `${prev}\n۴. نیاز به روکش پس از بررسی گرافی`);
                     alert('طرح درمان با توجه به علائم گرافی به‌روزرسانی شد.');
                   }}
+                  onSavePatientImage={(imageRecord) => {
+                    if (onSavePatientImage) {
+                      onSavePatientImage(activePatient.id, imageRecord);
+                    }
+                  }}
                   onSaveToDossier={(summary) => {
                     setDictationText((prev) => `${prev ? prev + '\n' : ''}[یافته‌های تصویربرداری PACS]:\n${summary}`);
+                    if (onUpdatePatient) {
+                      const todayFa = new Date().toLocaleDateString('fa-IR');
+                      const doc = currentUserName || 'پزشک';
+                      const newNotes = [...(activePatient.clinicalNotes || []), `[${todayFa} ${doc}] یافته‌های رادیوگرافی: ${summary}`];
+                      const newMedHistory = Array.from(new Set([...(activePatient.medicalHistory || []), `تصویربرداری و علائم بالینی دندان ${selectedToothFdi || 16}`]));
+                      onUpdatePatient({ clinicalNotes: newNotes, medicalHistory: newMedHistory });
+                    }
                   }}
                 />
 
@@ -1605,36 +1784,95 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
         {/* 5. Lab Section (بخش لابراتوار) */}
         {activeNavTab === 'lab_section' && (
           <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-4">
-            <div className="border-b border-slate-100 dark:border-slate-800 pb-3 flex items-center justify-between">
+            <div className="border-b border-slate-100 dark:border-slate-800 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h3 className="font-bold text-[#005581] dark:text-[#72cdf4] text-base flex items-center gap-2">
                   <FlaskConical className="w-5 h-5 text-[#005581]" />
-                  <span>مدیریت سفارشات لابراتوار و مراحل ساخت شفاف (مرحله ۱۲.۳)</span>
+                  <span>مدیریت سفارشات لابراتوار و مراحل ساخت شفاف (متصل به کارتابل لابراتوار)</span>
                 </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  ثبت سفارشات پروتز و روکش و پیگیری لحظه‌ای پیشرفت ساخت در لابراتوار
+                </p>
               </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setLabPatientId(activePatient.id);
+                  setLabPatientName(activePatient.fullName);
+                  setLabToothFdi(selectedToothFdi || 16);
+                  setIsNewLabModalOpen(true);
+                }}
+                className="px-4 py-2.5 rounded-xl bg-[#005581] hover:bg-[#004266] text-[#ffd200] font-black text-xs shadow-md transition cursor-pointer flex items-center gap-2 shrink-0"
+              >
+                <Plus className="w-4 h-4 text-[#ffd200]" />
+                <span>ثبت سفارش جدید لابراتوار</span>
+              </button>
             </div>
 
-            <div className="space-y-3">
-              {labOrders.map((ord) => (
-                <div key={ord.id} className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-3 text-xs">
-                  <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-700 pb-2">
-                    <span className="font-bold text-slate-900 dark:text-slate-100">
-                      کد {ord.id} - بیمار {ord.patient} ({ord.type})
-                    </span>
-                    <span className="px-2 py-0.5 rounded bg-[#ffd200] text-[#005581] font-bold text-[10px]">
-                      {ord.status}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {ord.stages.map((stg, i) => (
-                      <div key={i} className="p-2 rounded bg-white dark:bg-slate-900 border border-slate-200 text-[11px] font-bold">
-                        {i + 1}. {stg.name} {stg.done ? <Check className="w-3.5 h-3.5 text-emerald-600 inline-block mr-1" /> : ''}
-                        {stg.delayReason && <span className="block text-amber-600 text-[10px]">علت تأخیر: {stg.delayReason}</span>}
-                      </div>
-                    ))}
-                  </div>
+            <div className="space-y-4">
+              {currentLabOrders.length === 0 ? (
+                <div className="p-8 text-center bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-500 text-xs">
+                  هیچ سفارش لابراتواری برای این کلینیک ثبت نشده است. جهت ثبت، از دکمه «ثبت سفارش جدید لابراتوار» استفاده کنید.
                 </div>
-              ))}
+              ) : (
+                currentLabOrders.map((ord) => (
+                  <div key={ord.id} className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-3 text-xs">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-slate-200 dark:border-slate-700 pb-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-700 font-black text-[#005581] dark:text-[#72cdf4]">
+                          {ord.orderNumber || ord.id}
+                        </span>
+                        <strong className="text-slate-900 dark:text-slate-100 text-sm">
+                          بیمار: {ord.patientName} (دندان #{ord.toothFdi})
+                        </strong>
+                        <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-200 font-bold text-[11px]">
+                          {ord.itemType} {ord.shade ? `(رنگ: ${ord.shade})` : ''}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] text-slate-500 font-medium">
+                          لابراتوار: <strong className="text-slate-700 dark:text-slate-300">{ord.labName}</strong>
+                        </span>
+                        <span className="px-2.5 py-1 rounded-full bg-[#ffd200] text-[#005581] font-black text-[10px]">
+                          {ord.status === 'delivered' ? 'تحویل نهایی به مطب' : ord.status === 'shipped' ? 'ارسال‌شده به مطب' : ord.status === 'in_furnace' ? 'در کوره سانتر' : ord.status === 'designing' ? 'در حال طراحی CAD' : 'ثبت اولیه سفارش'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px] text-slate-600 dark:text-slate-400">
+                        <span>مرحله جاری: <strong className="text-[#005581] dark:text-[#72cdf4]">{ord.currentMilestone}</strong></span>
+                        <span className="font-mono">تاریخ تحویل مورد انتظار: {ord.expectedDeliveryDate}</span>
+                      </div>
+                      {ord.doctorNotes && (
+                        <p className="text-[11px] text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 p-2 rounded-lg">
+                          <strong className="text-slate-900 dark:text-slate-100">یادداشت دندان‌پزشک:</strong> {ord.doctorNotes}
+                        </p>
+                      )}
+                    </div>
+
+                    {ord.stages && ord.stages.length > 0 && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 pt-1">
+                        {ord.stages.map((stg, i) => (
+                          <div key={i} className={`p-2.5 rounded-xl border text-[11px] font-bold flex flex-col justify-between ${
+                            stg.done
+                              ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 text-emerald-800 dark:text-emerald-200'
+                              : 'bg-white dark:bg-slate-900 border-slate-200 text-slate-600 dark:text-slate-400'
+                          }`}>
+                            <div className="flex items-center justify-between gap-1">
+                              <span>{i + 1}. {stg.name}</span>
+                              {stg.done && <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />}
+                            </div>
+                            {stg.delayReason && <span className="block text-amber-600 text-[10px] mt-1">علت تأخیر: {stg.delayReason}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
             </div>
           </div>
         )}
@@ -1649,7 +1887,7 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
                   <span>میز پرسش‌های بیماران و ثبت پاسخ تخصصی دندان‌پزشک</span>
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  پاسخ‌دهی به پرسش‌های آنلاین بیماران همراه با پیشنهاد هوش مصنوعی و ثبت رسمی در پرونده
+                  پاسخ‌دهی به پرسش‌های آنلاین بیماران همراه با پیشنهاد هوش مصنوعی و اتصال خودکار به پنل منشی و بیمار
                 </p>
               </div>
 
@@ -1663,7 +1901,7 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
                       : 'text-slate-600 dark:text-slate-300 hover:text-[#005581]'
                   }`}
                 >
-                  همه سوالات ({qaItems.length})
+                  همه سوالات ({combinedQaList.length})
                 </button>
                 <button
                   onClick={() => setQaFilter('pending')}
@@ -1673,7 +1911,7 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
                       : 'text-slate-600 dark:text-slate-300 hover:text-amber-600'
                   }`}
                 >
-                  در انتظار پاسخ ({qaItems.filter((i) => i.status === 'pending').length})
+                  در انتظار پاسخ ({combinedQaList.filter((i) => i.status === 'pending').length})
                 </button>
                 <button
                   onClick={() => setQaFilter('answered')}
@@ -1683,147 +1921,141 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
                       : 'text-slate-600 dark:text-slate-300 hover:text-emerald-600'
                   }`}
                 >
-                  پاسخ‌داده‌شده ({qaItems.filter((i) => i.status === 'answered').length})
+                  پاسخ‌داده‌شده ({combinedQaList.filter((i) => i.status === 'answered').length})
                 </button>
               </div>
             </div>
 
             {/* Questions List */}
             <div className="space-y-4">
-              {qaItems
-                .filter((item) => (qaFilter === 'all' ? true : item.status === qaFilter))
-                .map((item) => {
-                  const draftText = doctorAnswerDrafts[item.id] ?? (item.doctorAnswer || '');
+              {combinedQaList.length === 0 ? (
+                <div className="p-8 text-center bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-500 text-xs">
+                  هیچ سوالی از سوی بیماران برای این کلینیک ثبت نشده است.
+                </div>
+              ) : (
+                combinedQaList
+                  .filter((item) => (qaFilter === 'all' ? true : item.status === qaFilter))
+                  .map((item) => {
+                    const draftText = doctorAnswerDrafts[item.id] ?? (item.doctorAnswer || '');
 
-                  return (
-                    <div
-                      key={item.id}
-                      className={`p-5 rounded-2xl border transition space-y-4 ${
-                        item.status === 'pending'
-                          ? 'border-amber-300 dark:border-amber-800/60 bg-amber-50/20 dark:bg-amber-950/10'
-                          : 'border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20'
-                      }`}
-                    >
-                      {/* Header */}
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-700/60 pb-3">
-                        <div className="flex items-center gap-2.5 flex-wrap">
-                          <span className="font-black text-slate-900 dark:text-slate-100 text-sm">
-                            {item.patientName}
-                          </span>
-                          <span className="font-mono text-xs px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-bold text-slate-700 dark:text-slate-300">
-                            {item.udr}
-                          </span>
-                          <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-[#005581]/10 text-[#005581] dark:text-[#72cdf4] font-bold">
-                            {item.category}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <span className="text-[11px] text-slate-400">{item.time}</span>
-                          {item.status === 'pending' ? (
-                            <span className="px-2.5 py-1 rounded-lg bg-amber-500 text-slate-900 font-bold text-[10px] shadow-xs flex items-center gap-1">
-                              <Clock className="w-3 h-3" />
-                              در انتظار پاسخ پزشک
+                    return (
+                      <div
+                        key={item.id}
+                        className={`p-5 rounded-2xl border transition space-y-4 ${
+                          item.status === 'pending'
+                            ? 'border-amber-300 dark:border-amber-800/60 bg-amber-50/20 dark:bg-amber-950/10'
+                            : 'border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20'
+                        }`}
+                      >
+                        {/* Header */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-700/60 pb-3">
+                          <div className="flex items-center gap-2.5 flex-wrap">
+                            <span className="font-black text-slate-900 dark:text-slate-100 text-sm">
+                              {item.patientName}
                             </span>
-                          ) : (
-                            <span className="px-2.5 py-1 rounded-lg bg-emerald-600 text-white font-bold text-[10px] shadow-xs flex items-center gap-1">
-                              <CheckCircle2 className="w-3 h-3" />
-                              پاسخ داده شد
+                            <span className="font-mono text-xs px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-bold text-slate-700 dark:text-slate-300">
+                              {item.udr}
                             </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Question Content */}
-                      <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-100 space-y-1">
-                        <div className="text-[11px] font-bold text-slate-400">متن سوال بیمار:</div>
-                        <p className="text-sm leading-relaxed">{item.question}</p>
-                      </div>
-
-                      {/* AI Suggestion Box */}
-                      <div className="p-3.5 rounded-xl bg-cyan-50/70 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-800/50 space-y-2 text-xs">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-1.5 font-bold text-[#005581] dark:text-cyan-300">
-                            <Sparkles className="w-4 h-4 text-[#ffd200]" />
-                            <span>پیشنهاد پیش‌نویس پاسخ توسط هوش مصنوعی (AI Draft):</span>
-                          </div>
-                          {item.status === 'pending' && (
-                            <button
-                              onClick={() =>
-                                setDoctorAnswerDrafts((prev) => ({ ...prev, [item.id]: item.aiSuggestion }))
-                              }
-                              className="px-2.5 py-1 bg-[#005581] text-white rounded-lg text-[10px] font-bold shadow hover:bg-[#004266] cursor-pointer flex items-center gap-1"
-                            >
-                              <span>استفاده از متن AI</span>
-                            </button>
-                          )}
-                        </div>
-                        <p className="text-slate-700 dark:text-slate-300 leading-relaxed font-normal">
-                          {item.aiSuggestion}
-                        </p>
-                      </div>
-
-                      {/* Doctor Answer Registration / Display Section */}
-                      {item.status === 'answered' && item.doctorAnswer ? (
-                        <div className="p-4 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-xs space-y-2">
-                          <div className="flex items-center justify-between text-emerald-900 dark:text-emerald-200 font-bold border-b border-emerald-200 dark:border-emerald-800 pb-2">
-                            <span className="flex items-center gap-1.5">
-                              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                              پاسخ رسمی ثبت‌شده توسط دندان‌پزشک:
-                            </span>
-                            <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-normal">
-                              {item.answeredAt}
+                            <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-[#005581]/10 text-[#005581] dark:text-[#72cdf4] font-bold">
+                              {item.category}
                             </span>
                           </div>
-                          <p className="text-slate-800 dark:text-slate-100 font-medium leading-relaxed">
-                            {item.doctorAnswer}
+
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] text-slate-400">{item.time}</span>
+                            {item.status === 'pending' ? (
+                              <span className="px-2.5 py-1 rounded-lg bg-amber-500 text-slate-900 font-bold text-[10px] shadow-xs flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                در انتظار پاسخ پزشک
+                              </span>
+                            ) : (
+                              <span className="px-2.5 py-1 rounded-lg bg-emerald-600 text-white font-bold text-[10px] shadow-xs flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3" />
+                                پاسخ داده شد
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Question Content */}
+                        <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-100 space-y-1">
+                          <div className="text-[11px] font-bold text-slate-400">متن سوال بیمار:</div>
+                          <p className="text-sm leading-relaxed">{item.question}</p>
+                        </div>
+
+                        {/* AI Suggestion Box */}
+                        <div className="p-3.5 rounded-xl bg-cyan-50/70 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-800/50 space-y-2 text-xs">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5 font-bold text-[#005581] dark:text-cyan-300">
+                              <Sparkles className="w-4 h-4 text-[#ffd200]" />
+                              <span>پیشنهاد پیش‌نویس پاسخ توسط هوش مصنوعی (AI Draft):</span>
+                            </div>
+                            {item.status === 'pending' && (
+                              <button
+                                onClick={() =>
+                                  setDoctorAnswerDrafts((prev) => ({ ...prev, [item.id]: item.aiSuggestion }))
+                                }
+                                className="px-2.5 py-1 bg-[#005581] text-white rounded-lg text-[10px] font-bold shadow hover:bg-[#004266] cursor-pointer flex items-center gap-1"
+                              >
+                                <span>استفاده از متن AI</span>
+                              </button>
+                            )}
+                          </div>
+                          <p className="text-slate-700 dark:text-slate-300 leading-relaxed font-normal">
+                            {item.aiSuggestion}
                           </p>
-                          <div className="pt-1 flex justify-end">
-                            <button
-                              onClick={() =>
-                                setQaItems((prev) =>
-                                  prev.map((i) => (i.id === item.id ? { ...i, status: 'pending' } : i))
-                                )
+                        </div>
+
+                        {/* Doctor Answer Registration / Display Section */}
+                        {item.status === 'answered' && item.doctorAnswer ? (
+                          <div className="p-4 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-xs space-y-2">
+                            <div className="flex items-center justify-between text-emerald-900 dark:text-emerald-200 font-bold border-b border-emerald-200 dark:border-emerald-800 pb-2">
+                              <span className="flex items-center gap-1.5">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                                پاسخ رسمی ثبت‌شده توسط دندان‌پزشک:
+                              </span>
+                              <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-normal">
+                                {item.answeredAt}
+                              </span>
+                            </div>
+                            <p className="text-slate-800 dark:text-slate-100 font-medium leading-relaxed">
+                              {item.doctorAnswer}
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="space-y-2 pt-1">
+                            <label className="block text-xs font-bold text-slate-800 dark:text-slate-200">
+                              تایپ پاسخ رسمی دندان‌پزشک به بیمار:
+                            </label>
+                            <textarea
+                              rows={3}
+                              value={draftText}
+                              onChange={(e) =>
+                                setDoctorAnswerDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))
                               }
-                              className="text-[11px] text-[#005581] dark:text-[#72cdf4] font-bold hover:underline cursor-pointer"
-                            >
-                              ویرایش و ثبت مجدد پاسخ
-                            </button>
+                              placeholder="متن پاسخ تخصصی دندان‌پزشک را اینجا تایپ کنید یا از پیشنهاد AI استفاده کنید..."
+                              className="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-medium text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-[#005581]"
+                            />
+                            <div className="flex justify-end gap-2">
+                              <button
+                                onClick={() => handleSaveDoctorAnswer(item.id)}
+                                disabled={!draftText.trim()}
+                                className={`px-5 py-2 rounded-xl text-xs font-bold shadow transition flex items-center gap-1.5 cursor-pointer ${
+                                  draftText.trim()
+                                    ? 'bg-[#005581] hover:bg-[#004266] text-white'
+                                    : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                }`}
+                              >
+                                <Send className="w-3.5 h-3.5 text-[#ffd200]" />
+                                <span>ثبت و ارسال پاسخ رسمی دندان‌پزشک</span>
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      ) : (
-                        <div className="space-y-2 pt-1">
-                          <label className="block text-xs font-bold text-slate-800 dark:text-slate-200">
-                            تایپ پاسخ رسمی دندان‌پزشک به بیمار:
-                          </label>
-                          <textarea
-                            rows={3}
-                            value={draftText}
-                            onChange={(e) =>
-                              setDoctorAnswerDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))
-                            }
-                            placeholder="متن پاسخ تخصصی دندان‌پزشک را اینجا تایپ کنید یا از پیشنهاد AI استفاده کنید..."
-                            className="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-medium text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-[#005581]"
-                          />
-                          <div className="flex justify-end gap-2">
-                            <button
-                              onClick={() => handleSaveDoctorAnswer(item.id)}
-                              disabled={!draftText.trim()}
-                              className={`px-5 py-2 rounded-xl text-xs font-bold shadow transition flex items-center gap-1.5 cursor-pointer ${
-                                draftText.trim()
-                                  ? 'bg-[#005581] hover:bg-[#004266] text-white'
-                                  : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                              }`}
-                            >
-                              <Send className="w-3.5 h-3.5 text-[#ffd200]" />
-                              <span>ثبت و ارسال پاسخ رسمی دندان‌پزشک</span>
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                        )}
+                      </div>
+                    );
+                  })
+              )}
             </div>
           </div>
         )}
@@ -1878,6 +2110,197 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
           </div>
         )}
       </div>
+
+      {/* NEW LAB ORDER MODAL (ثبت سفارش کامل لابراتوار) */}
+      {isNewLabModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-2xl w-full border border-slate-200 dark:border-slate-800 shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-[#005581] text-[#ffd200] flex items-center justify-center font-black">
+                  <FlaskConical className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-900 dark:text-slate-100">
+                    ثبت و انتقال مستقیم سفارش به بخش لابراتوار
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    ارسال مشخصات فنی، رنگ، شید، تراش و بایت به کارتابل لابراتوار
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsNewLabModalOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateNewLabOrder} className="space-y-4 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    بیمار: <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={labPatientId}
+                    onChange={(e) => {
+                      setLabPatientId(e.target.value);
+                      const p = allPatients.find(item => item.id === e.target.value);
+                      if (p) setLabPatientName(p.fullName);
+                    }}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold"
+                  >
+                    <option value={activePatient.id}>{activePatient.fullName} (بیمار جاری)</option>
+                    {allPatients
+                      .filter(p => p.id !== activePatient.id)
+                      .map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.fullName} - {p.phone}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    شماره دندان FDI: <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={labToothFdi}
+                    onChange={(e) => setLabToothFdi(Number(e.target.value))}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold font-mono"
+                  >
+                    {[18,17,16,15,14,13,12,11, 21,22,23,24,25,26,27,28, 48,47,46,45,44,43,42,41, 31,32,33,34,35,36,37,38].map(fdi => (
+                      <option key={fdi} value={fdi}>
+                        دندان #{fdi}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    نوع پروتز / رستوریشن: <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={labItemType}
+                    onChange={(e) => setLabItemType(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold"
+                  >
+                    <option value="روکش زيرکونيا کامل">روکش زيرکونيا کامل (Full Zirconia)</option>
+                    <option value="سرامیک PFM">روکش سرامیک PFM</option>
+                    <option value="لمینت Emax">لمینت سرامیکی Emax</option>
+                    <option value="اباتمنت ایمپلنت">اباتمنت و روکش ایمپلنت</option>
+                    <option value="نایت گارد">نایت‌گارد سخت / نرم</option>
+                    <option value="پروتز پارسیل">پروتز متحرک پارسیل (کروم کبالت)</option>
+                    <option value="پروتز کامل">دست‌دندان کامل (Full Denture)</option>
+                    <option value="اینله / آنله">اینله / آنله سرامیکی</option>
+                    <option value="بلیچینگ تری">تری بلیچینگ خانگی</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    رنگ دندان (Shade Guide): <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={labShade}
+                    onChange={(e) => setLabShade(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold font-mono"
+                  >
+                    {['A1', 'A2', 'A3', 'A3.5', 'A4', 'B1', 'B2', 'B3', 'C1', 'C2', 'D2', 'BL1 (Bleach)', 'BL2', 'BL3'].map(sh => (
+                      <option key={sh} value={sh}>{sh}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    لابراتوار مقصد: <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={labName}
+                    onChange={(e) => setLabName(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    متریال / آلیاژ مورد استفاده:
+                  </label>
+                  <input
+                    type="text"
+                    value={labAlloy}
+                    onChange={(e) => setLabAlloy(e.target.value)}
+                    placeholder="مثلاً: زیرکونیا چند لایه Multi-layer، تیتانیوم گرید ۵..."
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    تاریخ تحویل مورد نیاز در مطب: <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={labExpectedDate}
+                    onChange={(e) => setLabExpectedDate(e.target.value)}
+                    placeholder="۱۴۰۵/۰۵/۲۵"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-mono font-bold"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  دستورالعمل تراش، مارجین و توضیحات فنی برای تکنسین لابراتوار:
+                </label>
+                <textarea
+                  rows={3}
+                  value={labDoctorNotes}
+                  onChange={(e) => setLabDoctorNotes(e.target.value)}
+                  placeholder="مارجین چمفر، رعایت اکلوژن آنتاگونیست، امبراژور طبیعی..."
+                  className="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
+                />
+              </div>
+
+              <div className="p-3 bg-blue-50 dark:bg-blue-950/40 rounded-xl border border-blue-200 dark:border-blue-900 flex items-center gap-2 text-[#005581] dark:text-blue-300">
+                <Sparkles className="w-4 h-4 text-[#ffd200] shrink-0" />
+                <span>
+                  با ثبت این سفارش، کلیه اطلاعات به کارتابل لابراتوار (Lab Portal) منتقل شده و در بخش «سفارشات من» ثبت می‌گردد.
+                </span>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setIsNewLabModalOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold"
+                >
+                  انصراف
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2 rounded-xl bg-[#005581] hover:bg-[#004266] text-[#ffd200] font-black shadow-md flex items-center gap-2 cursor-pointer"
+                >
+                  <FlaskConical className="w-4 h-4" />
+                  <span>ثبت سفارش و ارسال به لابراتوار</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

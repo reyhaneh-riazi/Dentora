@@ -3,6 +3,7 @@ import { Patient, Appointment, Invoice, InstallmentPlan, ToothDetail, Claim, Use
 import { OnlineBookingModal } from '../booking/OnlineBookingModal';
 import { SimulatedPaymentGatewayModal } from '../booking/SimulatedPaymentGatewayModal';
 import { OdontogramChart } from './OdontogramChart';
+import { ImageXrayViewer } from '../dentist/ImageXrayViewer';
 import { PersianBirthDatePicker } from '../common/PersianBirthDatePicker';
 import { toPersianDigits, formatPricePersian } from '../../utils/persianDigits';
 import {
@@ -42,6 +43,7 @@ import {
   Activity,
   FileCheck,
   Cpu,
+  ImageIcon,
 } from 'lucide-react';
 
 interface PatientPortalProps {
@@ -129,9 +131,9 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
   onPayInstallment,
   onUpdatePatientInfo,
 }) => {
-  // Navigation Tab State (7 Menu Items)
+  // Navigation Tab State
   const [activeTab, setActiveTab] = useState<
-    'dashboard' | 'tooth_map' | 'financial' | 'qa_portal' | 'insurance_claims' | 'consent_tokens' | 'profile'
+    'dashboard' | 'tooth_map' | 'radiography' | 'financial' | 'qa_portal' | 'insurance_claims' | 'consent_tokens' | 'profile'
   >('dashboard');
 
   // Chart view preferences
@@ -288,7 +290,17 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
     } else if (!patient.supplementaryInsurance?.active) {
       setInsuranceSuppName('فاقد پوشش تکمیلی');
     }
-  }, [patient]);
+  }, [
+    patient.id,
+    patient.fullName,
+    patient.phone,
+    patient.nationalId,
+    patient.birthDate,
+    patient.address,
+    patient.primaryInsurance?.provider,
+    patient.supplementaryInsurance?.provider,
+    patient.supplementaryInsurance?.active,
+  ]);
 
   // Submit Objection Handler
   const handleAddObjection = (e: React.FormEvent) => {
@@ -741,7 +753,28 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
             }`}
           >
             <Layers className="w-4 h-4" />
-            <span>کیف سلامت و چارت دندان</span>
+            <span>کیف سلامت و پرونده دندان</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('radiography')}
+            className={`w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-xs font-bold transition cursor-pointer ${
+              activeTab === 'radiography'
+                ? 'bg-[#005581] text-white shadow-md'
+                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <ImageIcon className="w-4 h-4" />
+              <span>تصاویر و رادیوگرافی (PACS)</span>
+            </div>
+            {(patient.patientImages || []).length > 0 && (
+              <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-full ${
+                activeTab === 'radiography' ? 'bg-white/20 text-white' : 'bg-blue-100 dark:bg-blue-900/40 text-[#005581] dark:text-[#72cdf4]'
+              }`}>
+                {(patient.patientImages || []).length}
+              </span>
+            )}
           </button>
 
           <button
@@ -1006,7 +1039,7 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
 
                   {currentSelectedDetail?.treatmentHistory && currentSelectedDetail.treatmentHistory.length > 0 ? (
                     <div className="space-y-2">
-                      <span className="text-xs font-bold text-slate-600 dark:text-slate-400 block">تاریخچه درمان‌ها:</span>
+                      <span className="text-xs font-bold text-slate-600 dark:text-slate-400 block">تاریخچه درمان‌های این دندان:</span>
                       <div className="space-y-2">
                         {currentSelectedDetail.treatmentHistory.map((th) => (
                           <div
@@ -1031,6 +1064,159 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
                   )}
                 </div>
               )}
+
+              {/* Comprehensive Records & History (Synced across Dentist, Receptionist & Patient) */}
+              <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-4">
+                <h4 className="font-extrabold text-sm text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-[#005581]" />
+                  <span>پرونده جامع بالینی، یادداشت‌های پزشک و نسخه‌ها</span>
+                </h4>
+
+                {/* Doctor Clinical Notes */}
+                {patient.clinicalNotes && patient.clinicalNotes.length > 0 && (
+                  <div className="p-4 rounded-2xl border border-blue-200 dark:border-blue-900/40 bg-blue-50/40 dark:bg-blue-950/20 space-y-2">
+                    <h5 className="text-xs font-bold text-[#005581] dark:text-[#72cdf4] flex items-center gap-1.5">
+                      <FileText className="w-4 h-4" />
+                      <span>یادداشت‌ها و شرح تشخیصی دندان‌پزشک معالج:</span>
+                    </h5>
+                    <div className="space-y-1.5 text-xs text-slate-700 dark:text-slate-300">
+                      {patient.clinicalNotes.map((note, idx) => (
+                        <div key={idx} className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-medium">
+                          {note}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Prescriptions */}
+                {patient.prescriptions && patient.prescriptions.length > 0 && (
+                  <div className="p-4 rounded-2xl border border-emerald-200 dark:border-emerald-900/40 bg-emerald-50/40 dark:bg-emerald-950/20 space-y-2">
+                    <h5 className="text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+                      <FileCheck className="w-4 h-4" />
+                      <span>نسخه‌های دارویی صادرشده:</span>
+                    </h5>
+                    <div className="space-y-2 text-xs">
+                      {patient.prescriptions.map((rx) => (
+                        <div key={rx.id} className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                          <div className="flex justify-between items-center font-bold text-slate-800 dark:text-slate-200 mb-1.5">
+                            <span>پزشک معالج: {rx.dentistName}</span>
+                            <span className="font-mono text-slate-500 text-[11px]">{rx.date}</span>
+                          </div>
+                          <ul className="list-disc list-inside text-slate-600 dark:text-slate-300 space-y-1">
+                            {rx.items.map((it, i) => (
+                              <li key={i}>{it}</li>
+                            ))}
+                          </ul>
+                          {rx.instructions && (
+                            <p className="text-[11px] text-slate-500 mt-2 italic bg-slate-50 dark:bg-slate-800 p-2 rounded-lg">
+                              دستور مصرف: {rx.instructions}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* All Treatments Log across all teeth */}
+                {(() => {
+                  const allLogs = Object.values(patient.teethMap || {}).flatMap((t: ToothDetail) =>
+                    (t.treatmentHistory || []).map((th) => ({ ...th, toothFdi: t.fdiNumber }))
+                  );
+
+                  return (
+                    <div className="space-y-2">
+                      <h5 className="text-xs font-bold text-slate-700 dark:text-slate-300">سوابق تمام اقدامات درمانی انجام‌شده:</h5>
+                      {allLogs.length === 0 ? (
+                        <div className="p-4 text-center text-slate-400 text-xs italic bg-slate-50 dark:bg-slate-800/40 rounded-xl">
+                          هنوز اقدام درمانی تکمیل‌شده‌ای ثبت نشده است.
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {allLogs.map((log) => (
+                            <div
+                              key={log.id}
+                              className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs flex justify-between items-center"
+                            >
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono font-bold px-2 py-0.5 rounded bg-[#005581] text-white text-[10px]">
+                                    دندان {log.toothFdi}
+                                  </span>
+                                  <span className="font-bold text-slate-900 dark:text-slate-100">
+                                    {log.procedureName}
+                                  </span>
+                                </div>
+                                <div className="text-slate-500 text-[11px] flex gap-3">
+                                  <span>تاریخ: <strong className="font-mono">{log.date}</strong></span>
+                                  <span>پزشک: <strong>{log.dentistName}</strong></span>
+                                </div>
+                              </div>
+
+                              <div className="font-mono font-bold text-[#005581] dark:text-[#72cdf4] text-xs">
+                                {log.cost ? log.cost.toLocaleString('fa-IR') + ' تومان' : 'تعرفه بیمه‌ای'}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Medical History & Allergies */}
+                {(patient.medicalHistory?.length > 0 || patient.allergies?.length > 0) && (
+                  <div className="p-3.5 rounded-xl border border-amber-200 dark:border-amber-900/40 bg-amber-50/40 dark:bg-amber-950/20 text-xs space-y-2">
+                    <span className="font-bold text-amber-900 dark:text-amber-300 block">سوابق پزشکی و حساسیت‌ها:</span>
+                    {patient.medicalHistory && patient.medicalHistory.length > 0 && (
+                      <div className="space-y-1 text-slate-700 dark:text-slate-300">
+                        {patient.medicalHistory.map((mh, idx) => (
+                          <div key={idx}>• {mh}</div>
+                        ))}
+                      </div>
+                    )}
+                    {patient.allergies && patient.allergies.length > 0 && (
+                      <div className="text-rose-700 dark:text-rose-400 font-bold text-[11px]">
+                        حساسیت‌های دارویی و غذایی: {patient.allergies.join('، ')}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================== */}
+          {/* TAB 2.5: RADIOGRAPHY & PACS GALLERY VIEWER                 */}
+          {/* ========================================================== */}
+          {activeTab === 'radiography' && (
+            <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 shadow-xs space-y-6">
+              <div className="border-b border-slate-200 dark:border-slate-800 pb-4 flex items-center justify-between">
+                <div>
+                  <h3 className="font-black text-slate-900 dark:text-slate-100 text-base flex items-center gap-2">
+                    <ImageIcon className="w-5 h-5 text-[#005581]" />
+                    <span>گالری تصاویر رادیوگرافی و علائم بالینی (Web-PACS)</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    مشاهده عکس‌های RVG، OPG، مقاطع سه‌بعدی CBCT و نشانه‌گذاری‌های تشخیصی پزشک معالج و هوش مصنوعی
+                  </p>
+                </div>
+                <span className="text-xs font-bold px-3 py-1 rounded-xl bg-blue-50 dark:bg-blue-900/30 text-[#005581] dark:text-[#72cdf4] border border-blue-200 dark:border-blue-800">
+                  {patient.patientImages?.length || 0} تصویر متصل به پرونده
+                </span>
+              </div>
+
+              <div className="p-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950">
+                <ImageXrayViewer
+                  patientName={patient.fullName}
+                  patientId={patient.id}
+                  doctorName="دکتر معالج"
+                  toothFdi={selectedToothFdi || 16}
+                  patientImages={patient.patientImages || []}
+                  readOnly={true}
+                />
+              </div>
             </div>
           )}
 
@@ -1371,11 +1557,19 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
                     </div>
 
                     {item.answer ? (
-                      <div className="p-3 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200 text-xs space-y-1">
-                        <span className="font-extrabold text-[11px] block text-emerald-800 dark:text-emerald-300">
-                          پاسخ کلینیک ({item.answeredAt}):
-                        </span>
-                        <p className="leading-relaxed">{item.answer}</p>
+                      <div className="p-3.5 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-emerald-950 dark:text-emerald-100 text-xs space-y-1.5 shadow-2xs">
+                        <div className="flex items-center justify-between border-b border-emerald-200 dark:border-emerald-800/80 pb-1.5">
+                          <span className="font-extrabold text-[11px] text-emerald-900 dark:text-emerald-300 flex items-center gap-1.5">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                            <span>پاسخ رسمی دندان‌پزشک معالج ({item.repliedBy || 'دکتر معالج'}):</span>
+                          </span>
+                          {item.answeredAt && (
+                            <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-mono">
+                              {item.answeredAt}
+                            </span>
+                          )}
+                        </div>
+                        <p className="leading-relaxed font-medium text-slate-800 dark:text-slate-100 pt-0.5">{item.answer}</p>
                       </div>
                     ) : (
                       <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-xs flex items-center gap-2.5">

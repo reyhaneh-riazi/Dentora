@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Appointment, Patient, WaitlistEntry, ToothDetail, Claim, ClaimStatus, GreenLaneStatus, DoctorSubmission, DoctorRequestReminder } from '../../types';
+import { Appointment, Patient, WaitlistEntry, ToothDetail, Claim, ClaimStatus, GreenLaneStatus, DoctorSubmission, DoctorRequestReminder, PatientQuestion as GlobalPatientQuestion, PatientInsuranceDispute, PatientImageRecord } from '../../types';
 import { Odontogram } from '../dentist/Odontogram';
 import { ImageXrayViewer } from '../dentist/ImageXrayViewer';
 import { InsuranceDocsWorkspace } from './InsuranceDocsWorkspace';
@@ -58,6 +58,7 @@ import {
   CreditCard,
   Printer,
   FileCheck2,
+  ImageIcon,
 } from 'lucide-react';
 
 interface AppointmentsViewProps {
@@ -90,6 +91,13 @@ interface AppointmentsViewProps {
     reason: string;
     suggestedDate: string;
   }) => void;
+  onUpdatePatient?: (patientId: string, updatedFields: Partial<Patient>) => void;
+  onSavePatientImage?: (patientId: string, imageRecord: PatientImageRecord) => void;
+  onUpdatePatientTeeth?: (patientId: string, updatedTeeth: Record<number, ToothDetail>) => void;
+  patientQuestions?: GlobalPatientQuestion[];
+  onReplyQuestion?: (questionId: string, replyMessage: string, senderRole: 'receptionist' | 'dentist', senderName: string) => void;
+  insuranceDisputes?: PatientInsuranceDispute[];
+  onReplyDispute?: (disputeId: string, responseMessage: string, status?: 'under_review' | 'approved_pay' | 'need_docs' | 'rejected') => void;
 }
 
 // Right Sidebar Navigation Tabs
@@ -212,6 +220,13 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
   doctorRequests: propsDoctorRequests,
   setDoctorRequests: propsSetDoctorRequests,
   onAddDoctorReminder,
+  onUpdatePatient,
+  onSavePatientImage,
+  onUpdatePatientTeeth,
+  patientQuestions: propsPatientQuestions,
+  onReplyQuestion,
+  insuranceDisputes: propsInsuranceDisputes,
+  onReplyDispute,
 }) => {
   // Navigation State
   const [activeTab, setActiveTab] = useState<ReceptionTab>('today_kanban');
@@ -229,7 +244,7 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
   const [userMessagesSubTab, setUserMessagesSubTab] = useState<'general_questions' | 'insurance_appeals'>('general_questions');
 
   // Mock initial Patient Questions for Receptionist (including appeal & complaint message with attached docs)
-  const [patientQuestions, setPatientQuestions] = useState<PatientQuestion[]>([
+  const [localPatientQuestions, setLocalPatientQuestions] = useState<PatientQuestion[]>([
     {
       id: 'q-appeal-patient',
       patientName: 'علی رضایی',
@@ -268,7 +283,7 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
   const [replyTextMap, setReplyTextMap] = useState<Record<string, string>>({});
 
   // Mock Patient Insurance Appeal Tracks for Receptionist
-  const [patientAppeals, setPatientAppeals] = useState<PatientInsuranceAppealTrack[]>([
+  const [localPatientAppeals, setLocalPatientAppeals] = useState<PatientInsuranceAppealTrack[]>([
     {
       id: 'app-1',
       claimNumber: 'CLM-1405-8821',
@@ -300,6 +315,44 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
       lastUpdated: 'دیروز ۱۱:۴۰',
     },
   ]);
+
+  // Derived list of patient questions (from props or local)
+  const displayPatientQuestions = propsPatientQuestions
+    ? propsPatientQuestions.map((q) => ({
+        id: q.id,
+        patientName: q.patientName,
+        patientPhone: q.patientPhone,
+        subject: q.category || 'پرسش بیمار',
+        questionText: q.question,
+        createdAt: q.createdAt,
+        status: (q.status === 'answered' ? 'answered' : 'pending') as 'pending' | 'answered',
+        replyText: q.answer || (q.replies && q.replies.length > 0 ? q.replies[q.replies.length - 1].message : undefined),
+        repliedAt: q.answeredAt || (q.replies && q.replies.length > 0 ? q.replies[q.replies.length - 1].createdAt : undefined),
+        repliedBy: q.repliedBy || (q.replies && q.replies.length > 0 ? q.replies[q.replies.length - 1].senderName : undefined),
+        attachedDocs: [],
+      }))
+    : localPatientQuestions;
+
+  // Derived list of patient insurance appeals / disputes
+  const displayPatientAppeals = propsInsuranceDisputes
+    ? propsInsuranceDisputes.map((d) => ({
+        id: d.id,
+        claimNumber: d.claimNumber || `CLM-${d.id.slice(-4)}`,
+        patientName: d.patientName,
+        nationalId: d.nationalId,
+        patientPhone: d.patientPhone,
+        insuranceProvider: d.insuranceProvider,
+        claimedAmount: d.claimedAmount || 0,
+        deductionAmount: d.deductionAmount || 0,
+        appealReason: `${d.topic ? d.topic + ': ' : ''}${d.message}`,
+        submittedDate: d.lastUpdated || '۱۴۰۵/۰۵/۱۴',
+        status: d.status as 'under_review' | 'approved_pay' | 'rejected',
+        responseFromInsurer: d.responseMessage,
+        lastUpdated: d.lastUpdated || 'هم‌اکنون',
+        imageName: d.imageName,
+        imageDesc: d.imageDesc,
+      }))
+    : localPatientAppeals;
 
   // Local state synchronization
   const [localAppointments, setLocalAppointments] = useState<Appointment[]>(appointments);
@@ -1123,9 +1176,9 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                 <MessageSquare className={`w-4 h-4 ${activeTab === 'user_messages' ? 'text-[#ffd200]' : 'text-[#005581]'}`} />
                 <span>پیام‌های کاربران و پیگیری‌ها</span>
               </div>
-              {patientQuestions.filter((q) => q.status === 'pending').length > 0 && (
+              {displayPatientQuestions.filter((q) => q.status === 'pending').length > 0 && (
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-500 text-white font-mono animate-pulse">
-                  {patientQuestions.filter((q) => q.status === 'pending').length} جدید
+                  {displayPatientQuestions.filter((q) => q.status === 'pending').length} جدید
                 </span>
               )}
             </button>
@@ -2187,9 +2240,9 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                   >
                     <HelpCircle className="w-4 h-4 text-[#ffd200]" />
                     <span>سوالات و پیام‌های عمومی بیماران</span>
-                    {patientQuestions.filter((q) => q.status === 'pending').length > 0 && (
+                    {displayPatientQuestions.filter((q) => q.status === 'pending').length > 0 && (
                       <span className="px-1.5 py-0.2 rounded-full bg-rose-500 text-white text-[10px] font-mono">
-                        {patientQuestions.filter((q) => q.status === 'pending').length}
+                        {displayPatientQuestions.filter((q) => q.status === 'pending').length}
                       </span>
                     )}
                   </button>
@@ -2207,7 +2260,7 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                       <ShieldAlert className="w-4 h-4 text-[#ffd200]" />
                       <span>پیگیری اعتراضات بیمه‌ای بیماران</span>
                       <span className="px-1.5 py-0.2 rounded-full bg-sky-100 text-[#005581] text-[10px] font-mono font-bold">
-                        {patientAppeals.length} مورد
+                        {displayPatientAppeals.length} مورد
                       </span>
                     </button>
                   )}
@@ -2225,7 +2278,7 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                   </div>
 
                   <div className="space-y-3">
-                    {patientQuestions.map((q) => (
+                    {displayPatientQuestions.map((q) => (
                       <div
                         key={q.id}
                         className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 space-y-3"
@@ -2234,6 +2287,9 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                           <div className="flex items-center gap-2">
                             <strong className="text-sm font-bold text-slate-900 dark:text-slate-100">{q.patientName}</strong>
                             <span className="text-xs font-mono text-slate-500">({q.patientPhone})</span>
+                            <span className="text-[10px] px-2 py-0.5 rounded bg-sky-100 dark:bg-sky-900/40 text-[#005581] dark:text-sky-300 font-bold">
+                              {q.subject}
+                            </span>
                           </div>
                           <div className="flex items-center gap-2">
                             <span className="text-xs font-mono text-slate-400">{q.createdAt}</span>
@@ -2279,7 +2335,10 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                         {q.status === 'answered' && q.replyText && (
                           <div className="p-3 rounded-xl bg-sky-50 dark:bg-sky-950/20 border border-sky-200 text-sky-900 dark:text-sky-200 space-y-1">
                             <div className="flex items-center justify-between font-bold text-[11px]">
-                              <span className="flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5 text-sky-600" /> پاسخ ثبت‌شده منشی کلینیک:</span>
+                              <span className="flex items-center gap-1">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-sky-600" />
+                                <span>پاسخ ثبت‌شده {q.repliedBy ? `توسط ${q.repliedBy}` : 'منشی کلینیک'}:</span>
+                              </span>
                               <span className="font-mono text-[10px] text-sky-700">{q.repliedAt}</span>
                             </div>
                             <p className="leading-relaxed font-medium text-[11px]">{q.replyText}</p>
@@ -2300,19 +2359,23 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                               type="button"
                               onClick={() => {
                                 const text = replyTextMap[q.id];
-                                if (!text) {
+                                if (!text || !text.trim()) {
                                   alert('لطفا متن پاسخ را وارد نمایید.');
                                   return;
                                 }
-                                setPatientQuestions((prev) =>
-                                  prev.map((item) =>
-                                    item.id === q.id
-                                      ? { ...item, status: 'answered', replyText: text, repliedAt: 'هم‌اکنون' }
-                                      : item
-                                  )
-                                );
+                                if (onReplyQuestion) {
+                                  onReplyQuestion(q.id, text, 'receptionist', 'منشی کلینیک');
+                                } else {
+                                  setLocalPatientQuestions((prev) =>
+                                    prev.map((item) =>
+                                      item.id === q.id
+                                        ? { ...item, status: 'answered', replyText: text, repliedAt: 'هم‌اکنون' }
+                                        : item
+                                    )
+                                  );
+                                }
                                 setReplyTextMap({ ...replyTextMap, [q.id]: '' });
-                                alert('پاسخ منشی با موفقیت ثبت شد و به بیمار ارسال گردید.');
+                                alert('پاسخ منشی با موفقیت ثبت شد و در پنل بیمار نمایش داده خواهد شد.');
                               }}
                               className="px-4 py-2 rounded-xl bg-[#005581] hover:bg-[#004266] text-white font-bold text-xs shadow transition cursor-pointer flex items-center gap-1.5"
                             >
@@ -2338,7 +2401,7 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                   </div>
 
                   <div className="space-y-3">
-                    {patientAppeals.map((app) => (
+                    {displayPatientAppeals.map((app) => (
                       <div
                         key={app.id}
                         className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 space-y-3"
@@ -2374,15 +2437,21 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                           </div>
 
                           <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-1 md:col-span-2">
-                            <span className="text-slate-500 font-bold block">شرح اعتراض بیمار و پزشک:</span>
+                            <span className="text-slate-500 font-bold block">شرح اعتراض بیمار و مدارک:</span>
                             <p className="text-slate-800 dark:text-slate-200 leading-relaxed font-medium">{app.appealReason}</p>
+                            {app.imageName && (
+                              <div className="mt-2 text-[11px] font-bold text-[#005581] flex items-center gap-1 bg-sky-50 dark:bg-sky-950/30 p-2 rounded-lg border border-sky-200">
+                                <FileText className="w-3.5 h-3.5 text-[#ffd200]" />
+                                <span>فایل پیوست: {app.imageName} {app.imageDesc ? `(${app.imageDesc})` : ''}</span>
+                              </div>
+                            )}
                           </div>
                         </div>
 
                         {app.responseFromInsurer && (
                           <div className="p-3 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 space-y-1">
                             <div className="flex items-center justify-between font-bold text-[11px] text-[#005581] dark:text-sky-300">
-                              <span>آخرین اعلام نظر سازمان بیمه‌گر:</span>
+                              <span>آخرین اعلام نظر کلینیک / بیمه:</span>
                               <span className="font-mono text-[10px] text-slate-500">{app.lastUpdated}</span>
                             </div>
                             <p className="text-slate-700 dark:text-slate-300 leading-relaxed font-medium">{app.responseFromInsurer}</p>
@@ -2395,10 +2464,41 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                             value={replyTextMap[app.id] || ''}
                             onChange={(e) => setReplyTextMap({ ...replyTextMap, [app.id]: e.target.value })}
                             rows={2}
-                            placeholder="پاسخ دستی منشی جهت ارسال به بیمار..."
+                            placeholder="پاسخ منشی و اعلام وضعیت جدید به بیمار..."
                             className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-medium"
                           />
-                          <div className="flex justify-end">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const text = replyTextMap[app.id] || 'اعتراض شما توسط کلینیک تایید شد و مابه‌التفاوت واریز خواهد شد.';
+                                  if (onReplyDispute) {
+                                    onReplyDispute(app.id, text, 'approved_pay');
+                                  }
+                                  alert(`وضعیت اعتراض به «تایید و واریز» تغییر یافت.`);
+                                  setReplyTextMap({ ...replyTextMap, [app.id]: '' });
+                                }}
+                                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] transition cursor-pointer"
+                              >
+                                تایید اعتراض و واریز
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const text = replyTextMap[app.id] || 'جهت پیگیری بیشتر نیاز به ارسال گرافی یا مدارک تکمیلی می‌باشد.';
+                                  if (onReplyDispute) {
+                                    onReplyDispute(app.id, text, 'need_docs');
+                                  }
+                                  alert(`وضعیت اعتراض به «نیاز به مدارک» تغییر یافت.`);
+                                  setReplyTextMap({ ...replyTextMap, [app.id]: '' });
+                                }}
+                                className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px] transition cursor-pointer"
+                              >
+                                درخواست مدرک بیشتر
+                              </button>
+                            </div>
+
                             <button
                               type="button"
                               onClick={() => {
@@ -2407,13 +2507,16 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                                   alert('لطفا متن پاسخ را وارد نمایید.');
                                   return;
                                 }
+                                if (onReplyDispute) {
+                                  onReplyDispute(app.id, text, 'under_review');
+                                }
                                 alert(`پاسخ دستی منشی برای اعتراض ${app.patientName} ثبت شد.`);
                                 setReplyTextMap({ ...replyTextMap, [app.id]: '' });
                               }}
                               className="px-4 py-2 rounded-xl bg-[#005581] hover:bg-[#004266] text-white font-bold text-xs shadow transition cursor-pointer flex items-center gap-1.5"
                             >
                               <SendHorizontal className="w-3.5 h-3.5 text-[#ffd200]" />
-                              <span>ارسال پاسخ دستی منشی</span>
+                              <span>ارسال پاسخ منشی</span>
                             </button>
                           </div>
                         </div>
@@ -3544,42 +3647,146 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
             {/* TAB CONTENT: Radiography & Images */}
             {patientFileTab === 'radiography' && (
               <div className="space-y-3">
-                <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                  تصاویر رادیوگرافی (RVG و OPG) متصل به پرونده:
-                </h4>
+                <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
+                  <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                    <ImageIcon className="w-4 h-4 text-[#005581]" />
+                    <span>تصاویر رادیوگرافی و علائم بالینی ثبت‌شده توسط دندان‌پزشک ({selectedPatientFile.fullName}):</span>
+                  </h4>
+                  <span className="text-[10px] text-slate-500 font-bold">
+                    تعداد تصاویر: {(selectedPatientFile.patientImages || []).length} مورد
+                  </span>
+                </div>
                 <div className="p-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950">
-                  <ImageXrayViewer />
+                  <ImageXrayViewer
+                    patientName={selectedPatientFile.fullName}
+                    patientId={selectedPatientFile.id}
+                    doctorName="دکتر معالج"
+                    toothFdi={selectedToothFdi || 16}
+                    patientImages={selectedPatientFile.patientImages || []}
+                    onSavePatientImage={(imageRecord) => {
+                      if (onSavePatientImage) {
+                        onSavePatientImage(selectedPatientFile.id, imageRecord);
+                      }
+                      const existing = selectedPatientFile.patientImages || [];
+                      const idx = existing.findIndex((img) => img.id === imageRecord.id);
+                      const updatedImages = idx >= 0 ? existing.map((img, i) => (i === idx ? imageRecord : img)) : [imageRecord, ...existing];
+                      setSelectedPatientFile((prev) => prev ? { ...prev, patientImages: updatedImages } : prev);
+                    }}
+                  />
                 </div>
               </div>
             )}
 
             {/* TAB CONTENT: Visit History */}
             {patientFileTab === 'visit_history' && (
-              <div className="space-y-3">
-                <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                  تاریخچه تمام مراجعات و درمان‌های ثبت‌شده قبلی:
-                </h4>
-                <div className="space-y-2">
-                  <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 text-xs space-y-1">
-                    <div className="flex items-center justify-between font-bold">
-                      <span className="text-[#005581]">۱۳ مرداد ۱۴۰۵ - عصب‌کشی (RCT) دندان ۱۶</span>
-                      <span className="font-mono text-slate-500">پزشک: دکتر کاویانی</span>
-                    </div>
-                    <p className="text-slate-600 dark:text-slate-300">
-                      عصب‌کشی ۲ کاناله با بی‌حسی لیدوکایین و گرافی RVG تایید طول کارکرد انجام شد.
-                    </p>
-                  </div>
-
-                  <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 text-xs space-y-1">
-                    <div className="flex items-center justify-between font-bold">
-                      <span className="text-[#005581]">۱۸ اردیبهشت ۱۴۰۵ - جرم‌گیری و بروساژ دو فک</span>
-                      <span className="font-mono text-slate-500">پزشک: دکتر نوری</span>
-                    </div>
-                    <p className="text-slate-600 dark:text-slate-300">
-                      جرم‌گیری اولتراسونیک کامل انجام گردید و دهان‌شویه تجویز شد.
-                    </p>
-                  </div>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
+                  <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                    تاریخچه تمام مراجعات، درمان‌ها، یادداشت‌های بالینی و نسخه‌های دارویی:
+                  </h4>
                 </div>
+
+                {/* Clinical Notes from Doctor */}
+                {selectedPatientFile.clinicalNotes && selectedPatientFile.clinicalNotes.length > 0 && (
+                  <div className="p-3 rounded-xl border border-blue-200 dark:border-blue-900/50 bg-blue-50/50 dark:bg-blue-950/20 space-y-2">
+                    <h5 className="text-xs font-bold text-[#005581] dark:text-[#72cdf4] flex items-center gap-1.5">
+                      <FileText className="w-4 h-4" />
+                      <span>یادداشت‌ها و شرح‌های بالینی دندان‌پزشک:</span>
+                    </h5>
+                    <div className="space-y-1.5 text-xs text-slate-700 dark:text-slate-300">
+                      {selectedPatientFile.clinicalNotes.map((note, idx) => (
+                        <div key={idx} className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-medium">
+                          {note}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Prescriptions issued */}
+                {selectedPatientFile.prescriptions && selectedPatientFile.prescriptions.length > 0 && (
+                  <div className="p-3 rounded-xl border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/50 dark:bg-emerald-950/20 space-y-2">
+                    <h5 className="text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+                      <FileCheck className="w-4 h-4" />
+                      <span>نسخه‌های دارویی صادرشده:</span>
+                    </h5>
+                    <div className="space-y-2 text-xs">
+                      {selectedPatientFile.prescriptions.map((rx) => (
+                        <div key={rx.id} className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                          <div className="flex justify-between font-bold text-slate-800 dark:text-slate-200 mb-1">
+                            <span>پزشک: {rx.dentistName}</span>
+                            <span className="font-mono text-slate-500">{rx.date}</span>
+                          </div>
+                          <ul className="list-disc list-inside text-slate-600 dark:text-slate-300 space-y-0.5">
+                            {rx.items.map((it, i) => (
+                              <li key={i}>{it}</li>
+                            ))}
+                          </ul>
+                          {rx.instructions && (
+                            <p className="text-[11px] text-slate-500 mt-1 italic">دستور: {rx.instructions}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Dynamic Treatment Logs from all teeth */}
+                {(() => {
+                  const allLogs = Object.values(selectedPatientFile.teethMap || {}).flatMap((t: ToothDetail) =>
+                    (t.treatmentHistory || []).map((th) => ({ ...th, toothFdi: t.fdiNumber }))
+                  );
+
+                  if (allLogs.length === 0 && (!selectedPatientFile.medicalHistory || selectedPatientFile.medicalHistory.length === 0)) {
+                    return (
+                      <div className="p-6 text-center text-slate-400 text-xs italic">
+                        هیچ سابقه درمانی ثبت‌شده‌ای در پرونده موجود نیست.
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="space-y-2">
+                      <h5 className="text-xs font-bold text-slate-700 dark:text-slate-300">سوابق اقدامات درمانی دندان‌ها:</h5>
+                      {allLogs.map((log) => (
+                        <div
+                          key={log.id}
+                          className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 text-xs flex justify-between items-center"
+                        >
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono font-bold px-2 py-0.5 rounded bg-[#005581] text-white text-[10px]">
+                                دندان {log.toothFdi}
+                              </span>
+                              <span className="font-bold text-slate-900 dark:text-slate-100">
+                                {log.procedureName}
+                              </span>
+                            </div>
+                            <div className="text-slate-500 text-[11px] flex gap-3">
+                              <span>تاریخ: <strong className="font-mono">{log.date}</strong></span>
+                              <span>پزشک: <strong>{log.dentistName}</strong></span>
+                            </div>
+                          </div>
+
+                          <div className="font-mono font-bold text-[#005581] dark:text-[#72cdf4] text-xs">
+                            {log.cost ? log.cost.toLocaleString('fa-IR') + ' تومان' : 'تعرفه بیمه‌ای'}
+                          </div>
+                        </div>
+                      ))}
+
+                      {selectedPatientFile.medicalHistory && selectedPatientFile.medicalHistory.length > 0 && (
+                        <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-1">
+                          <span className="text-[11px] font-bold text-slate-500 block">پیشینه پزشکی و پیوست‌ها:</span>
+                          {selectedPatientFile.medicalHistory.map((mh, idx) => (
+                            <div key={idx} className="text-xs text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-200 dark:border-slate-800">
+                              • {mh}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
@@ -4155,25 +4362,57 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                       if (onSendClaimToInsurance) {
                         onSendClaimToInsurance(selectedClaimForDocReview.id);
                       }
+                      if (setClaims) {
+                        setClaims((prev) =>
+                          prev.map((c) =>
+                            c.id === selectedClaimForDocReview.id
+                              ? {
+                                  ...c,
+                                  status: 'submitted' as const,
+                                  receptionApproved: true,
+                                  accountantApproved: true,
+                                  reviewRoute: c.riskScore && c.riskScore > 60 ? 'deep_review' : 'express',
+                                }
+                              : c
+                          )
+                        );
+                      }
+                      const pName = selectedClaimForDocReview.patientName;
+                      const insName = selectedClaimForDocReview.insuranceCompany || selectedClaimForDocReview.insuranceProvider || 'سازمان بیمه‌گر';
                       setSelectedClaimForDocReview(null);
-                      alert(`پرونده بیمار ${selectedClaimForDocReview.patientName} با موفقیت به بیمه ${selectedClaimForDocReview.insuranceCompany} ارسال شد.`);
+                      alert(`پرونده بیمار ${pName} با موفقیت به سازمان بیمه‌گر (${insName}) ارسال شد.`);
                     }}
                     className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md cursor-pointer transition flex items-center gap-1.5"
                   >
                     <Send className="w-4 h-4 text-white" />
-                    <span>ارسال مستقیم به پورتال بیمه</span>
+                    <span>تایید و ارسال مستقیم به پورتال بیمه</span>
                   </button>
                 ) : (
                   <button
                     type="button"
                     onClick={() => {
+                      if (setClaims) {
+                        setClaims((prev) =>
+                          prev.map((c) =>
+                            c.id === selectedClaimForDocReview.id
+                              ? {
+                                  ...c,
+                                  status: 'queued' as const,
+                                  referredToAccountant: true,
+                                  receptionApproved: true,
+                                }
+                              : c
+                          )
+                        );
+                      }
+                      const pName = selectedClaimForDocReview.patientName;
                       setSelectedClaimForDocReview(null);
-                      alert(`مدارک پرونده ${selectedClaimForDocReview.patientName} تایید و به کارتابل حسابداری منتقل گردید.`);
+                      alert(`مدارک پرونده ${pName} تایید و به کارتابل حسابداری کلینیک منتقل گردید.`);
                     }}
                     className="px-5 py-2 rounded-xl bg-[#005581] hover:bg-[#004266] text-white font-bold text-xs shadow-md cursor-pointer transition flex items-center gap-1.5"
                   >
                     <Check className="w-4 h-4 text-[#ffd200]" />
-                    <span>تایید نهایی مدارک</span>
+                    <span>تایید مدارک و ارسال به کارتابل حسابدار</span>
                   </button>
                 )}
               </div>

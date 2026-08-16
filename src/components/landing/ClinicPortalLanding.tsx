@@ -20,7 +20,7 @@ import { toPersianDigits } from '../../utils/persianDigits';
 
 interface ClinicPortalLandingProps {
   clinic: ClinicRegistration;
-  onStaffLogin: (role: UserRole, mobileOrNationalId: string) => void;
+  onStaffLogin: (role: UserRole, mobileOrNationalId: string, fullName?: string, password?: string) => void;
   onPatientLogin: (nationalId: string, isGuardian?: boolean, newBookingDetails?: any) => void;
   onInsurerLogin: (providerName: string, role?: UserRole) => void;
   onBackToDentora: () => void;
@@ -117,7 +117,8 @@ export const ClinicPortalLanding: React.FC<ClinicPortalLandingProps> = ({
       return;
     }
     const roleToUse = staffRole || (availableStaffRoles[0]?.value || 'receptionist');
-    onStaffLogin(roleToUse, staffMobile);
+    const nameToUse = staffTab === 'signup' ? staffFullName : undefined;
+    onStaffLogin(roleToUse, staffMobile, nameToUse, staffPassword);
   };
 
   const handlePatientSubmit = (e: React.FormEvent) => {

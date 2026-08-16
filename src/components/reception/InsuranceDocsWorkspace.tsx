@@ -157,8 +157,25 @@ export const InsuranceDocsWorkspace: React.FC<InsuranceDocsWorkspaceProps> = ({
   const handleReferClaimToAccountant = (claimId: string) => {
     if (setClaims) {
       setClaims((prev) =>
-        prev.map((c) => (c.id === claimId ? { ...c, status: 'queued' } : c))
+        prev.map((c) =>
+          c.id === claimId
+            ? {
+                ...c,
+                status: 'queued' as const,
+                referredToAccountant: true,
+                receptionApproved: true,
+                dateOfService: c.dateOfService || '۱۴۰۵/۰۵/۱۴',
+              }
+            : c
+        )
       );
+    }
+    if (selectedClaimForDocReview && selectedClaimForDocReview.id === claimId) {
+      setSelectedClaimForDocReview((prev) => (prev ? { ...prev, status: 'queued', referredToAccountant: true, receptionApproved: true } : null));
+    }
+    if (activeKanbanModalClaim && activeKanbanModalClaim.id === claimId) {
+      setActiveKanbanModalClaim(null);
+      setActiveKanbanModalType(null);
     }
     alert('پرونده و مدارک بیمه با موفقیت ارزیابی شد و به کارتابل مالی حسابدار ارجاع گردید.');
   };
@@ -166,10 +183,29 @@ export const InsuranceDocsWorkspace: React.FC<InsuranceDocsWorkspaceProps> = ({
   const handleSendClaimDirectToInsurerLocal = (claimId: string) => {
     if (onSendClaimToInsurance) {
       onSendClaimToInsurance(claimId);
-    } else if (setClaims) {
+    }
+    if (setClaims) {
       setClaims((prev) =>
-        prev.map((c) => (c.id === claimId ? { ...c, status: 'submitted' } : c))
+        prev.map((c) =>
+          c.id === claimId
+            ? {
+                ...c,
+                status: 'submitted' as const,
+                receptionApproved: true,
+                accountantApproved: true,
+                reviewRoute: c.riskScore && c.riskScore > 60 ? 'deep_review' : 'express',
+                dateOfService: c.dateOfService || '۱۴۰۵/۰۵/۱۴',
+              }
+            : c
+        )
       );
+    }
+    if (selectedClaimForDocReview && selectedClaimForDocReview.id === claimId) {
+      setSelectedClaimForDocReview((prev) => (prev ? { ...prev, status: 'submitted', receptionApproved: true } : null));
+    }
+    if (activeKanbanModalClaim && activeKanbanModalClaim.id === claimId) {
+      setActiveKanbanModalClaim(null);
+      setActiveKanbanModalType(null);
     }
     alert('ادعای بیمه با موفقیت بررسی و مستقیماً به پورتال سازمان بیمه‌گر ارسال شد.');
   };
@@ -1310,18 +1346,33 @@ export const InsuranceDocsWorkspace: React.FC<InsuranceDocsWorkspaceProps> = ({
                 </div>
 
                 <div className="pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleSendClaimDirectToInsurerLocal(activeKanbanModalClaim.id);
-                      setActiveKanbanModalType(null);
-                      setActiveKanbanModalClaim(null);
-                    }}
-                    className="px-6 py-2.5 rounded-xl bg-[#005581] hover:bg-[#004266] text-white font-black text-xs shadow-md transition flex items-center gap-2 cursor-pointer"
-                  >
-                    <Check className="w-4 h-4 text-[#ffd200]" />
-                    <span>تایید مطابقت مالی و ارسال مستقیم به بیمه‌گر</span>
-                  </button>
+                  {hasAccountantRole ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleReferClaimToAccountant(activeKanbanModalClaim.id);
+                        setActiveKanbanModalType(null);
+                        setActiveKanbanModalClaim(null);
+                      }}
+                      className="px-6 py-2.5 rounded-xl bg-[#005581] hover:bg-[#004266] text-white font-black text-xs shadow-md transition flex items-center gap-2 cursor-pointer"
+                    >
+                      <SendHorizontal className="w-4 h-4 text-[#ffd200]" />
+                      <span>تایید مدارک و ارسال به کارتابل حسابدار</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleSendClaimDirectToInsurerLocal(activeKanbanModalClaim.id);
+                        setActiveKanbanModalType(null);
+                        setActiveKanbanModalClaim(null);
+                      }}
+                      className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-md transition flex items-center gap-2 cursor-pointer"
+                    >
+                      <Check className="w-4 h-4 text-white" />
+                      <span>تایید و ارسال مستقیم به سازمان بیمه‌گر</span>
+                    </button>
+                  )}
                 </div>
               </div>
 

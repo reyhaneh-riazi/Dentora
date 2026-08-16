@@ -65,10 +65,12 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
   onCompleteBooking,
 }) => {
   // Available Dentists list from Clinic / Users
-  const availableDentists = dentists.length > 0 ? dentists : [
+  const defaultDentists = React.useMemo(() => [
     { id: 'u-dentist1', name: 'دکتر کاویانی (جراح و دندانپزشک)', role: 'dentist' as const, nationalId: '0068899001', phone: '09123334455', branchIds: ['br-1'], specialty: 'درمان ریشه و جراحی' },
     { id: 'u-dentist2', name: 'دکتر شریفی (متخصص ترمیم و زیبایی)', role: 'dentist' as const, nationalId: '0055566778', phone: '09124445566', branchIds: ['br-1'], specialty: 'ترمیم، زیبایی و ایمپلنت' },
-  ];
+  ], []);
+
+  const availableDentists = dentists && dentists.length > 0 ? dentists : defaultDentists;
 
   // Step State
   // 'doctor_reason' | 'calendar_select' | 'auth_account' | 'visit_fee' | 'checkin_form' | 'confirmed'
@@ -85,7 +87,7 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
       setDentistId(availableDentists[0].id);
       setDentistName(availableDentists[0].name);
     }
-  }, [dentists]);
+  }, [dentistId, availableDentists]);
 
   // Photo Calendar Selection State
   const [selectionType, setSelectionType] = useState<'fastest' | 'custom'>('custom');

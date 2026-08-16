@@ -9,6 +9,7 @@ import {
   Edit3,
   ShieldAlert,
   FileText,
+  FileCheck,
   Plus,
   CheckCircle2,
   Clock,
@@ -414,7 +415,7 @@ export const PatientRecordsView: React.FC<PatientRecordsViewProps> = ({
                     <h4 className="font-bold text-sm text-[#005581] dark:text-[#72cdf4]">
                       پیشینه کامل درمان‌ها و اقدامات دندان‌پزشکی
                     </h4>
-                    <p className="text-xs text-slate-500">لیست کلیه خدمات انجام شده و برنامه‌ریزی‌شده بیمار</p>
+                    <p className="text-xs text-slate-500">لیست کلیه خدمات انجام شده، یادداشت‌های بالینی، نسخه‌ها و سوابق پزشکی بیمار</p>
                   </div>
 
                   <button
@@ -426,12 +427,59 @@ export const PatientRecordsView: React.FC<PatientRecordsViewProps> = ({
                   </button>
                 </div>
 
+                {/* Clinical Notes & Doctor Dictations */}
+                {selectedPatient.clinicalNotes && selectedPatient.clinicalNotes.length > 0 && (
+                  <div className="p-3.5 rounded-xl border border-blue-200 dark:border-blue-900/50 bg-blue-50/50 dark:bg-blue-950/20 space-y-2">
+                    <h5 className="text-xs font-bold text-[#005581] dark:text-[#72cdf4] flex items-center gap-1.5">
+                      <FileText className="w-4 h-4" />
+                      <span>یادداشت‌ها و شرح‌های بالینی دندان‌پزشک:</span>
+                    </h5>
+                    <div className="space-y-1.5 text-xs text-slate-700 dark:text-slate-300">
+                      {selectedPatient.clinicalNotes.map((note, idx) => (
+                        <div key={idx} className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-medium">
+                          {note}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Prescriptions issued */}
+                {selectedPatient.prescriptions && selectedPatient.prescriptions.length > 0 && (
+                  <div className="p-3.5 rounded-xl border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/50 dark:bg-emerald-950/20 space-y-2">
+                    <h5 className="text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+                      <FileCheck className="w-4 h-4" />
+                      <span>نسخه‌های دارویی صادرشده:</span>
+                    </h5>
+                    <div className="space-y-2 text-xs">
+                      {selectedPatient.prescriptions.map((rx) => (
+                        <div key={rx.id} className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                          <div className="flex justify-between font-bold text-slate-800 dark:text-slate-200 mb-1">
+                            <span>پزشک: {rx.dentistName}</span>
+                            <span className="font-mono text-slate-500">{rx.date}</span>
+                          </div>
+                          <ul className="list-disc list-inside text-slate-600 dark:text-slate-300 space-y-0.5">
+                            {rx.items.map((it, i) => (
+                              <li key={i}>{it}</li>
+                            ))}
+                          </ul>
+                          {rx.instructions && (
+                            <p className="text-[11px] text-slate-500 mt-1 italic">دستور: {rx.instructions}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Treatments List */}
                 {allTreatmentLogs.length === 0 ? (
                   <div className="p-8 text-center text-slate-400 text-xs italic">
-                    هیچ سابقه درمانی قبلی برای این بیمار ثبت نشده است.
+                    هیچ اقدام درمانی ثبت‌شده‌ای در نقشه دندان‌ها موجود نیست.
                   </div>
                 ) : (
                   <div className="space-y-3">
+                    <h5 className="text-xs font-bold text-slate-700 dark:text-slate-300">اقدامات انجام‌شده بر روی دندان‌ها:</h5>
                     {allTreatmentLogs.map((log) => (
                       <div
                         key={log.id}
@@ -479,10 +527,38 @@ export const PatientRecordsView: React.FC<PatientRecordsViewProps> = ({
                   <h4 className="font-bold text-sm text-[#005581] dark:text-[#72cdf4]">
                     گالری تصاویر دیجیتال، عکس‌های OPG و پری‌آپیکال RVG
                   </h4>
-                  <p className="text-xs text-slate-500">قابلیت بزرگنمایی، تنظیم کنتراست و علامت‌گذاری آناتومیک</p>
+                  <p className="text-xs text-slate-500">قابلیت بزرگنمایی، تنظیم کنتراست، ثبت نشانه‌ها و همگام‌سازی با پرونده بیمار</p>
                 </div>
 
-                <ImageXrayViewer />
+                <ImageXrayViewer
+                  patientName={selectedPatient.fullName}
+                  patientId={selectedPatient.id}
+                  doctorName="دکتر معالج"
+                  toothFdi={selectedToothFdi || 16}
+                  patientImages={selectedPatient.patientImages || []}
+                  onSavePatientImage={(imageRecord) => {
+                    const existing = selectedPatient.patientImages || [];
+                    const idx = existing.findIndex((img) => img.id === imageRecord.id);
+                    const updatedImages = idx >= 0 ? existing.map((img, i) => (i === idx ? imageRecord : img)) : [imageRecord, ...existing];
+                    const updatedPatient: Patient = {
+                      ...selectedPatient,
+                      patientImages: updatedImages,
+                      medicalHistory: Array.from(new Set([...(selectedPatient.medicalHistory || []), `تصویربرداری و علائم بالینی (${imageRecord.title})`])),
+                      clinicalNotes: [...(selectedPatient.clinicalNotes || []), `[${imageRecord.date} ${imageRecord.doctorName}] ${imageRecord.doctorNotes || imageRecord.summaryText || ''}`],
+                    };
+                    setPatientList((prev) => prev.map((p) => (p.id === updatedPatient.id ? updatedPatient : p)));
+                    if (onUpdatePatient) onUpdatePatient(updatedPatient);
+                  }}
+                  onSaveToDossier={(summary) => {
+                    const todayFa = new Date().toLocaleDateString('fa-IR');
+                    const updatedPatient: Patient = {
+                      ...selectedPatient,
+                      clinicalNotes: [...(selectedPatient.clinicalNotes || []), `[${todayFa} PACS]: ${summary}`],
+                    };
+                    setPatientList((prev) => prev.map((p) => (p.id === updatedPatient.id ? updatedPatient : p)));
+                    if (onUpdatePatient) onUpdatePatient(updatedPatient);
+                  }}
+                />
               </div>
             )}
           </div>

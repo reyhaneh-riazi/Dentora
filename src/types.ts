@@ -30,6 +30,8 @@ export interface UserProfile {
   specialty?: string;
   commissionRate?: number; // e.g. 45% for contracted doctors
   isOwner?: boolean; // Owner privilege flag
+  email?: string;
+  avatarUrl?: string;
 }
 
 export interface ClinicRegistration {
@@ -123,6 +125,41 @@ export interface SavedBankCard {
   isDefault?: boolean;
 }
 
+export interface PatientImageAnnotation {
+  id: string;
+  text: string;
+  toothFdi?: number;
+  x: number; // percentage 0-100
+  y: number; // percentage 0-100
+  width?: number; // percentage for box
+  height?: number; // percentage for box
+  type: 'pin' | 'box' | 'measurement';
+  author: 'doctor' | 'ai';
+  aiConfidence?: number;
+  severity?: 'critical' | 'warning' | 'normal';
+}
+
+export interface PatientImageRecord {
+  id: string;
+  title: string;
+  type: 'rvg' | 'opg' | 'cbct' | 'intraoral' | 'external';
+  imageUrl: string;
+  toothFdi?: number;
+  date: string;
+  doctorName?: string;
+  annotations: PatientImageAnnotation[];
+  doctorNotes?: string;
+  summaryText?: string;
+}
+
+export interface PatientPrescription {
+  id: string;
+  date: string;
+  dentistName: string;
+  items: string[];
+  instructions?: string;
+}
+
 export interface Patient {
   id: string;
   udrCode: string; // Universal Dental Record
@@ -135,6 +172,9 @@ export interface Patient {
   gender: 'مرد' | 'زن';
   medicalHistory: string[];
   allergies: string[];
+  clinicalNotes?: string[];
+  prescriptions?: PatientPrescription[];
+  patientImages?: PatientImageRecord[];
   savedCards?: SavedBankCard[];
   isLegalGuardian?: boolean;
   guardianName?: string;
@@ -427,12 +467,22 @@ export interface LabOrder {
   dentistName: string;
   toothFdi: number;
   labName: string;
-  itemType: 'روکش زيرکونيا' | 'سرامیک PFM' | 'نایت گارد' | 'اباتمنت ایمپلنت' | 'پروتز پارسیل';
+  itemType: 'روکش زيرکونيا' | 'سرامیک PFM' | 'نایت گارد' | 'اباتمنت ایمپلنت' | 'پروتز پارسیل' | 'روکش زيرکونيا کامل' | 'لمینت Emax' | 'پروتز کامل' | 'اینله / آنله' | 'بلیچینگ تری' | string;
   status: 'ordered' | 'designing' | 'in_furnace' | 'shipped' | 'delivered';
   orderedDate: string;
   expectedDeliveryDate: string;
   currentMilestone: string;
   delayAlert?: string;
+  shade?: string;
+  alloyOrMaterial?: string;
+  doctorNotes?: string;
+  technicianNotes?: string;
+  attachmentUrl?: string;
+  stages?: {
+    name: string;
+    done: boolean;
+    delayReason?: string;
+  }[];
 }
 
 export interface AuditLog {

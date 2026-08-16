@@ -3,7 +3,6 @@ import { DentalXrayCanvas } from './DentalXrayCanvas';
 import {
   Eye,
   Edit3,
-  Link2,
   AlertTriangle,
   ShieldCheck,
   CheckCircle2,
@@ -15,43 +14,41 @@ import {
   ZoomIn,
   ZoomOut,
   X,
-  FileText,
   RotateCcw,
-  Maximize2,
-  Sliders,
-  CheckSquare,
-  HelpCircle,
+  Download,
+  Printer,
+  Share2,
+  Info,
 } from 'lucide-react';
+import { PatientImageRecord, PatientImageAnnotation } from '../../types';
 
-export interface ImageAnnotation {
-  id: string;
-  text: string;
-  toothFdi?: number;
-  x: number; // percentage 0-100
-  y: number; // percentage 0-100
-  width?: number; // percentage for box
-  height?: number; // percentage for box
-  type: 'pin' | 'box' | 'measurement';
-  author: 'doctor' | 'ai';
-  aiConfidence?: number;
-  severity?: 'critical' | 'warning' | 'normal';
-}
+export type ImageAnnotation = PatientImageAnnotation;
 
 interface ImageXrayViewerProps {
-  patientName: string;
+  patientName?: string;
+  patientId?: string;
+  doctorName?: string;
   toothFdi?: number | null;
+  patientImages?: PatientImageRecord[];
   onRevisionTreatmentPlan?: () => void;
   onSaveToDossier?: (annotationSummary: string, selectedImage: string) => void;
+  onSavePatientImage?: (imageRecord: PatientImageRecord) => void;
+  readOnly?: boolean;
 }
 
 export const ImageXrayViewer: React.FC<ImageXrayViewerProps> = ({
-  patientName,
+  patientName = 'بیمار',
+  patientId,
+  doctorName = 'دکتر معالج',
   toothFdi = 16,
+  patientImages = [],
   onRevisionTreatmentPlan,
   onSaveToDossier,
+  onSavePatientImage,
+  readOnly = false,
 }) => {
   const [selectedImageType, setSelectedImageType] = useState<'rvg' | 'opg' | 'cbct' | 'intraoral'>('rvg');
-  const [activeTool, setActiveTool] = useState<'view' | 'pin' | 'box'>('pin');
+  const [activeTool, setActiveTool] = useState<'view' | 'pin' | 'box'>(readOnly ? 'view' : 'pin');
   const [brightness, setBrightness] = useState<number>(100);
   const [contrast, setContrast] = useState<number>(125);
   const [isInverted, setIsInverted] = useState<boolean>(false);
@@ -60,8 +57,9 @@ export const ImageXrayViewer: React.FC<ImageXrayViewerProps> = ({
   const [isBridgeActive, setIsBridgeActive] = useState<boolean>(true);
   const [supportAlertSent, setSupportAlertSent] = useState<boolean>(false);
   const [saveSuccessNotice, setSaveSuccessNotice] = useState<string | null>(null);
+  const [exportNotice, setExportNotice] = useState<string | null>(null);
 
-  // Selected annotation for on-image popover editing
+  // Selected annotation for on-image popover editing / viewing
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState<string>('');
   const [editingToothFdi, setEditingToothFdi] = useState<number>(toothFdi || 16);
@@ -78,12 +76,12 @@ export const ImageXrayViewer: React.FC<ImageXrayViewerProps> = ({
     intraoral: 'https://images.unsplash.com/photo-1606811841689-23dfddce3e95?auto=format&fit=crop&w=1400&q=85',
   };
 
-  // Annotations list (both Doctor and AI)
-  const [annotations, setAnnotations] = useState<ImageAnnotation[]>([
+  // Default fallback annotations if patient has no existing image record
+  const defaultAnnotations: ImageAnnotation[] = [
     {
       id: 'ai-1',
       text: 'پوسیدگی عمیق مجاور شاخک پالپ (Distal/Occlusal)',
-      toothFdi: 16,
+      toothFdi: toothFdi || 16,
       x: 46,
       y: 36,
       width: 15,
@@ -96,7 +94,7 @@ export const ImageXrayViewer: React.FC<ImageXrayViewerProps> = ({
     {
       id: 'ai-2',
       text: 'تحلیل استخوان آلوئول ۴.۲ میلی‌متر و پاکت پریودنتال',
-      toothFdi: 16,
+      toothFdi: toothFdi || 16,
       x: 64,
       y: 68,
       width: 18,
@@ -109,14 +107,35 @@ export const ImageXrayViewer: React.FC<ImageXrayViewerProps> = ({
     {
       id: 'doc-1',
       text: 'شروع عصب‌کشی کانال مزیوباکال - طول کارکرد ۲۰mm',
-      toothFdi: 16,
+      toothFdi: toothFdi || 16,
       x: 48,
       y: 54,
       type: 'pin',
       author: 'doctor',
       severity: 'normal',
     },
-  ]);
+  ];
+
+  // Annotations list (both Doctor and AI)
+  const [annotations, setAnnotations] = useState<ImageAnnotation[]>(defaultAnnotations);
+
+  // Load annotations from patientImages prop if available for this modality
+  useEffect(() => {
+    if (patientImages && patientImages.length > 0) {
+      const match = patientImages.find((img) => img.type === selectedImageType);
+      if (match && match.annotations && match.annotations.length > 0) {
+        setAnnotations(match.annotations);
+        return;
+      }
+    }
+    // Fallback annotations for this tooth FDI
+    setAnnotations(
+      defaultAnnotations.map((a) => ({
+        ...a,
+        toothFdi: toothFdi || 16,
+      }))
+    );
+  }, [selectedImageType, patientImages, patientId, toothFdi]);
 
   const imageContainerRef = useRef<HTMLDivElement>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -138,18 +157,59 @@ export const ImageXrayViewer: React.FC<ImageXrayViewerProps> = ({
       if (target) {
         setEditingText(target.text);
         setEditingToothFdi(target.toothFdi || toothFdi || 16);
-        // Focus textarea smoothly
-        setTimeout(() => {
-          if (editTextareaRef.current) {
-            editTextareaRef.current.focus();
-          }
-        }, 100);
+        if (!readOnly) {
+          setTimeout(() => {
+            if (editTextareaRef.current) {
+              editTextareaRef.current.focus();
+            }
+          }, 100);
+        }
       }
     }
-  }, [selectedAnnotationId]);
+  }, [selectedAnnotationId, readOnly]);
 
-  // Add Annotation on Click
+  // Helper to persist updated annotations to patient record
+  const syncUpdatedAnnotations = (updatedAnnotations: ImageAnnotation[]) => {
+    if (readOnly) return;
+    const imageTitles: Record<string, string> = {
+      rvg: `گرافی پری‌آپیکال RVG دندان ${toothFdi || 16}`,
+      opg: 'رادیوگرافی پانورامیک سراسری فک (OPG)',
+      cbct: 'مقطع ۳ بعدی سی‌تی اسکن دندانی CBCT',
+      intraoral: 'عکس رنگی داخل دهانی HD',
+    };
+
+    const summary = updatedAnnotations
+      .map(
+        (a) =>
+          `[${a.author === 'ai' ? 'هوش مصنوعی' : 'پزشک'}] (دندان FDI ${a.toothFdi || toothFdi}): ${a.text}`
+      )
+      .join('\n');
+
+    const imageRecord: PatientImageRecord = {
+      id: `img-${selectedImageType}-${patientId || 'pat'}`,
+      title: imageTitles[selectedImageType] || `تصویر رادیولوژی دندان ${toothFdi || 16}`,
+      type: selectedImageType,
+      imageUrl: xrayImages[selectedImageType],
+      toothFdi: toothFdi || 16,
+      date: new Date().toLocaleDateString('fa-IR'),
+      doctorName: doctorName || 'دکتر معالج',
+      annotations: updatedAnnotations,
+      doctorNotes:
+        updatedAnnotations
+          .filter((a) => a.author === 'doctor')
+          .map((a) => a.text)
+          .join(' - ') || 'بررسی رادیوگرافی انجام شد.',
+      summaryText: summary,
+    };
+
+    if (onSavePatientImage) {
+      onSavePatientImage(imageRecord);
+    }
+  };
+
+  // Add Annotation on Click (Doctor only)
   const handleImageClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (readOnly) return;
     if (activeTool === 'view') return;
     if (!imageContainerRef.current) return;
 
@@ -173,69 +233,80 @@ export const ImageXrayViewer: React.FC<ImageXrayViewerProps> = ({
       severity: 'normal',
     };
 
-    setAnnotations((prev) => [...prev, newAnn]);
+    const nextList = [...annotations, newAnn];
+    setAnnotations(nextList);
     setSelectedAnnotationId(newId);
     setEditingText(defaultText);
     setEditingToothFdi(toothFdi || 16);
+    syncUpdatedAnnotations(nextList);
   };
 
-  // Update current annotation text in state
+  // Update current annotation text in state (Doctor only)
   const handleSaveCurrentAnnotation = (newText?: string, newFdi?: number) => {
-    if (!selectedAnnotationId) return;
+    if (readOnly || !selectedAnnotationId) return;
     const txt = (newText !== undefined ? newText : editingText).trim();
     const fdi = newFdi !== undefined ? newFdi : editingToothFdi;
 
-    setAnnotations((prev) =>
-      prev.map((a) =>
-        a.id === selectedAnnotationId
-          ? {
-              ...a,
-              text: txt || `یادداشت دندان ${fdi}`,
-              toothFdi: fdi,
-            }
-          : a
-      )
+    const nextList = annotations.map((a) =>
+      a.id === selectedAnnotationId
+        ? {
+            ...a,
+            text: txt || `یادداشت دندان ${fdi}`,
+            toothFdi: fdi,
+          }
+        : a
     );
+
+    setAnnotations(nextList);
+    syncUpdatedAnnotations(nextList);
   };
 
-  // Delete Annotation
+  // Delete Annotation (Doctor only)
   const handleDeleteAnnotation = (id: string, e?: React.MouseEvent) => {
+    if (readOnly) return;
     if (e) e.stopPropagation();
-    setAnnotations((prev) => prev.filter((a) => a.id !== id));
+    const nextList = annotations.filter((a) => a.id !== id);
+    setAnnotations(nextList);
     if (selectedAnnotationId === id) {
       setSelectedAnnotationId(null);
     }
+    syncUpdatedAnnotations(nextList);
   };
 
   // Accept AI detection as doctor note
   const handleAcceptAiAnnotation = (id: string, e?: React.MouseEvent) => {
+    if (readOnly) return;
     if (e) e.stopPropagation();
-    setAnnotations((prev) =>
-      prev.map((a) =>
-        a.id === id
-          ? {
-              ...a,
-              author: 'doctor',
-              text: `تأیید پزشک: ${a.text}`,
-            }
-          : a
-      )
+    const nextList = annotations.map((a) =>
+      a.id === id
+        ? {
+            ...a,
+            author: 'doctor' as const,
+            text: `تأیید پزشک: ${a.text}`,
+          }
+        : a
     );
+    setAnnotations(nextList);
     if (selectedAnnotationId === id) {
       setEditingText((prev) => `تأیید پزشک: ${prev}`);
     }
+    syncUpdatedAnnotations(nextList);
   };
 
   // Clear all AI annotations
   const handleClearAllAiMarkers = () => {
-    setAnnotations((prev) => prev.filter((a) => a.author !== 'ai'));
+    if (readOnly) return;
+    const nextList = annotations.filter((a) => a.author !== 'ai');
+    setAnnotations(nextList);
     if (selectedAnnotationId && selectedAnnotationId.startsWith('ai-')) {
       setSelectedAnnotationId(null);
     }
+    syncUpdatedAnnotations(nextList);
   };
 
-  // Save to Dossier
+  // Save to Dossier (Doctor action)
   const handleSaveToDossier = () => {
+    if (readOnly) return;
     const summary = annotations
       .map(
         (a) =>
@@ -243,14 +314,42 @@ export const ImageXrayViewer: React.FC<ImageXrayViewerProps> = ({
       )
       .join('\n');
 
+    syncUpdatedAnnotations(annotations);
+
     if (onSaveToDossier) {
       onSaveToDossier(summary, xrayImages[selectedImageType]);
     }
 
     setSaveSuccessNotice(
-      'تصویر نشانه‌گذاری‌شده و علائم بالینی با موفقیت به پرونده الکترونیک UDR و شرح پیوست بیمه اضافه گردید.'
+      'تصویر نشانه‌گذاری‌شده و علائم بالینی با موفقیت در پرونده الکترونیک بیمار ثبت و در تمامی بخش‌ها همگام شد.'
     );
     setTimeout(() => setSaveSuccessNotice(null), 4000);
+  };
+
+  // EXPORT ACTIONS FOR PATIENT & CLINIC
+  const handleDownloadImage = () => {
+    const link = document.createElement('a');
+    link.href = xrayImages[selectedImageType];
+    link.download = `Dentora-XRay-${selectedImageType.toUpperCase()}-${patientName}-${Date.now()}.jpg`;
+    link.target = '_blank';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    setExportNotice('فایل تصویر با کیفیت بالا دانلود شد.');
+    setTimeout(() => setExportNotice(null), 3000);
+  };
+
+  const handlePrintReport = () => {
+    window.print();
+  };
+
+  const handleShareLink = () => {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(window.location.href);
+      setExportNotice('لینک امن دسترسی به گواهی رادیولوژی در کلیپ‌بورد کپی شد.');
+      setTimeout(() => setExportNotice(null), 3000);
+    }
   };
 
   const handleToggleBridge = () => {
@@ -281,35 +380,73 @@ export const ImageXrayViewer: React.FC<ImageXrayViewerProps> = ({
         <div>
           <h3 className="font-extrabold text-[#005581] dark:text-[#72cdf4] text-base flex items-center gap-2">
             <Eye className="w-5 h-5 text-[#005581]" />
-            <span>هاب تصویربرداری پزشکی Web-PACS و ابزار تشخیصی هوشمند</span>
+            <span>
+              {readOnly
+                ? 'نمایشگر تخصصی تصاویر رادیوگرافی و گزارش تشخیصی دندان'
+                : 'هاب تصویربرداری پزشکی Web-PACS و ابزار تشخیصی هوشمند'}
+            </span>
           </h3>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            روی عکس علامت بزنید تا یادداشت ثبت شود. برای مشاهده متن کامل، ویرایش یا حذف، روی هر علامت کلیک نمایید.
+            {readOnly
+              ? 'مشاهده تصاویر رادیولوژی با کیفیت بالا، علائم تشخیصی دندان‌پزشک و امکان دریافت فایل تصویر'
+              : 'روی عکس علامت بزنید تا یادداشت ثبت شود. برای مشاهده متن کامل، ویرایش یا حذف، روی هر علامت کلیک نمایید.'}
           </p>
         </div>
 
-        {/* Local Hardware Bridge Status */}
-        <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 px-3.5 py-1.5 rounded-2xl text-xs">
-          <span
-            className={`w-2.5 h-2.5 rounded-full ${
-              isBridgeActive ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'
-            }`}
-          ></span>
-          <span className="font-bold text-slate-800 dark:text-slate-200">
-            پل سخت‌افزاری RVG: {isBridgeActive ? 'متصل (Local PACS ON)' : 'قطع ارتباط (Bridge Error)'}
-          </span>
-          <button
-            type="button"
-            onClick={handleToggleBridge}
-            className="text-[10px] text-[#005581] dark:text-[#72cdf4] underline font-bold mr-1 cursor-pointer"
-          >
-            {isBridgeActive ? 'شبیه‌سازی قطعی' : 'اتصال مجدد'}
-          </button>
-        </div>
+        {/* Action / Export Controls in Header */}
+        {readOnly ? (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleDownloadImage}
+              className="px-3.5 py-1.5 rounded-xl bg-[#005581] hover:bg-[#004266] text-white font-bold text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+              title="دانلود فایل اصلی تصویر با کیفیت بالا"
+            >
+              <Download className="w-4 h-4 text-[#ffd200]" />
+              <span>دریافت فایل تصویر</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleShareLink}
+              className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 transition cursor-pointer"
+              title="اشتراک‌گذاری لینک امن"
+            >
+              <Share2 className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
+          /* Local Hardware Bridge Status for Clinic Staff */
+          <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 px-3.5 py-1.5 rounded-2xl text-xs">
+            <span
+              className={`w-2.5 h-2.5 rounded-full ${
+                isBridgeActive ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'
+              }`}
+            ></span>
+            <span className="font-bold text-slate-800 dark:text-slate-200">
+              پل سخت‌افزاری RVG: {isBridgeActive ? 'متصل (Local PACS ON)' : 'قطع ارتباط (Bridge Error)'}
+            </span>
+            <button
+              type="button"
+              onClick={handleToggleBridge}
+              className="text-[10px] text-[#005581] dark:text-[#72cdf4] underline font-bold mr-1 cursor-pointer"
+            >
+              {isBridgeActive ? 'شبیه‌سازی قطعی' : 'اتصال مجدد'}
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Bridge Failure Notification Banner */}
-      {!isBridgeActive && (
+      {/* Export / Download Notification */}
+      {exportNotice && (
+        <div className="p-3 rounded-2xl bg-sky-50 dark:bg-sky-950/40 border border-sky-300 dark:border-sky-800 text-[#005581] dark:text-sky-200 text-xs flex items-center gap-2 font-bold animate-fadeIn">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>{exportNotice}</span>
+        </div>
+      )}
+
+      {/* Bridge Failure Notification Banner (Clinic only) */}
+      {!readOnly && !isBridgeActive && (
         <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs flex items-center justify-between animate-fadeIn">
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 animate-bounce" />
@@ -390,50 +527,52 @@ export const ImageXrayViewer: React.FC<ImageXrayViewerProps> = ({
           </button>
         </div>
 
-        {/* Tool Modes */}
-        <div className="flex items-center gap-1 bg-white dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800">
-          <button
-            type="button"
-            onClick={() => setActiveTool('pin')}
-            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold transition cursor-pointer ${
-              activeTool === 'pin'
-                ? 'bg-[#ffd200] text-[#005581] shadow-xs'
-                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100'
-            }`}
-          >
-            <Crosshair className="w-3.5 h-3.5" />
-            <span>پین و نشانه‌گذاری</span>
-          </button>
+        {/* Tool Modes (Hidden for Patient ReadOnly mode) */}
+        {!readOnly && (
+          <div className="flex items-center gap-1 bg-white dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800">
+            <button
+              type="button"
+              onClick={() => setActiveTool('pin')}
+              className={`flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                activeTool === 'pin'
+                  ? 'bg-[#ffd200] text-[#005581] shadow-xs'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100'
+              }`}
+            >
+              <Crosshair className="w-3.5 h-3.5" />
+              <span>پین و نشانه‌گذاری</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTool('box')}
-            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold transition cursor-pointer ${
-              activeTool === 'box'
-                ? 'bg-[#ffd200] text-[#005581] shadow-xs'
-                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100'
-            }`}
-          >
-            <Square className="w-3.5 h-3.5" />
-            <span>کادربندی ناحیه (ROI)</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setActiveTool('box')}
+              className={`flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                activeTool === 'box'
+                  ? 'bg-[#ffd200] text-[#005581] shadow-xs'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100'
+              }`}
+            >
+              <Square className="w-3.5 h-3.5" />
+              <span>کادربندی ناحیه (ROI)</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTool('view');
-              setSelectedAnnotationId(null);
-            }}
-            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
-              activeTool === 'view'
-                ? 'bg-[#005581] text-white'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100'
-            }`}
-          >
-            <Eye className="w-3.5 h-3.5" />
-            <span>حالت مشاهده</span>
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTool('view');
+                setSelectedAnnotationId(null);
+              }}
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                activeTool === 'view'
+                  ? 'bg-[#005581] text-white'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100'
+              }`}
+            >
+              <Eye className="w-3.5 h-3.5" />
+              <span>حالت مشاهده</span>
+            </button>
+          </div>
+        )}
 
         {/* AI Layer Toggle & Clear */}
         <div className="flex items-center gap-2">
@@ -447,10 +586,10 @@ export const ImageXrayViewer: React.FC<ImageXrayViewerProps> = ({
             }`}
           >
             <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-            <span>{showAiLayer ? 'لایه تشخیص AI فعال' : 'نمایش لایه AI (خاموش)'}</span>
+            <span>{showAiLayer ? 'لایه تشخیص هوش مصنوعی فعال' : 'نمایش لایه AI (خاموش)'}</span>
           </button>
 
-          {showAiLayer && annotations.some((a) => a.author === 'ai') && (
+          {!readOnly && showAiLayer && annotations.some((a) => a.author === 'ai') && (
             <button
               type="button"
               onClick={handleClearAllAiMarkers}
@@ -463,14 +602,14 @@ export const ImageXrayViewer: React.FC<ImageXrayViewerProps> = ({
         </div>
       </div>
 
-      {/* Main Full-Width Medical Viewport (No side list!) */}
+      {/* Main Full-Width Medical Viewport */}
       <div className="relative rounded-3xl overflow-hidden border-2 border-slate-800 bg-black min-h-[440px] max-h-[620px] flex items-center justify-center select-none shadow-2xl">
         {/* Canvas Area */}
         <div
           ref={imageContainerRef}
           onClick={handleImageClick}
           className={`relative w-full h-full min-h-[440px] flex items-center justify-center ${
-            activeTool !== 'view' ? 'cursor-crosshair' : 'cursor-default'
+            !readOnly && activeTool !== 'view' ? 'cursor-crosshair' : 'cursor-default'
           }`}
         >
           {/* Dedicated Dental Radiograph / CBCT / OPG / Intraoral Canvas */}
@@ -496,7 +635,7 @@ export const ImageXrayViewer: React.FC<ImageXrayViewerProps> = ({
             <div>مدالیته: {selectedImageType.toUpperCase()} PACS</div>
             <div>دندان تحت بررسی: FDI {toothFdi || 16}</div>
             <div className="text-emerald-400 text-[10px]">
-              تعداد علائم: {visibleAnnotations.length} مورد
+              تعداد علائم ثبت‌شده: {visibleAnnotations.length} مورد
             </div>
           </div>
 
@@ -553,7 +692,7 @@ export const ImageXrayViewer: React.FC<ImageXrayViewerProps> = ({
             </button>
           </div>
 
-          {/* Active Annotations Rendered Directly on Image (با نمایش کامل متن روی عکس) */}
+          {/* Active Annotations Rendered Directly on Image */}
           {visibleAnnotations.map((ann) => {
             const isSelected = selectedAnnotationId === ann.id;
             const isAi = ann.author === 'ai';
@@ -590,14 +729,16 @@ export const ImageXrayViewer: React.FC<ImageXrayViewerProps> = ({
                     >
                       {isAi ? `AI (${ann.aiConfidence}%)` : `FDI ${ann.toothFdi || toothFdi || 16}`}
                     </span>
-                    <button
-                      type="button"
-                      onClick={(e) => handleDeleteAnnotation(ann.id, e)}
-                      className="bg-rose-600/90 hover:bg-rose-700 text-white rounded-full p-0.5 cursor-pointer shadow transition"
-                      title="حذف این علامت"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
+                    {!readOnly && (
+                      <button
+                        type="button"
+                        onClick={(e) => handleDeleteAnnotation(ann.id, e)}
+                        className="bg-rose-600/90 hover:bg-rose-700 text-white rounded-full p-0.5 cursor-pointer shadow transition"
+                        title="حذف این علامت"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
                   </div>
 
                   {/* Text Badge displayed clearly on the box */}
@@ -608,7 +749,7 @@ export const ImageXrayViewer: React.FC<ImageXrayViewerProps> = ({
               );
             }
 
-            // PIN TYPE ANNOTATION (پین با متن واضح روی عکس)
+            // PIN TYPE ANNOTATION
             return (
               <div
                 key={ann.id}
@@ -646,21 +787,23 @@ export const ImageXrayViewer: React.FC<ImageXrayViewerProps> = ({
                   {ann.text}
                 </span>
 
-                {/* Quick Delete 'x' Button */}
-                <button
-                  type="button"
-                  onClick={(e) => handleDeleteAnnotation(ann.id, e)}
-                  className="p-1 rounded-full bg-white/10 hover:bg-rose-600 text-white cursor-pointer transition mr-0.5"
-                  title="حذف علامت"
-                >
-                  <X className="w-3 h-3" />
-                </button>
+                {/* Quick Delete 'x' Button (Doctor only) */}
+                {!readOnly && (
+                  <button
+                    type="button"
+                    onClick={(e) => handleDeleteAnnotation(ann.id, e)}
+                    className="p-1 rounded-full bg-white/10 hover:bg-rose-600 text-white cursor-pointer transition mr-0.5"
+                    title="حذف علامت"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
               </div>
             );
           })}
         </div>
 
-        {/* ON-IMAGE INTERACTIVE EDITING & ACTION BOX (باکس تغییر، متن کامل، ادیت و امکان حذف) */}
+        {/* ON-IMAGE INTERACTIVE EDITING OR READONLY VIEWING POPOVER */}
         {selectedAnnotation && (
           <div
             onClick={(e) => e.stopPropagation()}
@@ -670,16 +813,16 @@ export const ImageXrayViewer: React.FC<ImageXrayViewerProps> = ({
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2.5">
               <div className="flex items-center gap-2">
                 <div className="w-7 h-7 rounded-xl bg-[#005581] text-[#ffd200] flex items-center justify-center font-bold">
-                  <Edit3 className="w-4 h-4" />
+                  {readOnly ? <Info className="w-4 h-4" /> : <Edit3 className="w-4 h-4" />}
                 </div>
                 <div>
                   <h4 className="font-extrabold text-xs text-[#005581] dark:text-[#72cdf4]">
-                    مدیریت و ویرایش علامت روی عکس
+                    {readOnly ? 'شرح و یافته تشخیصی' : 'مدیریت و ویرایش علامت روی عکس'}
                   </h4>
                   <span className="text-[10px] text-slate-500">
                     {selectedAnnotation.author === 'ai'
                       ? `تشخیص هوش مصنوعی (دقت ${selectedAnnotation.aiConfidence}٪)`
-                      : 'ثبت شده توسط دندان‌پزشک'}
+                      : 'ثبت شده توسط دندان‌پزشک معالج'}
                   </span>
                 </div>
               </div>
@@ -692,7 +835,7 @@ export const ImageXrayViewer: React.FC<ImageXrayViewerProps> = ({
                       : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
                   }`}
                 >
-                  {selectedAnnotation.author === 'ai' ? 'هوش مصنوعی' : 'پزشک'}
+                  {selectedAnnotation.author === 'ai' ? 'هوش مصنوعی' : 'پزشک معالج'}
                 </span>
                 <button
                   type="button"
@@ -705,142 +848,174 @@ export const ImageXrayViewer: React.FC<ImageXrayViewerProps> = ({
               </div>
             </div>
 
-            {/* Tooth FDI Input */}
-            <div className="flex items-center justify-between gap-3 text-xs">
-              <span className="font-bold text-slate-700 dark:text-slate-300">
-                شماره دندان مرتبط (FDI):
-              </span>
-              <input
-                type="number"
-                value={editingToothFdi}
-                onChange={(e) => {
-                  const val = Number(e.target.value);
-                  setEditingToothFdi(val);
-                  handleSaveCurrentAnnotation(editingText, val);
-                }}
-                className="w-24 px-2.5 py-1 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-mono font-bold text-center text-xs outline-none focus:ring-2 focus:ring-[#005581]"
-              />
-            </div>
+            {/* ReadOnly vs Editable Content */}
+            {readOnly ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-xs bg-slate-50 dark:bg-slate-800 p-2 rounded-xl">
+                  <span className="font-bold text-slate-600 dark:text-slate-300">شماره دندان مرتبط:</span>
+                  <span className="font-bold text-[#005581] dark:text-[#72cdf4] font-mono">
+                    دندان FDI {selectedAnnotation.toothFdi || toothFdi || 16}
+                  </span>
+                </div>
 
-            {/* Full Textarea for Editing the Annotation */}
-            <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                متن کامل یادداشت یا تشخیص بالینی:
-              </label>
-              <textarea
-                ref={editTextareaRef}
-                rows={3}
-                value={editingText}
-                onChange={(e) => {
-                  setEditingText(e.target.value);
-                  handleSaveCurrentAnnotation(e.target.value, editingToothFdi);
-                }}
-                placeholder="متن یادداشت، تشخیص یا دستور درمانی را بنویسید..."
-                className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 text-xs outline-none focus:ring-2 focus:ring-[#005581] leading-relaxed"
-              />
-            </div>
+                <div className="p-3 bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/40 rounded-xl">
+                  <span className="text-[11px] font-bold text-slate-500 block mb-1">متن شرح بالینی:</span>
+                  <p className="text-xs text-slate-800 dark:text-slate-200 font-medium leading-relaxed">
+                    {selectedAnnotation.text}
+                  </p>
+                </div>
 
-            {/* Quick Diagnostic Presets (پیشنهادهای سریع) */}
-            <div className="space-y-1">
-              <span className="block text-[10px] font-bold text-slate-500">
-                انتخاب سریع شرح‌های بالینی:
-              </span>
-              <div className="flex flex-wrap gap-1 max-h-[70px] overflow-y-auto">
-                {diagnosisPresets.map((preset) => (
+                <div className="flex justify-end pt-2">
                   <button
-                    key={preset}
                     type="button"
-                    onClick={() => {
-                      setEditingText(preset);
-                      handleSaveCurrentAnnotation(preset, editingToothFdi);
+                    onClick={() => setSelectedAnnotationId(null)}
+                    className="px-4 py-1.5 rounded-xl bg-[#005581] text-white font-bold text-xs cursor-pointer hover:bg-[#004266]"
+                  >
+                    متوجه شدم
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* Tooth FDI Input */}
+                <div className="flex items-center justify-between gap-3 text-xs">
+                  <span className="font-bold text-slate-700 dark:text-slate-300">
+                    شماره دندان مرتبط (FDI):
+                  </span>
+                  <input
+                    type="number"
+                    value={editingToothFdi}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      setEditingToothFdi(val);
+                      handleSaveCurrentAnnotation(editingText, val);
                     }}
-                    className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-[#005581] hover:text-white text-[10px] font-medium text-slate-700 dark:text-slate-300 transition cursor-pointer"
-                  >
-                    + {preset}
-                  </button>
-                ))}
-              </div>
-            </div>
+                    className="w-24 px-2.5 py-1 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-mono font-bold text-center text-xs outline-none focus:ring-2 focus:ring-[#005581]"
+                  />
+                </div>
 
-            {/* Action Buttons: Delete, Accept AI, Done */}
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
-              {/* Delete Button */}
-              <button
-                type="button"
-                onClick={() => handleDeleteAnnotation(selectedAnnotation.id)}
-                className="flex items-center gap-1 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:hover:bg-rose-900/50 dark:text-rose-300 border border-rose-200 dark:border-rose-800 rounded-xl text-xs font-bold transition cursor-pointer"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>حذف علامت</span>
-              </button>
+                {/* Full Textarea for Editing the Annotation */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                    متن کامل یادداشت یا تشخیص بالینی:
+                  </label>
+                  <textarea
+                    ref={editTextareaRef}
+                    rows={3}
+                    value={editingText}
+                    onChange={(e) => {
+                      setEditingText(e.target.value);
+                      handleSaveCurrentAnnotation(e.target.value, editingToothFdi);
+                    }}
+                    placeholder="متن یادداشت، تشخیص یا دستور درمانی را بنویسید..."
+                    className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 text-xs outline-none focus:ring-2 focus:ring-[#005581] leading-relaxed"
+                  />
+                </div>
 
-              <div className="flex items-center gap-2">
-                {/* Accept AI detection if AI-authored */}
-                {selectedAnnotation.author === 'ai' && (
+                {/* Quick Diagnostic Presets */}
+                <div className="space-y-1">
+                  <span className="block text-[10px] font-bold text-slate-500">
+                    انتخاب سریع شرح‌های بالینی:
+                  </span>
+                  <div className="flex flex-wrap gap-1 max-h-[70px] overflow-y-auto">
+                    {diagnosisPresets.map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => {
+                          setEditingText(preset);
+                          handleSaveCurrentAnnotation(preset, editingToothFdi);
+                        }}
+                        className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-[#005581] hover:text-white text-[10px] font-medium text-slate-700 dark:text-slate-300 transition cursor-pointer"
+                      >
+                        + {preset}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Action Buttons: Delete, Accept AI, Done */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
                   <button
                     type="button"
-                    onClick={() => handleAcceptAiAnnotation(selectedAnnotation.id)}
-                    className="flex items-center gap-1 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition cursor-pointer shadow-xs"
+                    onClick={() => handleDeleteAnnotation(selectedAnnotation.id)}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:hover:bg-rose-900/50 dark:text-rose-300 border border-rose-200 dark:border-rose-800 rounded-xl text-xs font-bold transition cursor-pointer"
                   >
-                    <Check className="w-3.5 h-3.5" />
-                    <span>تأیید تشخیص AI</span>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>حذف علامت</span>
                   </button>
-                )}
 
-                {/* Save & Close Button */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleSaveCurrentAnnotation(editingText, editingToothFdi);
-                    setSelectedAnnotationId(null);
-                  }}
-                  className="flex items-center gap-1 px-4 py-1.5 bg-[#005581] hover:bg-[#004266] text-white rounded-xl text-xs font-bold shadow-md transition cursor-pointer"
-                >
-                  <Check className="w-3.5 h-3.5 text-[#ffd200]" />
-                  <span>تأیید و ذخیره</span>
-                </button>
-              </div>
-            </div>
+                  <div className="flex items-center gap-2">
+                    {selectedAnnotation.author === 'ai' && (
+                      <button
+                        type="button"
+                        onClick={() => handleAcceptAiAnnotation(selectedAnnotation.id)}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition cursor-pointer shadow-xs"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>تأیید تشخیص AI</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleSaveCurrentAnnotation(editingText, editingToothFdi);
+                        setSelectedAnnotationId(null);
+                      }}
+                      className="flex items-center gap-1 px-4 py-1.5 bg-[#005581] hover:bg-[#004266] text-white rounded-xl text-xs font-bold shadow-md transition cursor-pointer"
+                    >
+                      <Check className="w-3.5 h-3.5 text-[#ffd200]" />
+                      <span>تأیید و ذخیره</span>
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
 
       {/* Guide text under image */}
       <div className="text-center text-[11px] text-slate-500 dark:text-slate-400">
-        {activeTool !== 'view'
+        {readOnly
+          ? 'جهت مشاهده شرح و جزئیات هر یک از علائم و تشخیص‌های پزشک، روی علامت مربوطه روی تصویر کلیک فرمایید.'
+          : activeTool !== 'view'
           ? 'جهت ثبت علامت جدید روی عکس کلیک کنید. با کلیک بر هر علامت، متن کامل و باکس ویرایش/حذف باز می‌شود.'
           : 'حالت مشاهده فعال است. جهت درج پین یا کادر، از نوار بالا ابزار نشانه‌گذاری را انتخاب فرمایید.'}
       </div>
 
-      {/* Bottom Actions: Save to Dossier & External PACS Link Importer */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
-        {/* Action Button: Save to Dossier & Insurance */}
-        <button
-          type="button"
-          onClick={handleSaveToDossier}
-          className="w-full py-3 bg-[#005581] hover:bg-[#004266] text-white rounded-2xl font-black text-xs shadow-md transition cursor-pointer flex items-center justify-center gap-2"
-        >
-          <ShieldCheck className="w-4 h-4 text-[#ffd200]" />
-          <span>الصاق تصویر و کلیه نشانه‌ها ({visibleAnnotations.length} مورد) به پرونده UDR و شرح بیمه</span>
-        </button>
-
-        {/* External Imaging Center Link Integration */}
-        <form onSubmit={handleImportExternalLink} className="flex gap-2">
-          <input
-            type="url"
-            placeholder="لینک تصویر مرکز رادیولوژی بیرونی (External PACS)..."
-            value={externalLink}
-            onChange={(e) => setExternalLink(e.target.value)}
-            className="flex-1 px-3.5 py-2 rounded-2xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs outline-none focus:ring-2 focus:ring-[#005581]"
-          />
+      {/* Bottom Actions (Doctor only) */}
+      {!readOnly && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+          {/* Action Button: Save to Dossier & Insurance */}
           <button
-            type="submit"
-            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-2xl text-xs shadow cursor-pointer whitespace-nowrap"
+            type="button"
+            onClick={handleSaveToDossier}
+            className="w-full py-3 bg-[#005581] hover:bg-[#004266] text-white rounded-2xl font-black text-xs shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
           >
-            الصاق لینک
+            <ShieldCheck className="w-4 h-4 text-[#ffd200]" />
+            <span>الصاق تصویر و کلیه نشانه‌ها ({visibleAnnotations.length} مورد) به پرونده UDR و شرح بیمه</span>
           </button>
-        </form>
-      </div>
+
+          {/* External Imaging Center Link Integration */}
+          <form onSubmit={handleImportExternalLink} className="flex gap-2">
+            <input
+              type="url"
+              placeholder="لینک تصویر مرکز رادیولوژی بیرونی (External PACS)..."
+              value={externalLink}
+              onChange={(e) => setExternalLink(e.target.value)}
+              className="flex-1 px-3.5 py-2 rounded-2xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs outline-none focus:ring-2 focus:ring-[#005581]"
+            />
+            <button
+              type="submit"
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-2xl text-xs shadow cursor-pointer whitespace-nowrap"
+            >
+              الصاق لینک
+            </button>
+          </form>
+        </div>
+      )}
     </div>
   );
 };

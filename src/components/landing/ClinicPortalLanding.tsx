@@ -13,14 +13,33 @@ import {
   ArrowRight,
   Sparkles,
   CheckSquare,
+  AlertCircle,
+  Lock,
+  Phone,
+  CreditCard,
+  Check,
 } from 'lucide-react';
 import { ClinicRegistration, UserRole, UserProfile, Patient } from '../../types';
 import { OnlineBookingModal } from '../booking/OnlineBookingModal';
 import { toPersianDigits } from '../../utils/persianDigits';
+import {
+  isValidNationalId,
+  isValidMobile,
+  isValidEmail,
+  isValidPassword,
+  isValidMedicalCouncil,
+  toEnglishDigits,
+} from '../../utils/validators';
 
 interface ClinicPortalLandingProps {
   clinic: ClinicRegistration;
-  onStaffLogin: (role: UserRole, mobileOrNationalId: string, fullName?: string, password?: string) => void;
+  onStaffLogin: (
+    role: UserRole,
+    mobileOrNationalId: string,
+    fullName?: string,
+    password?: string,
+    extra?: { nationalId?: string; email?: string; medicalCouncilNo?: string }
+  ) => void;
   onPatientLogin: (nationalId: string, isGuardian?: boolean, newBookingDetails?: any) => void;
   onInsurerLogin: (providerName: string, role?: UserRole) => void;
   onBackToDentora: () => void;
@@ -42,9 +61,13 @@ export const ClinicPortalLanding: React.FC<ClinicPortalLandingProps> = ({
   
   // Staff Form State
   const [staffMobile, setStaffMobile] = useState('');
+  const [staffNationalId, setStaffNationalId] = useState('');
+  const [staffMedicalCouncilNo, setStaffMedicalCouncilNo] = useState('');
+  const [staffEmail, setStaffEmail] = useState('');
   const [staffPassword, setStaffPassword] = useState('');
   const [staffFullName, setStaffFullName] = useState('');
   const [staffRole, setStaffRole] = useState<UserRole>('receptionist');
+  const [staffError, setStaffError] = useState<string | null>(null);
 
   // Filter available roles according to clinic's active roles
   const ownerRoleType = clinic.ownerRole || 'dentist';
@@ -56,13 +79,14 @@ export const ClinicPortalLanding: React.FC<ClinicPortalLandingProps> = ({
     dentist: 'پزشک معالج',
     accountant: 'حسابدار / مدیر مالی',
     manager: 'مدیر کلینیک',
+    lab: 'لابراتوار دندان‌سازی (Lab Portal)',
   };
 
-  const activeClinicRoles: UserRole[] = clinic.activeRoles || ['receptionist', 'dentist', 'accountant', 'manager', 'owner'];
+  const activeClinicRoles: UserRole[] = clinic.activeRoles || ['receptionist', 'dentist', 'accountant', 'manager', 'owner', 'lab'];
 
   // If owner is active, 'مالک / [نقش خودش]' is sufficient and the standalone matching role is not needed
   const availableStaffRoles = (
-    ['owner', 'receptionist', 'dentist', 'accountant', 'manager'] as UserRole[]
+    ['owner', 'receptionist', 'dentist', 'accountant', 'manager', 'lab'] as UserRole[]
   )
     .filter((role) => {
       if (!activeClinicRoles.includes(role)) return false;
@@ -101,6 +125,7 @@ export const ClinicPortalLanding: React.FC<ClinicPortalLandingProps> = ({
   const [guardianMobile, setGuardianMobile] = useState('');
   const [childName, setChildName] = useState('');
   const [childNationalId, setChildNationalId] = useState('');
+  const [patientError, setPatientError] = useState<string | null>(null);
 
   // Insurer Form State
   const [insurerTab, setInsurerTab] = useState<'login' | 'signup'>('login');
@@ -109,56 +134,159 @@ export const ClinicPortalLanding: React.FC<ClinicPortalLandingProps> = ({
   const [insurerPassword, setInsurerPassword] = useState('');
   const [insurerProvider, setInsurerProvider] = useState('بیمه تامین اجتماعی');
 
+  // Quick fill helper for demo ease
+  const handleQuickFillStaff = (role: UserRole, phone: string, pass: string) => {
+    setStaffMobile(phone);
+    setStaffPassword(pass);
+    setStaffRole(role);
+    setStaffError(null);
+  };
+
   // Handlers
   const handleStaffSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!staffMobile.trim()) {
-      alert('لطفاً شماره موبایل یا کد ملی خود را وارد نمایید.');
-      return;
+    setStaffError(null);
+
+    const cleanMobile = toEnglishDigits(staffMobile).trim();
+    const cleanPass = staffPassword.trim();
+
+    if (staffTab === 'login') {
+      if (!cleanMobile) {
+        setStaffError('لطفاً شماره موبایل یا کد ملی خود را وارد نمایید.');
+        return;
+      }
+      if (!cleanPass) {
+        setStaffError('لطفاً کلمه عبور خود را وارد نمایید.');
+        return;
+      }
+      const roleToUse = staffRole || (availableStaffRoles[0]?.value || 'receptionist');
+      onStaffLogin(roleToUse, cleanMobile, undefined, cleanPass);
+    } else {
+      // Staff Signup Validations
+      const cleanName = staffFullName.trim();
+      const cleanNatId = toEnglishDigits(staffNationalId).trim();
+      const cleanEmail = toEnglishDigits(staffEmail).trim();
+      const cleanMedNo = toEnglishDigits(staffMedicalCouncilNo).trim();
+
+      if (!cleanName || cleanName.length < 3) {
+        setStaffError('لطفاً نام و نام خانوادگی خود را کامل وارد نمایید.');
+        return;
+      }
+      if (!isValidNationalId(cleanNatId)) {
+        setStaffError('کد ملی ۱۰ رقمی وارد شده نامعتبر است.');
+        return;
+      }
+      if (!isValidMobile(cleanMobile)) {
+        setStaffError('شماره همراه نامعتبر است (الگوی صحیح: 09xxxxxxxxx).');
+        return;
+      }
+      if (cleanEmail && !isValidEmail(cleanEmail)) {
+        setStaffError('فرمت ایمیل وارد شده نامعتبر است.');
+        return;
+      }
+      const passCheck = isValidPassword(cleanPass);
+      if (!passCheck.valid) {
+        setStaffError(passCheck.message || 'رمز عبور باید حداقل ۶ کاراکتر باشد.');
+        return;
+      }
+      if (staffRole === 'dentist' && !cleanMedNo) {
+        setStaffError('ورود شماره نظام پزشکی برای پزشک الزامی است.');
+        return;
+      }
+
+      const roleToUse = staffRole || 'receptionist';
+      onStaffLogin(roleToUse, cleanMobile, cleanName, cleanPass, {
+        nationalId: cleanNatId,
+        email: cleanEmail,
+        medicalCouncilNo: cleanMedNo,
+      });
     }
-    const roleToUse = staffRole || (availableStaffRoles[0]?.value || 'receptionist');
-    const nameToUse = staffTab === 'signup' ? staffFullName : undefined;
-    onStaffLogin(roleToUse, staffMobile, nameToUse, staffPassword);
   };
 
   const handlePatientSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setPatientError(null);
+
     if (patientTab === 'login') {
-      if (!patientNationalId.trim()) {
-        alert('لطفاً ۱۰ رقم کد ملی خود را وارد نمایید.');
+      const cleanNatId = toEnglishDigits(patientNationalId).trim();
+      if (!cleanNatId) {
+        setPatientError('لطفاً کد ملی ۱۰ رقمی خود را وارد نمایید.');
         return;
       }
-      onPatientLogin(patientNationalId);
+      if (!isValidNationalId(cleanNatId)) {
+        setPatientError('کد ملی وارد شده نامعتبر است (باید ۱۰ رقم معتبر باشد).');
+        return;
+      }
+      onPatientLogin(cleanNatId);
     } else {
+      // Patient Signup
       if (isLegalGuardian) {
-        if (!guardianNationalId.trim() || !childNationalId.trim()) {
-          alert('لطفاً کد ملی سرپرست و کودک را وارد نمایید.');
+        const cleanGName = guardianName.trim();
+        const cleanGNatId = toEnglishDigits(guardianNationalId).trim();
+        const cleanGMobile = toEnglishDigits(guardianMobile).trim();
+        const cleanCName = childName.trim();
+        const cleanCNatId = toEnglishDigits(childNationalId).trim();
+
+        if (!cleanGName || cleanGName.length < 3) {
+          setPatientError('لطفاً نام کامل سرپرست قانونی را وارد فرمایید.');
           return;
         }
-        onPatientLogin(childNationalId, true, {
-          patientName: childName || 'کودک بیمار',
-          patientPhone: guardianMobile,
-          patientNationalId: childNationalId,
+        if (!isValidNationalId(cleanGNatId)) {
+          setPatientError('کد ملی سرپرست قانونی نامعتبر است.');
+          return;
+        }
+        if (!isValidMobile(cleanGMobile)) {
+          setPatientError('شماره همراه سرپرست نامعتبر است.');
+          return;
+        }
+        if (!cleanCName || cleanCName.length < 2) {
+          setPatientError('لطفاً نام کودک / فرزند بیمار را وارد فرمایید.');
+          return;
+        }
+        if (!isValidNationalId(cleanCNatId)) {
+          setPatientError('کد ملی کودک / فرزند نامعتبر است.');
+          return;
+        }
+
+        onPatientLogin(cleanCNatId, true, {
+          patientName: cleanCName,
+          patientPhone: cleanGMobile,
+          patientNationalId: cleanCNatId,
           birthDate: '۱۳۹۵/۰۱/۰۱',
           isLegalGuardian: true,
-          guardianName,
-          guardianNationalId,
-          guardianPhone: guardianMobile,
+          guardianName: cleanGName,
+          guardianNationalId: cleanGNatId,
+          guardianPhone: cleanGMobile,
           primaryInsurance: patientPrimaryInsurance,
           supplInsurance: patientSupplInsurance,
+          password: patientPassword,
         });
       } else {
-        if (!patientNationalId.trim()) {
-          alert('لطفاً کد ملی خود را وارد نمایید.');
+        const cleanName = patientFullName.trim();
+        const cleanNatId = toEnglishDigits(patientNationalId).trim();
+        const cleanMobile = toEnglishDigits(patientMobile).trim();
+
+        if (!cleanName || cleanName.length < 3) {
+          setPatientError('لطفاً نام و نام خانوادگی بیمار را وارد فرمایید.');
           return;
         }
-        onPatientLogin(patientNationalId, false, {
-          patientName: patientFullName || 'بیمار جدید',
-          patientPhone: patientMobile || '09120000000',
-          patientNationalId,
+        if (!isValidNationalId(cleanNatId)) {
+          setPatientError('کد ملی بیمار نامعتبر است (باید ۱۰ رقم معتبر باشد).');
+          return;
+        }
+        if (!isValidMobile(cleanMobile)) {
+          setPatientError('شماره همراه نامعتبر است (فرمت: 09xxxxxxxxx).');
+          return;
+        }
+
+        onPatientLogin(cleanNatId, false, {
+          patientName: cleanName,
+          patientPhone: cleanMobile,
+          patientNationalId: cleanNatId,
           birthDate: patientBirthDate,
           primaryInsurance: patientPrimaryInsurance,
           supplInsurance: patientSupplInsurance,
+          password: patientPassword,
         });
       }
     }
@@ -382,26 +510,109 @@ export const ClinicPortalLanding: React.FC<ClinicPortalLandingProps> = ({
 
             {/* Staff Form */}
             <form onSubmit={handleStaffSubmit} className="space-y-4">
-              
-              {staffTab === 'signup' && (
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                    نام و نام خانوادگی
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="نام کامل خود را وارد کنید"
-                    value={staffFullName}
-                    onChange={(e) => setStaffFullName(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl border-2 border-slate-200 focus:border-[#005581] text-sm outline-none transition bg-slate-50 focus:bg-white"
-                  />
+
+              {staffError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs font-bold text-rose-700 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+                  <span>{staffError}</span>
                 </div>
+              )}
+
+              {/* Demo quick fill shortcuts for testing */}
+              <div className="p-2.5 bg-sky-50 border border-sky-100 rounded-xl text-[11px] text-sky-800 space-y-1.5">
+                <span className="font-bold flex items-center gap-1 text-[#005581]">
+                  <Sparkles className="w-3.5 h-3.5 text-[#ffd200]" />
+                  دسترسی سریع پرسنل پیش‌فرض کلینیک (دمو):
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleQuickFillStaff('dentist', '09121112233', '123456')}
+                    className="px-2 py-0.5 rounded-lg bg-white border border-sky-200 hover:bg-sky-100 transition font-medium"
+                  >
+                    دکتر کاویانی (پزشک)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickFillStaff('receptionist', '09122223344', '123456')}
+                    className="px-2 py-0.5 rounded-lg bg-white border border-sky-200 hover:bg-sky-100 transition font-medium"
+                  >
+                    مریم امیری (پذیرش)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickFillStaff('accountant', '09123334455', '123456')}
+                    className="px-2 py-0.5 rounded-lg bg-white border border-sky-200 hover:bg-sky-100 transition font-medium"
+                  >
+                    حسین راد (حسابدار)
+                  </button>
+                </div>
+              </div>
+
+              {staffTab === 'signup' && (
+                <>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                      نام و نام خانوادگی <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="مثال: دکتر سارا رضایی"
+                      value={staffFullName}
+                      onChange={(e) => setStaffFullName(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl border-2 border-slate-200 focus:border-[#005581] text-sm outline-none transition bg-slate-50 focus:bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                      کد ملی ۱۰ رقمی <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="مثال: ۰۰۱۲۳۴۵۶۷۸"
+                      value={staffNationalId}
+                      onChange={(e) => setStaffNationalId(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl border-2 border-slate-200 focus:border-[#005581] text-sm font-mono outline-none transition bg-slate-50 focus:bg-white"
+                    />
+                  </div>
+
+                  {staffRole === 'dentist' && (
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                        شماره نظام پزشکی <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="مثال: ۱۲۳۴۵۶"
+                        value={staffMedicalCouncilNo}
+                        onChange={(e) => setStaffMedicalCouncilNo(e.target.value)}
+                        className="w-full px-4 py-2.5 rounded-xl border-2 border-slate-200 focus:border-[#005581] text-sm font-mono outline-none transition bg-slate-50 focus:bg-white"
+                      />
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                      ایمیل سازمانی (اختیاری)
+                    </label>
+                    <input
+                      type="email"
+                      placeholder="doctor@example.com"
+                      value={staffEmail}
+                      onChange={(e) => setStaffEmail(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl border-2 border-slate-200 focus:border-[#005581] text-sm font-mono outline-none transition bg-slate-50 focus:bg-white"
+                    />
+                  </div>
+                </>
               )}
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  {staffTab === 'signup' ? 'شماره موبایل' : 'شماره موبایل یا کد ملی'}
+                  {staffTab === 'signup' ? 'شماره همراه' : 'شماره همراه یا کد ملی'} <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -415,12 +626,12 @@ export const ClinicPortalLanding: React.FC<ClinicPortalLandingProps> = ({
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  رمز عبور
+                  رمز عبور <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="password"
                   required
-                  placeholder={staffTab === 'signup' ? 'حداقل ۴ کاراکتر' : 'رمز عبور خود را وارد کنید'}
+                  placeholder={staffTab === 'signup' ? 'حداقل ۶ کاراکتر امن' : 'رمز عبور خود را وارد کنید'}
                   value={staffPassword}
                   onChange={(e) => setStaffPassword(e.target.value)}
                   className="w-full px-4 py-2.5 rounded-xl border-2 border-slate-200 focus:border-[#005581] text-sm outline-none transition bg-slate-50 focus:bg-white"
@@ -468,7 +679,10 @@ export const ClinicPortalLanding: React.FC<ClinicPortalLandingProps> = ({
                 {staffTab === 'login' ? (
                   <button
                     type="button"
-                    onClick={() => setStaffTab('signup')}
+                    onClick={() => {
+                      setStaffTab('signup');
+                      setStaffError(null);
+                    }}
                     className="text-xs font-bold text-[#005581] hover:underline"
                   >
                     حساب کاربری ندارید؟ ثبت‌نام کنید
@@ -476,7 +690,10 @@ export const ClinicPortalLanding: React.FC<ClinicPortalLandingProps> = ({
                 ) : (
                   <button
                     type="button"
-                    onClick={() => setStaffTab('login')}
+                    onClick={() => {
+                      setStaffTab('login');
+                      setStaffError(null);
+                    }}
                     className="text-xs font-bold text-[#005581] hover:underline"
                   >
                     قبلاً ثبت‌نام کرده‌اید؟ وارد شوید
@@ -509,11 +726,71 @@ export const ClinicPortalLanding: React.FC<ClinicPortalLandingProps> = ({
                 D
               </div>
               <h3 className="text-xl font-black text-slate-900">پورتال بیمار دنتورا</h3>
-              <p className="text-xs text-slate-500">برای مشاهده پرونده خود وارد شوید</p>
+              <p className="text-xs text-slate-500">برای مشاهده پرونده و سوابق درمانی خود وارد شوید</p>
+            </div>
+
+            {/* Login / Signup Tabs */}
+            <div className="flex bg-slate-100 p-1.5 rounded-2xl">
+              <button
+                type="button"
+                onClick={() => {
+                  setPatientTab('login');
+                  setPatientError(null);
+                }}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold transition ${
+                  patientTab === 'login'
+                    ? 'bg-white text-[#005581] shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                ورود به پرونده
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setPatientTab('signup');
+                  setPatientError(null);
+                }}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold transition ${
+                  patientTab === 'signup'
+                    ? 'bg-white text-[#005581] shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                تشکیل پرونده جدید
+              </button>
             </div>
 
             {/* Patient Form */}
             <form onSubmit={handlePatientSubmit} className="space-y-4">
+
+              {patientError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs font-bold text-rose-700 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+                  <span>{patientError}</span>
+                </div>
+              )}
+
+              {/* Demo quick fill button for patient */}
+              {patientTab === 'login' && (
+                <div className="p-2.5 bg-sky-50 border border-sky-100 rounded-xl text-[11px] text-sky-800 flex items-center justify-between">
+                  <span className="font-bold flex items-center gap-1 text-[#005581]">
+                    <Sparkles className="w-3.5 h-3.5 text-[#ffd200]" />
+                    بیمار دمو (علی رضایی):
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPatientNationalId('0012345678');
+                      setPatientPassword('123456');
+                      setPatientError(null);
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-white border border-sky-200 hover:bg-sky-100 transition font-bold text-[#005581]"
+                  >
+                    تکمیل خودکار (۰۰۱۲۳۴۵۶۷۸)
+                  </button>
+                </div>
+              )}
               
               {patientTab === 'signup' && (
                 <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex items-center gap-2">

@@ -169,6 +169,49 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
   // Toggle to show only pending unfinalized claims or show all
   const [showOnlyPendingClaims, setShowOnlyPendingClaims] = useState<boolean>(true);
 
+  // Helper to calculate risk score breakdown
+  const getRiskBreakdown = (claim: Claim) => {
+    const factors: { label: string; score: number; detail: string }[] = [];
+    let calculatedScore = 15; // Base risk
+
+    const hasTariffOvershoot = (claim.items || []).some((item) => item.claimedAmount > item.tariffAmount);
+    if (hasTariffOvershoot) {
+      factors.push({
+        label: 'مغایرت تعرفه پایه',
+        score: 25,
+        detail: 'مبلغ ادعاشده در حداقل یک قلم بیش از تعرفه پایه مصوب است.',
+      });
+      calculatedScore += 25;
+    }
+
+    if (!claim.evidences || claim.evidences.length === 0) {
+      factors.push({
+        label: 'عدم ارائه کلیشه/فاکتور',
+        score: 35,
+        detail: 'هیچ شواهد تصویری یا فاکتور معتبر ضمیمه نشده است.',
+      });
+      calculatedScore += 35;
+    }
+
+    if (claim.aiFlags && claim.aiFlags.length > 0) {
+      const highSeverity = claim.aiFlags.some((f) => f.severity === 'high');
+      const addScore = highSeverity ? 30 : 15;
+      factors.push({
+        label: 'سیگنال هوش مصنوعی',
+        score: addScore,
+        detail: `${toFa(claim.aiFlags.length)} مورد مغایرت خودکار توسط کوپایلت علامت‌گذاری شده است.`,
+      });
+      calculatedScore += addScore;
+    }
+
+    const finalScore = Math.min(100, Math.max(claim.riskScore, calculatedScore));
+    let calculatedQueue: ReviewRoute = 'express';
+    if (finalScore >= 70) calculatedQueue = 'deep_review';
+    else if (finalScore >= 40) calculatedQueue = 'standard';
+
+    return { finalScore, factors, calculatedQueue };
+  };
+
   // Filtered claims for queue view: finalized claims (settled/rejected) without active pending appeal are hidden from active list
   const queueClaims = claims.filter((c) => {
     const isAppealed = c.status === 'appealed' || (c.appeals && c.appeals.some((a) => a.status === 'pending'));
@@ -233,49 +276,6 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
   const filteredAppeals = selectedClinicFilter === 'all'
     ? pendingAppeals
     : pendingAppeals.filter((a) => a.clinicName === selectedClinicFilter);
-
-  // Helper to calculate risk score breakdown
-  const getRiskBreakdown = (claim: Claim) => {
-    const factors: { label: string; score: number; detail: string }[] = [];
-    let calculatedScore = 15; // Base risk
-
-    const hasTariffOvershoot = (claim.items || []).some((item) => item.claimedAmount > item.tariffAmount);
-    if (hasTariffOvershoot) {
-      factors.push({
-        label: 'مغایرت تعرفه پایه',
-        score: 25,
-        detail: 'مبلغ ادعاشده در حداقل یک قلم بیش از تعرفه پایه مصوب است.',
-      });
-      calculatedScore += 25;
-    }
-
-    if (!claim.evidences || claim.evidences.length === 0) {
-      factors.push({
-        label: 'عدم ارائه کلیشه/فاکتور',
-        score: 35,
-        detail: 'هیچ شواهد تصویری یا فاکتور معتبر ضمیمه نشده است.',
-      });
-      calculatedScore += 35;
-    }
-
-    if (claim.aiFlags && claim.aiFlags.length > 0) {
-      const highSeverity = claim.aiFlags.some((f) => f.severity === 'high');
-      const addScore = highSeverity ? 30 : 15;
-      factors.push({
-        label: 'سیگنال هوش مصنوعی',
-        score: addScore,
-        detail: `${toFa(claim.aiFlags.length)} مورد مغایرت خودکار توسط کوپایلت علامت‌گذاری شده است.`,
-      });
-      calculatedScore += addScore;
-    }
-
-    const finalScore = Math.min(100, Math.max(claim.riskScore, calculatedScore));
-    let calculatedQueue: ReviewRoute = 'express';
-    if (finalScore >= 70) calculatedQueue = 'deep_review';
-    else if (finalScore >= 40) calculatedQueue = 'standard';
-
-    return { finalScore, factors, calculatedQueue };
-  };
 
   // Discrepancy Items generator per Claim
   const getDiscrepanciesForClaim = (claim: Claim) => {

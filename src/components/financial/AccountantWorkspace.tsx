@@ -4,6 +4,7 @@ import {
   Invoice,
   InstallmentPlan,
   Claim,
+  ClaimAppeal,
   GreenLaneStatus,
   AuditLog,
 } from '../../types';
@@ -69,7 +70,13 @@ interface AccountantWorkspaceProps {
   onToggleConnectionStatus?: () => void;
   isBNPLEnabledForClinic?: boolean;
   onPayInstallment: (planId: string, installmentNo: number) => void;
-  onSubmitAppeal?: (claimId: string, appealReason: string) => void;
+  onSubmitAppeal?: (
+    claimId: string,
+    appealReason: string,
+    additionalEvidenceUrls?: string[],
+    category?: string,
+    ruleCitation?: string
+  ) => void;
   initialActiveTab?: AccountantNavTab;
   hideSidebar?: boolean;
 }
@@ -403,14 +410,74 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
   // Handle Appeal Submit
   const handleSendAppeal = (claimId: string) => {
     if (!appealText.trim()) return;
+    const imageUrls = appealAttachedImages
+      .map((img) => img.url)
+      .filter(Boolean) as string[];
+    const finalImages =
+      imageUrls.length > 0
+        ? imageUrls
+        : ['https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?w=600&auto=format&fit=crop&q=80'];
+
     if (onSubmitAppeal) {
-      onSubmitAppeal(claimId, appealText);
+      onSubmitAppeal(
+        claimId,
+        appealText,
+        finalImages,
+        appealReasonCategory,
+        appealInsuranceRegulation
+      );
     }
+
+    if (setClaims) {
+      setClaims((prev) =>
+        prev.map((c) => {
+          if (c.id !== claimId) return c;
+          const newAppeal: ClaimAppeal = {
+            id: `app-${Date.now()}`,
+            claimId: c.id,
+            createdAt: new Date().toLocaleDateString('fa-IR'),
+            reason: appealText,
+            category: appealReasonCategory,
+            ruleCitation: appealInsuranceRegulation,
+            additionalEvidenceUrls: finalImages,
+            submittedBy: 'حسابدار کلینیک',
+            dentistName: c.dentistName || 'دکتر کاویانی',
+            status: 'pending',
+          };
+          return {
+            ...c,
+            status: 'appealed' as const,
+            appealReason: appealText,
+            appealText: appealText,
+            appealReasonCategory,
+            appealInsuranceRegulation,
+            additionalEvidenceUrls: finalImages,
+            appeals: [newAppeal, ...(c.appeals || [])],
+          };
+        })
+      );
+    }
+
+    setLocalClaims((prev) =>
+      prev.map((c) =>
+        c.id === claimId
+          ? {
+              ...c,
+              status: 'appealed' as const,
+              appealReason: appealText,
+              appealText: appealText,
+              additionalEvidenceUrls: finalImages,
+            }
+          : c
+      )
+    );
+
     setAppealSubmitted(true);
     setTimeout(() => {
       setAppealSubmitted(false);
       setSelectedClaimForAppeal(null);
       setAppealText('');
+      setAppealAttachedImages([]);
     }, 1500);
   };
 

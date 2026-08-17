@@ -17,8 +17,8 @@ import { Odontogram } from './Odontogram';
 import { ImageXrayViewer } from './ImageXrayViewer';
 import { DoctorCalendarView } from './DoctorCalendarView';
 import { PatientRecordsView } from './PatientRecordsView';
-import { PatientCommView } from './PatientCommView';
 import { OwnerWorkspace } from '../owner/OwnerWorkspace';
+import { getStoredLabAccounts } from '../../services/authService';
 import {
   Stethoscope,
   FolderOpen,
@@ -133,7 +133,6 @@ interface DentistWorkspaceProps {
 type DentistNavTab =
   | 'clinical_workbench'
   | 'patient_records'
-  | 'patient_comm'
   | 'my_schedule'
   | 'lab_section'
   | 'patient_qa'
@@ -760,7 +759,6 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
   const menuItems = [
     { id: 'clinical_workbench', label: 'میز کار بالینی (۷ مرحله)', icon: Stethoscope, badge: 'مرحله ۱۲.۲' },
     { id: 'patient_records', label: 'پرونده بیماران', icon: FolderOpen, badge: 'UDR' },
-    { id: 'patient_comm', label: 'ارتباط با بیماران', icon: MessageSquare, badge: 'پیام‌ها' },
     { id: 'my_schedule', label: 'برنامه زمانی من', icon: Calendar, badge: 'تقویم' },
     { id: 'lab_section', label: 'بخش لابراتوار', icon: FlaskConical, badge: 'سفارشات' },
     {
@@ -1760,15 +1758,7 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
           />
         )}
 
-        {/* 3. Patient Communication (ارتباط با بیماران) */}
-        {activeNavTab === 'patient_comm' && (
-          <PatientCommView
-            patients={patientsList}
-            onOpenPatientRecord={() => setActiveNavTab('patient_records')}
-          />
-        )}
-
-        {/* 4. My Schedule (برنامه زمانی من - تعیین تایم‌های آزاد دندان‌پزشک جهت نوبت‌دهی منشی) */}
+        {/* 3. My Schedule (برنامه زمانی من - تعیین تایم‌های آزاد دندان‌پزشک جهت نوبت‌دهی منشی) */}
         {activeNavTab === 'my_schedule' && (
           <DoctorCalendarView
             appointments={appointmentsList}

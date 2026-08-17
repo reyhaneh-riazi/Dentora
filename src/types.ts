@@ -470,6 +470,8 @@ export interface LabOrder {
   dentistName: string;
   toothFdi: number;
   labName: string;
+  clinicId?: string;
+  clinicName?: string;
   itemType: 'روکش زيرکونيا' | 'سرامیک PFM' | 'نایت گارد' | 'اباتمنت ایمپلنت' | 'پروتز پارسیل' | 'روکش زيرکونيا کامل' | 'لمینت Emax' | 'پروتز کامل' | 'اینله / آنله' | 'بلیچینگ تری' | string;
   status: 'ordered' | 'designing' | 'in_furnace' | 'shipped' | 'delivered';
   orderedDate: string;

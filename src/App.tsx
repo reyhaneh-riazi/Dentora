@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   UserRole,
   Patient,
@@ -40,6 +40,23 @@ import {
   defaultBaseInsurances,
   defaultSupplementaryInsurances,
 } from './data/mockData';
+import {
+  getStoredClinics,
+  saveStoredClinics,
+  getClinicData,
+  saveClinicData,
+  initClinicData,
+  getAllClinicsLabOrders,
+  updateLabOrderInClinicStore,
+  addLabOrderToClinicStore,
+} from './services/clinicDataStore';
+import {
+  signInStaff,
+  signUpStaff,
+  signUpPatient,
+  saveActiveSession,
+  clearActiveSession,
+} from './services/authService';
 
 import { Header } from './components/Header';
 import { DentoraLandingPage } from './components/landing/DentoraLandingPage';
@@ -62,11 +79,13 @@ import { MigrationView } from './components/migration/MigrationView';
 
 export default function App() {
   // Navigation & View State
-  const [viewMode, setViewMode] = useState<'dentora_landing' | 'clinic_portal' | 'insurer_landing' | 'workspace'>('dentora_landing');
+  const [viewMode, setViewMode] = useState<'dentora_landing' | 'clinic_portal' | 'insurer_landing' | 'lab_portal' | 'workspace'>('dentora_landing');
 
-  // Registered Clinics
-  const defaultClinics: ClinicRegistration[] = [
-    {
+  // Registered Clinics from Local Store
+  const [clinics, setClinics] = useState<ClinicRegistration[]>(() => getStoredClinics());
+  const [currentClinic, setCurrentClinic] = useState<ClinicRegistration>(() => {
+    const stored = getStoredClinics();
+    return stored.length > 0 ? stored[0] : {
       id: 'clinic-alborz',
       name: 'کلینیک تخصصی البرز',
       nationalCode: '۱۴۰۰۸۸۸۷۷۶۶',
@@ -75,31 +94,8 @@ export default function App() {
       ownerRole: 'dentist',
       activeRoles: ['receptionist', 'dentist', 'accountant', 'manager', 'owner'],
       createdAt: '۱۴۰۳/۰۱/۱۵',
-    },
-    {
-      id: 'clinic-pars',
-      name: 'کلینیک دندان‌پزشکی پارس',
-      nationalCode: '۱۴۰۰۱۲۳۴۵۶۷',
-      ownerName: 'دکتر امیرحسین حسینی',
-      ownerMobile: '09123334455',
-      ownerRole: 'dentist',
-      activeRoles: ['receptionist', 'dentist', 'accountant', 'owner'],
-      createdAt: '۱۴۰۳/۰۲/۱۰',
-    },
-    {
-      id: 'clinic-mehr',
-      name: 'بیمارستان تخصصی دندان‌پزشکی مهر',
-      nationalCode: '۱۴۰۰۷۷۷۶۶۵۵',
-      ownerName: 'مهندس کامران کریمی',
-      ownerMobile: '09125556677',
-      ownerRole: 'manager',
-      activeRoles: ['receptionist', 'dentist', 'accountant', 'manager', 'owner'],
-      createdAt: '۱۴۰۳/۰۳/۲۰',
-    },
-  ];
-
-  const [clinics, setClinics] = useState<ClinicRegistration[]>(defaultClinics);
-  const [currentClinic, setCurrentClinic] = useState<ClinicRegistration>(defaultClinics[0]);
+    };
+  });
 
   // Session & User Privileges State
   const [currentRole, setCurrentRole] = useState<UserRole>('receptionist');
@@ -115,9 +111,93 @@ export default function App() {
   const [connectionStatus, setConnectionStatus] = useState<'online' | 'offline' | 'syncing'>('online');
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
 
-  // Contracted Insurances State
-  const [baseInsurances, setBaseInsurances] = useState<BaseInsuranceContract[]>(defaultBaseInsurances);
-  const [supplementaryInsurances, setSupplementaryInsurances] = useState<SupplementaryInsuranceContract[]>(defaultSupplementaryInsurances);
+  // Entities State - Initialized from persistent store per currentClinic
+  const initialClinicData = getClinicData(currentClinic.id);
+
+  const [patients, setPatients] = useState<Patient[]>(() => initialClinicData.patients);
+  const [appointments, setAppointments] = useState<Appointment[]>(() => initialClinicData.appointments);
+  const [waitlist, setWaitlist] = useState<WaitlistEntry[]>(() => initialClinicData.waitlist);
+  const [invoices, setInvoices] = useState<Invoice[]>(() => initialClinicData.invoices);
+  const [installments, setInstallments] = useState<InstallmentPlan[]>(() => initialClinicData.installments);
+  const [todayMoneyBoard, setTodayMoneyBoard] = useState<TodayMoneyBoard>(() => initialClinicData.todayMoneyBoard);
+  const [claims, setClaims] = useState<Claim[]>(() => initialClinicData.claims);
+  const [greenLane, setGreenLane] = useState<GreenLaneStatus>(() => initialClinicData.greenLane);
+  const [labOrders, setLabOrders] = useState<LabOrder[]>(() => initialClinicData.labOrders);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => initialClinicData.auditLogs);
+  const [users, setUsers] = useState<UserProfile[]>(() => initialClinicData.users);
+  const [doctorSubmissions, setDoctorSubmissions] = useState<DoctorSubmission[]>(() => initialClinicData.doctorSubmissions);
+  const [doctorRequests, setDoctorRequests] = useState<DoctorRequestReminder[]>(() => initialClinicData.doctorRequests);
+  const [patientQuestions, setPatientQuestions] = useState<PatientQuestion[]>(() => initialClinicData.patientQuestions);
+  const [insuranceDisputes, setInsuranceDisputes] = useState<PatientInsuranceDispute[]>(() => initialClinicData.insuranceDisputes);
+  const [baseInsurances, setBaseInsurances] = useState<BaseInsuranceContract[]>(() => initialClinicData.baseInsurances);
+  const [supplementaryInsurances, setSupplementaryInsurances] = useState<SupplementaryInsuranceContract[]>(() => initialClinicData.supplementaryInsurances);
+
+  // Function to load a clinic's full data bundle into state
+  const loadClinicDataIntoState = (clinicId: string) => {
+    const data = getClinicData(clinicId);
+    setPatients(data.patients);
+    setAppointments(data.appointments);
+    setWaitlist(data.waitlist);
+    setInvoices(data.invoices);
+    setInstallments(data.installments);
+    setTodayMoneyBoard(data.todayMoneyBoard);
+    setClaims(data.claims);
+    setGreenLane(data.greenLane);
+    setLabOrders(data.labOrders);
+    setAuditLogs(data.auditLogs);
+    setUsers(data.users);
+    setDoctorSubmissions(data.doctorSubmissions);
+    setDoctorRequests(data.doctorRequests);
+    setPatientQuestions(data.patientQuestions);
+    setInsuranceDisputes(data.insuranceDisputes);
+    setBaseInsurances(data.baseInsurances);
+    setSupplementaryInsurances(data.supplementaryInsurances);
+    if (data.patients.length > 0) {
+      setActivePatientId(data.patients[0].id);
+    }
+  };
+
+  // Synchronize state changes with persistent clinic storage
+  useEffect(() => {
+    saveClinicData(currentClinic.id, {
+      patients,
+      appointments,
+      waitlist,
+      invoices,
+      installments,
+      todayMoneyBoard,
+      claims,
+      greenLane,
+      labOrders,
+      auditLogs,
+      users,
+      doctorSubmissions,
+      doctorRequests,
+      patientQuestions,
+      insuranceDisputes,
+      baseInsurances,
+      supplementaryInsurances,
+    });
+  }, [
+    currentClinic.id,
+    patients,
+    appointments,
+    waitlist,
+    invoices,
+    installments,
+    todayMoneyBoard,
+    claims,
+    greenLane,
+    labOrders,
+    auditLogs,
+    users,
+    doctorSubmissions,
+    doctorRequests,
+    patientQuestions,
+    insuranceDisputes,
+    baseInsurances,
+    supplementaryInsurances,
+  ]);
 
   // Insurance & Owner Handlers
   const handleToggleBaseInsuranceContracted = (id: string) => {
@@ -191,76 +271,6 @@ export default function App() {
     setIsInsuranceContracted((prev) => !prev);
   };
 
-  // Entities State
-  const [patients, setPatients] = useState<Patient[]>(mockPatients);
-  const [appointments, setAppointments] = useState<Appointment[]>(mockAppointments);
-  const [waitlist, setWaitlist] = useState<WaitlistEntry[]>(mockWaitlist);
-  const [invoices, setInvoices] = useState<Invoice[]>(mockInvoices);
-  const [installments, setInstallments] = useState<InstallmentPlan[]>(mockInstallments);
-  const [todayMoneyBoard, setTodayMoneyBoard] = useState<TodayMoneyBoard>(mockTodayMoneyBoard);
-  const [claims, setClaims] = useState<Claim[]>(mockClaims);
-  const [greenLane, setGreenLane] = useState<GreenLaneStatus>(mockGreenLaneStatus);
-  const [labOrders, setLabOrders] = useState<LabOrder[]>(mockLabOrders);
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(mockAuditLogs);
-  const [users, setUsers] = useState<UserProfile[]>(mockUsers);
-  const [doctorSubmissions, setDoctorSubmissions] = useState<DoctorSubmission[]>([
-    {
-      id: 'sub-1',
-      patientId: 'p-1',
-      patientName: 'علی رضایی',
-      patientPhone: '09129876543',
-      nationalId: '0012345678',
-      dentistName: 'دکتر کاویانی',
-      treatmentSummary: 'درمان ریشه (RCT) دندان ۱۶ + ترمیم کامپوزیت ۳ سطحی',
-      prescriptionSummary: 'کپسول آموکسی‌سیلین ۵۰۰ + قرص مفنامیک اسید ۲۵۰',
-      clinicalNotes: 'پوسیدگی عمیق کلاس ۲ دندان ۱۶ منجر به درگیری پالپ گردیده بود.',
-      toothFdi: 16,
-      totalCost: 3800000,
-      baseCovered: 1140000,
-      supplCovered: 1520000,
-      submittedAt: '۱۰:۲۵ امروز',
-      status: 'pending',
-    },
-    {
-      id: 'sub-2',
-      patientId: 'p-2',
-      patientName: 'مریم سادات حسینی',
-      patientPhone: '09351112233',
-      nationalId: '0078899112',
-      dentistName: 'دکتر نوری',
-      treatmentSummary: 'جرم‌گیری و بروساژ دو فک + گرافی تک‌دندان RVG',
-      prescriptionSummary: 'دهان‌شویه کلرهگزیدین ۰.۱۲٪',
-      clinicalNotes: 'جرم عمیق تحت لثه‌ای برطرف گردید.',
-      toothFdi: 26,
-      totalCost: 1500000,
-      baseCovered: 450000,
-      supplCovered: 600000,
-      submittedAt: '۱۱:۱۰ امروز',
-      status: 'pending',
-    },
-  ]);
-
-  const [doctorRequests, setDoctorRequests] = useState<DoctorRequestReminder[]>([
-    {
-      id: 'dr-1',
-      patientName: 'علیرضا محمدی',
-      patientPhone: '۰۹۱۲۱۱۱۲۲۳۳',
-      doctorName: 'دکتر نوری',
-      reason: 'پیگیری ترمیم دندان ۱۴',
-      suggestedDate: '۱۴۰۵/۰۵/۲۰',
-      status: 'pending',
-    },
-    {
-      id: 'dr-2',
-      patientName: 'مرتضی کریمی',
-      patientPhone: '۰۹۱۲۷۷۷۸۸۹۹',
-      doctorName: 'دکتر کاویانی',
-      reason: 'دومین جلسه عصب‌کشی دندان ۴۶',
-      suggestedDate: '۱۴۰۵/۰۵/۲۲',
-      status: 'pending',
-    },
-  ]);
-
   const handleAddDoctorReminder = (reminder: {
     patientName: string;
     patientPhone: string;
@@ -294,79 +304,6 @@ export default function App() {
       },
     }));
   };
-
-  const [patientQuestions, setPatientQuestions] = useState<PatientQuestion[]>([
-    {
-      id: 'qa-1',
-      patientId: 'p-1',
-      patientName: 'علی رضایی',
-      patientPhone: '09129876543',
-      patientNationalId: '0012345678',
-      category: 'مراقبت‌های پس از درمان',
-      question: 'بعد از عصب‌کشی دیروز دندان شماره ۴۶ کمی احساس فشار دارم، چه مسکنی مصرف کنم؟',
-      createdAt: '۱۴۰۵/۰۵/۱۰',
-      status: 'answered',
-      isClinicalUrgent: false,
-      replies: [
-        {
-          id: 'rep-1',
-          senderRole: 'dentist',
-          senderName: 'دکتر کاویانی (دندانپزشک معالج)',
-          message: 'سلام بیمار گرامی. احساس فشار خفیف تا ۷۲ ساعت طبیعی است. می‌توانید هر ۸ ساعت یک عدد کپسول نوافن یا قرص ژلوفن مصرف کنید. در صورت بروز تورم یا درد شدید با مطب تماس بگیرید.',
-          createdAt: '۱۴۰۵/۰۵/۱۰ - ۱۱:۳۰',
-        },
-      ],
-      answer: 'سلام بیمار گرامی. احساس فشار خفیف تا ۷۲ ساعت طبیعی است. می‌توانید هر ۸ ساعت یک عدد کپسول نوافن یا قرص ژلوفن مصرف کنید. در صورت بروز تورم یا درد شدید با مطب تماس بگیرید.',
-      answeredAt: '۱۴۰۵/۰۵/۱۰ - ۱۱:۳۰',
-      repliedBy: 'دکتر کاویانی',
-    },
-    {
-      id: 'qa-2',
-      patientId: 'p-1',
-      patientName: 'علی رضایی',
-      patientPhone: '09129876543',
-      patientNationalId: '0012345678',
-      category: 'اقساط',
-      question: 'آیا قسط ماه آینده BNPL نیاز به ارائه چک جدید در مطب دارد؟',
-      createdAt: '۱۴۰۵/۰۵/۱۲',
-      status: 'answered',
-      isClinicalUrgent: false,
-      replies: [
-        {
-          id: 'rep-2',
-          senderRole: 'receptionist',
-          senderName: 'مریم امیری (پذیرش و منشی)',
-          message: 'خیر. اقساط اعتباری BNPL کاملاً خودکار و بی‌نیاز از چک بوده و مستقیماً با اپلیکیشن BNPL کسر می‌گردد.',
-          createdAt: '۱۴۰۵/۰۵/۱۲ - ۱۶:۴۵',
-        },
-      ],
-      answer: 'خیر. اقساط اعتباری BNPL کاملاً خودکار و بی‌نیاز از چک بوده و مستقیماً با اپلیکیشن BNPL کسر می‌گردد.',
-      answeredAt: '۱۴۰۵/۰۵/۱۲ - ۱۶:۴۵',
-      repliedBy: 'مریم امیری (منشی)',
-    },
-  ]);
-
-  const [insuranceDisputes, setInsuranceDisputes] = useState<PatientInsuranceDispute[]>([
-    {
-      id: 'obj-1',
-      patientId: 'p-1',
-      patientName: 'علی رضایی',
-      patientPhone: '09129876543',
-      nationalId: '0012345678',
-      claimNumber: 'CLM-9021',
-      insuranceProvider: 'بیمه تکمیلی دانا',
-      topic: 'اعتراض به عدم تایید مدرک رادیوگرافی OPG دندان ۴۶',
-      message: 'مبلغ ۳۵۰,۰۰۰ تومان بابت پریاپیکال و ریشه توسط ارزیاب کسر گردیده است. تصویر گرافی واضح مجدداً پیوست گردید.',
-      imageName: 'radiography_opg_46.jpg',
-      imageDesc: 'تصویر واضح گرافی پریاپیکال دندان ۴۶',
-      claimedAmount: 3500000,
-      deductionAmount: 350000,
-      createdAt: '۱۴۰۵/۰۵/۰۸',
-      status: 'under_review',
-      responseMessage: 'پیام شما در واحد بیمه کلینیک دریافت گردید و جهت بررسی مجدد مدارک به کمیسیون بیمه ارسال شد.',
-      lastUpdated: '۱۴۰۵/۰۵/۰۹',
-    },
-  ]);
 
   const handleAskQuestion = (data: {
     patientId: string;
@@ -492,79 +429,183 @@ export default function App() {
   const [activePatientId, setActivePatientId] = useState<string>('p-1');
 
   // Active Patient for Doctor Workspace & Patient Portal
-  const activePatient = patients.find((p) => p.id === activePatientId) || patients[0];
-  const activeAppointment = appointments.find((a) => a.patientId === activePatient.id) || appointments[0];
+  const activePatient = patients.find((p) => p.id === activePatientId) || patients[0] || {
+    id: 'p-default',
+    udrCode: 'UDR-0001',
+    fullName: 'پرونده بیمار',
+    phone: '۰۹۱۲۰۰۰۰۰۰۰',
+    nationalId: '۰۰۰۰۰۰۰۰۰۰',
+    birthDate: '۱۳۷۰/۰۱/۰۱',
+    address: 'تهران',
+    age: 30,
+    gender: 'مرد',
+    medicalHistory: [],
+    allergies: [],
+    primaryInsurance: { provider: 'بیمه تامین اجتماعی', policyNumber: 'INS-1001', active: true },
+    teethMap: {},
+    consentTokens: [],
+  };
+  const activeAppointment = appointments.find((a) => a.patientId === activePatient.id) || appointments[0] || {
+    id: 'apt-default',
+    patientId: activePatient.id,
+    patientName: activePatient.fullName,
+    patientPhone: activePatient.phone,
+    nationalId: activePatient.nationalId,
+    dentistId: 'u-dentist1',
+    dentistName: 'دکتر دندان‌پزشک',
+    branchId: 'br-1',
+    date: 'امروز',
+    timeSlot: '۱۰:۰۰',
+    reason: 'معاینه',
+    status: 'scheduled',
+    isFirstVisit: false,
+    visitFeePaid: true,
+    checkInFormCompleted: true,
+    createdAt: 'امروز',
+  };
 
   // ================= HANDLERS ================= //
 
-  const handleRegisterClinic = (newClinic: ClinicRegistration) => {
-    setClinics((prev) => [newClinic, ...prev]);
+  const handleRegisterClinic = (
+    newClinic: ClinicRegistration,
+    ownerPassword = 'password123',
+    ownerNationalId?: string
+  ) => {
+    // 1. Initialize fresh zero-data for new clinic
+    initClinicData(newClinic.id, false);
+
+    // 2. Register owner user in authService
+    signUpStaff(newClinic.id, {
+      fullName: newClinic.ownerName,
+      nationalId: ownerNationalId || '0012345678',
+      phone: newClinic.ownerMobile,
+      password: ownerPassword,
+      role: newClinic.ownerRole,
+      isOwner: true,
+      isApproved: true,
+    });
+
+    // 3. Save new clinic in clinics registry
+    const updatedClinics = [newClinic, ...clinics];
+    setClinics(updatedClinics);
+    saveStoredClinics(updatedClinics);
+
+    // 4. Set current clinic and load zero-data
     setCurrentClinic(newClinic);
+    loadClinicDataIntoState(newClinic.id);
+
+    // 5. Log in owner directly into their new workspace
+    setCurrentRole(newClinic.ownerRole);
+    setIsOwner(true);
+    setCurrentUserName(newClinic.ownerName);
+    saveActiveSession({
+      token: `tok-${Date.now()}`,
+      userId: `u-owner-${newClinic.id}`,
+      userName: newClinic.ownerName,
+      userRole: newClinic.ownerRole,
+      clinicId: newClinic.id,
+      clinicName: newClinic.name,
+      isOwner: true,
+      phone: newClinic.ownerMobile,
+      nationalId: ownerNationalId,
+      expiresAt: Date.now() + 86400000,
+    });
+
+    setViewMode('workspace');
   };
 
   const handleSelectClinic = (clinic: ClinicRegistration) => {
     setCurrentClinic(clinic);
+    loadClinicDataIntoState(clinic.id);
     setViewMode('clinic_portal');
   };
 
-  const handleStaffLogin = (role: UserRole, mobileOrNationalId: string, fullName?: string, password?: string) => {
-    setCurrentRole(role);
-    
-    // Find matching staff user in users state
-    let existingUser = users.find(
-      (u) => 
-        (u.phone && u.phone === mobileOrNationalId) || 
-        (u.nationalId && u.nationalId === mobileOrNationalId) ||
-        (fullName && u.name.trim().toLowerCase() === fullName.trim().toLowerCase())
-    );
-
-    const isClinicOwner = 
-      role === 'owner' || 
-      mobileOrNationalId === currentClinic.ownerMobile || 
-      mobileOrNationalId.includes('1112233') ||
-      (existingUser && existingUser.isOwner) || 
-      (role === currentClinic.ownerRole && currentClinic.ownerName && (!fullName || fullName === currentClinic.ownerName));
-
-    let resolvedName = fullName || existingUser?.name;
-
-    if (isClinicOwner) {
-      setIsOwner(true);
-      resolvedName = resolvedName || currentClinic.ownerName;
-      setCurrentUserName(resolvedName);
-    } else {
-      setIsOwner(false);
-      if (!resolvedName) {
-        const roleDefaults: Record<string, string> = {
-          receptionist: 'مریم امیری (پذیرش و منشی)',
-          dentist: 'دکتر کاویانی (دندان‌پزشک معالج)',
-          accountant: 'رضا محمدی (مدیر مالی و حسابدار)',
-          manager: 'مهندس حسینی (مدیر کلینیک)',
-          lab: 'تکنسین لابراتوار تخصصی',
-        };
-        resolvedName = roleDefaults[role] || 'پرسنل کلینیک';
-      }
-      setCurrentUserName(resolvedName);
-    }
-
-    // If new staff registered or user doesn't exist, create a real user record in users
-    if (!existingUser && (fullName || mobileOrNationalId)) {
-      const newUser: UserProfile = {
-        id: `u-${Date.now()}`,
-        name: resolvedName,
+  const handleStaffLogin = (
+    role: UserRole,
+    mobileOrNationalId: string,
+    fullName?: string,
+    password?: string,
+    extra?: { nationalId?: string; email?: string; medicalCouncilNo?: string }
+  ) => {
+    // If fullName is provided, this is a signup flow
+    if (fullName) {
+      const isOwnerRole = role === 'owner' || (role === currentClinic.ownerRole && fullName === currentClinic.ownerName);
+      const staffUser = signUpStaff(currentClinic.id, {
+        fullName,
+        nationalId: extra?.nationalId || (mobileOrNationalId.length === 10 ? mobileOrNationalId : '0012345678'),
         phone: mobileOrNationalId,
-        nationalId: mobileOrNationalId.length === 10 ? mobileOrNationalId : '00' + Math.floor(10000000 + Math.random() * 90000000),
-        role: role,
-        branchIds: ['br-1'],
-        isOwner: isClinicOwner,
-        email: `${mobileOrNationalId.replace(/\D/g, '') || 'staff'}@dentora.ir`,
-        avatarUrl: role === 'dentist'
-          ? 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=150&auto=format&fit=crop&q=80'
-          : 'https://images.unsplash.com/photo-1594824813588-422005953049?w=150&auto=format&fit=crop&q=80',
-      };
-      setUsers((prev) => [newUser, ...prev]);
+        password: password || '123456',
+        email: extra?.email,
+        medicalCouncilNo: extra?.medicalCouncilNo,
+        role: role === 'owner' ? (currentClinic.ownerRole || 'dentist') : role,
+        isOwner: isOwnerRole,
+        isApproved: true,
+      });
+
+      // Add to users list if not already present
+      setUsers((prev) => {
+        if (prev.some((u) => u.id === staffUser.id || u.phone === staffUser.phone)) return prev;
+        return [
+          ...prev,
+          {
+            id: staffUser.id,
+            name: staffUser.fullName,
+            phone: staffUser.phone,
+            nationalId: staffUser.nationalId,
+            role: staffUser.role,
+            branchIds: ['br-1'],
+            isOwner: staffUser.isOwner,
+            medicalCouncilNo: staffUser.medicalCouncilNo,
+            email: staffUser.email,
+          },
+        ];
+      });
+
+      setCurrentRole(role);
+      setIsOwner(staffUser.isOwner);
+      setCurrentUserName(staffUser.fullName);
+      setViewMode('workspace');
+      return;
     }
 
-    setViewMode('workspace');
+    // Login Flow
+    const authResult = signInStaff(currentClinic.id, mobileOrNationalId, password || '', role);
+    if (authResult.success && authResult.user) {
+      setCurrentRole(role);
+      setIsOwner(authResult.user.isOwner);
+      setCurrentUserName(authResult.user.fullName);
+      setViewMode('workspace');
+    } else {
+      // Fallback for demo users
+      const isClinicOwner =
+        role === 'owner' ||
+        mobileOrNationalId === currentClinic.ownerMobile ||
+        mobileOrNationalId.includes('1112233');
+
+      const existingUser = users.find(
+        (u) =>
+          u.phone === mobileOrNationalId ||
+          u.nationalId === mobileOrNationalId ||
+          (u.role === role && !fullName)
+      );
+
+      const resolvedName = existingUser?.name || (isClinicOwner ? currentClinic.ownerName : 'پرسنل کلینیک');
+      setCurrentRole(role);
+      setIsOwner(isClinicOwner);
+      setCurrentUserName(resolvedName);
+      saveActiveSession({
+        token: `tok-${Date.now()}`,
+        userId: existingUser?.id || `u-${Date.now()}`,
+        userName: resolvedName,
+        userRole: role,
+        clinicId: currentClinic.id,
+        clinicName: currentClinic.name,
+        isOwner: isClinicOwner,
+        phone: mobileOrNationalId,
+        expiresAt: Date.now() + 86400000,
+      });
+      setViewMode('workspace');
+    }
   };
 
   const handlePatientLogin = (nationalId: string, isGuardian = false, newBookingDetails?: any) => {
@@ -638,6 +679,20 @@ export default function App() {
       setPatients((prev) => [newPatient, ...prev]);
       setActivePatientId(newPatient.id);
       setCurrentUserName(newPatient.fullName);
+
+      signUpPatient(currentClinic.id, {
+        fullName: newPatient.fullName,
+        nationalId: newPatient.nationalId,
+        phone: newPatient.phone,
+        password: newBookingDetails.password || '123456',
+        birthDate: newPatient.birthDate,
+        primaryInsurance: newPatient.primaryInsurance?.provider,
+        supplInsurance: newPatient.supplementaryInsurance?.provider,
+        isGuardian,
+        guardianName: newBookingDetails.guardianName,
+        guardianNationalId: newBookingDetails.guardianNationalId,
+        guardianPhone: newBookingDetails.guardianPhone,
+      });
     } else if (existingPatient) {
       if (newBookingDetails) {
         setPatients((prev) =>
@@ -657,7 +712,7 @@ export default function App() {
       setActivePatientId(existingPatient.id);
       setCurrentUserName(existingPatient.fullName);
     } else {
-      // Patient logging in with unknown national ID - generate their own personalized record with their credentials
+      // Patient logging in with unknown national ID
       const isMobile = nationalId.startsWith('09');
       const realPhone = isMobile ? nationalId : '0912' + (nationalId.slice(-7).padStart(7, '0'));
       const realNatId = isMobile ? ('00' + nationalId.slice(-8)) : nationalId;
@@ -693,6 +748,18 @@ export default function App() {
       setCurrentUserName(generatedPatient.fullName);
     }
 
+    saveActiveSession({
+      token: `tok-pat-${Date.now()}`,
+      userId: `u-pat-${nationalId}`,
+      userName: existingPatient?.fullName || 'بیمار دنتورا',
+      userRole: 'patient',
+      clinicId: currentClinic.id,
+      clinicName: currentClinic.name,
+      isOwner: false,
+      nationalId,
+      expiresAt: Date.now() + 86400000,
+    });
+
     setViewMode('workspace');
   };
 
@@ -711,6 +778,8 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    clearActiveSession();
+    setIsOwner(false);
     setViewMode('clinic_portal');
   };
 
@@ -1161,9 +1230,22 @@ export default function App() {
   };
 
   // Insurance Bridge Handlers
-  const handleSubmitAppeal = (claimId: string, appealText: string) => {
+  const handleSubmitAppeal = (
+    claimId: string,
+    appealText: string,
+    additionalEvidenceUrls?: string[],
+    category?: string,
+    ruleCitation?: string
+  ) => {
     const todayFa = new Date().toLocaleDateString('fa-IR');
     const newAppealId = `app-${Date.now()}`;
+    const finalEvidenceUrls =
+      additionalEvidenceUrls && additionalEvidenceUrls.length > 0
+        ? additionalEvidenceUrls
+        : [
+            'https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?w=600&auto=format&fit=crop&q=80',
+          ];
+
     setClaims((prev) =>
       prev.map((c) => {
         if (c.id !== claimId) return c;
@@ -1173,16 +1255,20 @@ export default function App() {
           createdAt: todayFa,
           reason: appealText,
           status: 'pending',
+          submittedBy: 'حسابدار کلینیک',
           dentistName: c.dentistName || 'دکتر کاویانی',
-          additionalEvidenceUrls: [
-            'https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?w=400&auto=format&fit=crop&q=80',
-          ],
+          category: category || 'کسورات غیرمجاز تعرفه‌ای',
+          ruleCitation: ruleCitation || 'بند ۱۲ آیین‌نامه تعرفه درمان شورای عالی بیمه',
+          additionalEvidenceUrls: finalEvidenceUrls,
         };
         return {
           ...c,
           status: 'appealed' as const,
           appealReason: appealText,
           appealText,
+          appealReasonCategory: category,
+          appealInsuranceRegulation: ruleCitation,
+          additionalEvidenceUrls: finalEvidenceUrls,
           appeals: [newAppeal, ...(c.appeals || []).filter((a) => a.id !== newAppealId)],
           appealHistory: [
             ...(c.appealHistory || []),
@@ -1217,35 +1303,50 @@ export default function App() {
   const handleReviewDecision = (
     claimId: string,
     decision: 'approved' | 'rejected' | 'partially_approved',
-    reason?: string
+    deductionOrReason?: number | string,
+    reasonText?: string
   ) => {
+    const deduction = typeof deductionOrReason === 'number' ? deductionOrReason : 0;
+    const finalReason = typeof deductionOrReason === 'string' ? deductionOrReason : reasonText;
+
     setClaims((prev) =>
       prev.map((c) => {
         if (c.id !== claimId) return c;
+        const updatedAppeals = (c.appeals || []).map((a) => ({
+          ...a,
+          status: decision === 'approved' ? ('accepted' as const) : ('rejected' as const),
+          responseNotes: finalReason || (decision === 'approved' ? 'اعتراض کلینیک پذیرفته شد و کسورات ملغی گردید.' : 'اعتراض کلینیک رد شد.'),
+        }));
+
         if (decision === 'approved') {
           return {
             ...c,
             status: 'settled' as const,
+            appeals: updatedAppeals,
             baseApprovedAmount: c.baseApprovedAmount || Math.round((c.claimedAmount || 5200000) * 0.3),
             supplApprovedAmount: c.supplApprovedAmount || Math.round((c.claimedAmount || 5200000) * 0.7),
             deductionAmount: 0,
             deductionReason: undefined,
             totalApprovedAmount: c.claimedAmount || c.totalClaimedAmount || 5200000,
+            doctorReviewerDiagnosis: finalReason || 'تایید کامل مدارک بالینی و رادیولوژی توسط پزشک معتمد',
           };
         } else {
           return {
             ...c,
             status: 'rejected' as const,
+            appeals: updatedAppeals,
             deductionAmount:
+              deduction ||
               c.deductionAmount ||
               (decision === 'partially_approved'
                 ? Math.round((c.claimedAmount || 5200000) * 0.25)
                 : c.claimedAmount || 5200000),
             deductionReason:
-              reason ||
+              finalReason ||
               (decision === 'partially_approved'
                 ? 'کسورات تعرفه‌ای مصوب بازبین بیمه'
                 : 'رد کامل ادعا به دلیل عدم تطابق با دستورالعمل‌های بیمه‌ای'),
+            doctorReviewerDiagnosis: finalReason,
           };
         }
       })
@@ -1298,15 +1399,25 @@ export default function App() {
   const handleUpdateLabOrderStatus = (
     orderId: string,
     status: LabOrder['status'],
-    milestone: string
+    milestone: string,
+    targetClinicId?: string
   ) => {
     setLabOrders((prev) =>
       prev.map((o) => (o.id === orderId ? { ...o, status, currentMilestone: milestone } : o))
     );
+    updateLabOrderInClinicStore(orderId, status, milestone, targetClinicId || currentClinic.id);
   };
 
-  const handleAddLabOrder = (newOrder: LabOrder) => {
-    setLabOrders((prev) => [newOrder, ...prev]);
+  const handleAddLabOrder = (newOrder: LabOrder, targetClinicId?: string) => {
+    const clinicId = targetClinicId || newOrder.clinicId || currentClinic.id;
+    const clinicObj = clinics.find((c) => c.id === clinicId) || currentClinic;
+    const orderWithClinic: LabOrder = {
+      ...newOrder,
+      clinicId: clinicId,
+      clinicName: clinicObj.name,
+    };
+    setLabOrders((prev) => [orderWithClinic, ...prev]);
+    addLabOrderToClinicStore(clinicId, orderWithClinic);
   };
 
   const handleAddPatient = (newPatient: Patient) => {
@@ -1323,6 +1434,7 @@ export default function App() {
         onRegisterClinic={handleRegisterClinic}
         onSelectClinic={handleSelectClinic}
         onGoToInsurerPortal={() => setViewMode('insurer_landing')}
+        onGoToLabPortal={() => setViewMode('lab_portal')}
       />
     );
   }
@@ -1337,7 +1449,25 @@ export default function App() {
     );
   }
 
-  // 3. Clinic Portal Landing Page
+  // 3. Lab Portal Standalone Landing Page (Multi-Clinic Aggregated)
+  if (viewMode === 'lab_portal') {
+    const allLabOrders = getAllClinicsLabOrders();
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-6 lg:p-8 font-sans antialiased dir-rtl">
+        <div className="max-w-7xl mx-auto">
+          <LabPortalView
+            labOrders={allLabOrders.length > 0 ? allLabOrders : labOrders}
+            clinics={clinics}
+            onUpdateOrderStatus={handleUpdateLabOrderStatus}
+            onAddLabOrder={handleAddLabOrder}
+            onBackToLanding={() => setViewMode('dentora_landing')}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // 4. Clinic Portal Landing Page
   if (viewMode === 'clinic_portal') {
     return (
       <ClinicPortalLanding
@@ -1656,6 +1786,7 @@ export default function App() {
         {currentRole === 'medical_inspector' && (
           <MedicalReviewerWorkspace
             claims={claims}
+            setClaims={setClaims}
             onReviewDecision={handleReviewDecision}
           />
         )}
@@ -1739,9 +1870,11 @@ export default function App() {
         {/* Lab Portal Workspace */}
         {currentRole === 'lab' && (
           <LabPortalView
-            labOrders={labOrders}
+            labOrders={getAllClinicsLabOrders().length > 0 ? getAllClinicsLabOrders() : labOrders}
+            clinics={clinics}
             onUpdateOrderStatus={handleUpdateLabOrderStatus}
             onAddLabOrder={handleAddLabOrder}
+            onBackToLanding={() => setViewMode('dentora_landing')}
           />
         )}
 

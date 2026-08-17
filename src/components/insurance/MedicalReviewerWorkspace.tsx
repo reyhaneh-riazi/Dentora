@@ -392,6 +392,7 @@ export interface AuditTrailRecord {
 
 interface MedicalReviewerWorkspaceProps {
   claims?: Claim[];
+  setClaims?: React.Dispatch<React.SetStateAction<Claim[]>>;
   onReviewDecision?: (
     claimId: string,
     status: 'approved' | 'partially_approved' | 'rejected',
@@ -402,15 +403,20 @@ interface MedicalReviewerWorkspaceProps {
 
 export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> = ({
   claims: initialClaims,
+  setClaims: setClaimsProp,
   onReviewDecision,
 }) => {
   const [activeStep, setActiveStep] = useState<number>(1);
   const [reviewMethod, setReviewMethod] = useState<'fast' | 'standard' | 'deep'>('deep');
-  const [claims, setClaims] = useState<Claim[]>(initialClaims && initialClaims.length > 0 ? initialClaims : mockClaims);
+  const [claimsLocal, setClaimsLocal] = useState<Claim[]>(
+    initialClaims && initialClaims.length > 0 ? initialClaims : mockClaims
+  );
+  const claims = initialClaims && initialClaims.length > 0 ? initialClaims : claimsLocal;
+  const setClaims = setClaimsProp || setClaimsLocal;
 
   useEffect(() => {
     if (initialClaims && initialClaims.length > 0) {
-      setClaims(initialClaims);
+      setClaimsLocal(initialClaims);
     }
   }, [initialClaims]);
   const [selectedClaimId, setSelectedClaimId] = useState<string>(
@@ -954,20 +960,33 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
       );
       const answeredCount = activeLineItems.flatMap((i) => i.questions || []).filter((q) => q.selectedAnswer).length;
 
-      let summary = `بر اساس ارزیابی هوش مصنوعی (${systemVersions.aiModel}) و تحلیل گرافی RVG:\n`;
-      summary += `• پرونده ${selectedClaim.claimNumber} مربوط به بیمار ${selectedClaim.patientName} در ${selectedClaim.clinicName} بررسی گردید.\n`;
-      summary += `• تعداد ${toFa(aiMarkersCount)} نقطه آنالیز هوش مصنوعی ارزیابی گردید که ${
-        overridesCount > 0
-          ? `${toFa(overridesCount)} مورد آن با نظر تخصصی پزشک معتمد تغییر/اصلاح یافت`
-          : 'تماماً مورد تأیید قرار گرفت'
-      }.\n`;
-      summary += `• تعداد ${toFa(answeredCount)} سوال کارشناسی بالینی در بخش دوم پاسخ داده شد.\n`;
-      summary += `• نظر اولیه بازبین ادعا (${claimReviewerInfo.name}): "${claimReviewerInfo.note}"\n`;
-      summary += `• جمع‌بندی پزشک معتمد: پس از تطبیق با آئین‌نامه ${systemVersions.rulesEngine}، اسناد و گرافی‌های درمانی فاقد مغایرت قانونی شناخته شد.`;
+      if (isClaimAppealed && activeAppeal) {
+        let summary = `بر اساس بررسی لایحه دفاعیه اعتراض کلینیک و مدارک ضمیمه رادیولوژی RVG در ویوور PACS:\n`;
+        summary += `• پرونده اعتراضی ${selectedClaim.claimNumber} مربوط به بیمار ${selectedClaim.patientName} در کلینیک ${selectedClaim.clinicName} مورد کارشناسی مجدد قرار گرفت.\n`;
+        summary += `• لایحه دفاعیه حسابدار مبنی بر «${activeAppeal.reason}» و استناد به «${activeAppeal.ruleCitation}» تطبیق داده شد.\n`;
+        summary += `• مدارک رادیولوژی RVG ضمیمه‌شده در ویوور PACS ارزیابی شد؛ اپیکال سیل کامل و تراکم گوتاپرکا تا آپکس رادیوگرافیک مورد تأیید بالینی است.\n`;
+        summary += `• تعداد ${toFa(answeredCount)} سوال کارشناسی بالینی پاسخ داده شد و انطباق با ضوابط قانونی احراز گردید.\n`;
+        summary += `• نظر اولیه بازبین ادعا (${selectedClaim.claimReviewerName || claimReviewerInfo.name}): "${activeAppeal.responseNotes || claimReviewerInfo.note}"\n`;
+        summary += `• جمع‌بندی پزشک معتمد (${trustedDoctor.name}): با توجه به احراز شرایط درمانی و صحت گرافی، لایحه اعتراض کلینیک پذیرفته شده و کسورات اولیه ملغی می‌گردد.`;
 
-      setReviewerSummaryText(summary);
+        setReviewerSummaryText(summary);
+        setFinalVerdict('approved');
+      } else {
+        let summary = `بر اساس ارزیابی هوش مصنوعی (${systemVersions.aiModel}) و تحلیل گرافی RVG:\n`;
+        summary += `• پرونده ${selectedClaim.claimNumber} مربوط به بیمار ${selectedClaim.patientName} در ${selectedClaim.clinicName} بررسی گردید.\n`;
+        summary += `• تعداد ${toFa(aiMarkersCount)} نقطه آنالیز هوش مصنوعی ارزیابی گردید که ${
+          overridesCount > 0
+            ? `${toFa(overridesCount)} مورد آن با نظر تخصصی پزشک معتمد تغییر/اصلاح یافت`
+            : 'تماماً مورد تأیید قرار گرفت'
+        }.\n`;
+        summary += `• تعداد ${toFa(answeredCount)} سوال کارشناسی بالینی در بخش دوم پاسخ داده شد.\n`;
+        summary += `• نظر اولیه بازبین ادعا (${claimReviewerInfo.name}): "${claimReviewerInfo.note}"\n`;
+        summary += `• جمع‌بندی پزشک معتمد: پس از تطبیق با آئین‌نامه ${systemVersions.rulesEngine}، اسناد و گرافی‌های درمانی فاقد مغایرت قانونی شناخته شد.`;
+
+        setReviewerSummaryText(summary);
+      }
     }
-  }, [selectedClaimId, activeStep]);
+  }, [selectedClaimId, activeStep, isClaimAppealed, activeAppeal]);
 
   const toggleQuestionExpansion = (qId: string) => {
     setExpandedQuestionIds((prev) => ({
@@ -2687,6 +2706,83 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
 
                 {/* QUESTIONS */}
                 <div className="xl:col-span-5 space-y-4">
+                  {/* Appeal Statement and Evidence Box in Step 2 */}
+                  {isClaimAppealed && activeAppeal && (
+                    <div className="bg-amber-50/95 rounded-2xl p-4 border-2 border-amber-400 space-y-3 shadow-sm animate-fadeIn">
+                      <div className="flex items-center justify-between pb-2 border-b border-amber-300">
+                        <div className="flex items-center gap-2">
+                          <div className="p-1.5 bg-amber-500 text-slate-950 rounded-lg">
+                            <FileText className="w-3.5 h-3.5" />
+                          </div>
+                          <h4 className="text-xs font-black text-amber-950">
+                            لایحه دفاعیه و مدارک ضمیمه‌شده در بخش اعتراض
+                          </h4>
+                        </div>
+                        <span className="bg-amber-200 text-amber-900 text-[10px] font-black px-2.5 py-0.5 rounded-full border border-amber-300">
+                          ثبت توسط {activeAppeal.submittedBy || 'حسابدار / کلینیک'}
+                        </span>
+                      </div>
+
+                      <div className="space-y-2 text-xs">
+                        <div className="bg-white p-2.5 rounded-xl border border-amber-300 text-slate-800 font-bold leading-relaxed shadow-2xs">
+                          <span className="text-amber-800 text-[10px] font-black block mb-0.5">متن لایحه اعتراض کلینیک:</span>
+                          «{activeAppeal.reason}»
+                        </div>
+                        {activeAppeal.ruleCitation && (
+                          <div className="text-[10px] text-amber-900 font-bold flex items-center gap-1.5 bg-amber-100/70 p-2 rounded-lg border border-amber-200">
+                            <span className="shrink-0 font-extrabold text-amber-950">استناد به آیین‌نامه:</span>
+                            <span className="font-mono">{activeAppeal.ruleCitation}</span>
+                          </div>
+                        )}
+                        {activeAppeal.responseNotes && (
+                          <div className="text-[10px] text-sky-900 font-bold flex items-center gap-1.5 bg-sky-100/70 p-2 rounded-lg border border-sky-200">
+                            <ShieldCheck className="w-3.5 h-3.5 text-[#005581] shrink-0" />
+                            <span>تاییدیه ارجاع بازبین ادعا: {activeAppeal.responseNotes}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {appealAttachedImages.length > 0 && (
+                        <div className="space-y-2 pt-2 border-t border-amber-200">
+                          <div className="flex items-center justify-between text-[11px] font-black text-amber-950">
+                            <span>مدارک ضمیمه‌شده ({toFa(appealAttachedImages.length)}):</span>
+                            <span className="text-[9px] text-amber-800">کلیک روی تصویر جهت ارزیابی در ویوور PACS</span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            {appealAttachedImages.map((img) => {
+                              const isViewingInPacs = selectedPacsImageOverrideUrl === img.url;
+                              return (
+                                <div
+                                  key={img.id}
+                                  onClick={() => setSelectedPacsImageOverrideUrl(img.url)}
+                                  className={`p-2 rounded-xl border transition-all cursor-pointer flex items-center gap-2 group ${
+                                    isViewingInPacs
+                                      ? 'bg-amber-300/90 border-amber-500 ring-2 ring-amber-500 shadow-sm'
+                                      : 'bg-white border-amber-200 hover:border-amber-400 hover:bg-amber-50/50'
+                                  }`}
+                                >
+                                  <img
+                                    src={img.url}
+                                    alt={img.title}
+                                    className="w-10 h-10 rounded-lg object-cover shrink-0 border border-amber-300"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                  <div className="min-w-0 flex-1 text-[10px]">
+                                    <div className="font-black text-slate-900 truncate">{img.title}</div>
+                                    <div className={`text-[9px] font-bold ${isViewingInPacs ? 'text-emerald-900 font-black' : 'text-amber-800'}`}>
+                                      {isViewingInPacs ? '✓ در حال نمایش در PACS' : 'نمایش در PACS'}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div className="bg-[#fffffa] rounded-2xl p-5 border-2 border-[#005581] space-y-4 shadow-sm">
                     <div className="pb-3 border-b border-[#72cdf4] space-y-2">
                       <div className="flex items-center justify-between">
@@ -2915,6 +3011,84 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
                   </span>
                 </div>
 
+                {/* Summary of Appeal Dossier and Evidence in Step 3 */}
+                {isClaimAppealed && activeAppeal && (
+                  <div className="bg-amber-50/90 rounded-2xl p-5 border-2 border-amber-400 space-y-4 shadow-sm animate-fadeIn">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2.5 border-b border-amber-300 gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="p-1.5 bg-amber-500 text-slate-950 rounded-lg">
+                          <FileText className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h3 className="text-xs font-black text-amber-950">
+                            خلاصه لایحه دفاعیه اعتراض کلینیک و مدارک ضمیمه‌شده توسط حسابدار
+                          </h3>
+                          <span className="text-[10px] text-amber-800 font-medium">
+                            ثبت‌کننده: {activeAppeal.submittedBy || 'حسابدار کلینیک'} • پزشک معالج: {activeAppeal.dentistName || selectedClaim.dentistName || 'دکتر کاویانی'} • تاریخ: {toFa(activeAppeal.createdAt)}
+                          </span>
+                        </div>
+                      </div>
+                      <span className="bg-amber-200 text-amber-900 text-[10px] font-black px-2.5 py-1 rounded-full border border-amber-300 self-start sm:self-auto">
+                        موضوع: {activeAppeal.category || 'کسورات غیرمجاز تعرفه‌ای'}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-4 text-xs">
+                      <div className="md:col-span-8 space-y-2">
+                        <div className="bg-white p-3.5 rounded-xl border border-amber-300 space-y-1 shadow-2xs">
+                          <div className="text-[10px] font-extrabold text-amber-900 flex items-center gap-1.5">
+                            <Scale className="w-3.5 h-3.5 text-amber-600" />
+                            <span>متن لایحه دفاعیه کلینیک:</span>
+                          </div>
+                          <p className="text-xs font-bold leading-relaxed text-slate-800">
+                            «{activeAppeal.reason}»
+                          </p>
+                          {activeAppeal.ruleCitation && (
+                            <div className="text-[10px] text-slate-600 pt-1 font-medium border-t border-amber-100 flex items-center gap-1">
+                              <span>مستندات قانونی / استناد به آیین‌نامه:</span>
+                              <span className="font-bold text-amber-900 font-mono bg-amber-100/80 px-2 py-0.5 rounded">{activeAppeal.ruleCitation}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="bg-sky-50 p-2.5 rounded-xl border border-sky-200 text-[11px] text-sky-950 font-medium flex items-center gap-2">
+                          <ShieldCheck className="w-4 h-4 text-[#005581] shrink-0" />
+                          <span>
+                            <strong>تاییدیه ارجاع بازبین ادعا:</strong> {activeAppeal.responseNotes || selectedClaim.reviewerDiagnosis || 'پرونده و مستندات اولیه تایید گردید و جهت انطباق رادیولوژی به پزشک معتمد ارجاع شد.'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="md:col-span-4 bg-white p-3 rounded-xl border border-amber-300 space-y-2">
+                        <div className="text-[10px] font-black text-amber-950 flex items-center justify-between">
+                          <span>مدارک تصویری ارزیابی‌شده ({toFa(appealAttachedImages.length)}):</span>
+                          <span className="text-[9px] text-emerald-700 font-black">ارزیابی‌شده در PACS ✓</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          {appealAttachedImages.map((img) => (
+                            <div
+                              key={img.id}
+                              onClick={() => setLightboxImageUrl(img.url)}
+                              className="relative rounded-lg overflow-hidden border border-amber-200 aspect-video group cursor-pointer"
+                              title="بزرگنمایی تصویر"
+                            >
+                              <img
+                                src={img.url}
+                                alt={img.title}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                                referrerPolicy="no-referrer"
+                              />
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                <Eye className="w-3.5 h-3.5 text-white" />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="space-y-4">
                   <h3 className="text-xs font-black text-[#005581] flex items-center gap-2 border-b border-[#72cdf4] pb-2">
                     <ClipboardList className="w-4 h-4 text-[#005581]" />
@@ -3011,18 +3185,31 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
                         );
                         const answeredCount = activeLineItems.flatMap((i) => i.questions || []).filter((q) => q.selectedAnswer).length;
 
-                        let summary = `بر اساس ارزیابی هوش مصنوعی (${systemVersions.aiModel}) و تحلیل گرافی RVG:\n`;
-                        summary += `• پرونده ${selectedClaim.claimNumber} مربوط به بیمار ${selectedClaim.patientName} در ${selectedClaim.clinicName} بررسی گردید.\n`;
-                        summary += `• تعداد ${toFa(aiMarkersCount)} نقطه آنالیز هوش مصنوعی ارزیابی گردید که ${
-                          overridesCount > 0
-                            ? `${toFa(overridesCount)} مورد آن با نظر تخصصی پزشک معتمد تغییر/اصلاح یافت`
-                            : 'تماماً مورد تأیید قرار گرفت'
-                        }.\n`;
-                        summary += `• تعداد ${toFa(answeredCount)} سوال کارشناسی بالینی در بخش دوم پاسخ داده شد.\n`;
-                        summary += `• نظر اولیه بازبین ادعا (${claimReviewerInfo.name}): "${claimReviewerInfo.note}"\n`;
-                        summary += `• جمع‌بندی پزشک معتمد: پس از تطبیق با آئین‌نامه ${systemVersions.rulesEngine}، اسناد و گرافی‌های درمانی فاقد مغایرت قانونی شناخته شد.`;
+                        if (isClaimAppealed && activeAppeal) {
+                          let summary = `بر اساس بررسی لایحه دفاعیه اعتراض کلینیک و مدارک ضمیمه رادیولوژی RVG در ویوور PACS:\n`;
+                          summary += `• پرونده اعتراضی ${selectedClaim.claimNumber} مربوط به بیمار ${selectedClaim.patientName} در کلینیک ${selectedClaim.clinicName} مورد کارشناسی مجدد قرار گرفت.\n`;
+                          summary += `• لایحه دفاعیه حسابدار مبنی بر «${activeAppeal.reason}» و استناد به «${activeAppeal.ruleCitation}» تطبیق داده شد.\n`;
+                          summary += `• مدارک رادیولوژی RVG ضمیمه‌شده در ویوور PACS ارزیابی شد؛ اپیکال سیل کامل و تراکم گوتاپرکا تا آپکس رادیوگرافیک مورد تأیید بالینی است.\n`;
+                          summary += `• تعداد ${toFa(answeredCount)} سوال کارشناسی بالینی پاسخ داده شد و انطباق با ضوابط قانونی احراز گردید.\n`;
+                          summary += `• نظر اولیه بازبین ادعا (${selectedClaim.claimReviewerName || claimReviewerInfo.name}): "${activeAppeal.responseNotes || claimReviewerInfo.note}"\n`;
+                          summary += `• جمع‌بندی پزشک معتمد (${trustedDoctor.name}): با توجه به احراز شرایط درمانی و صحت گرافی، لایحه اعتراض کلینیک پذیرفته شده و کسورات اولیه ملغی می‌گردد.`;
 
-                        setReviewerSummaryText(summary);
+                          setReviewerSummaryText(summary);
+                          setFinalVerdict('approved');
+                        } else {
+                          let summary = `بر اساس ارزیابی هوش مصنوعی (${systemVersions.aiModel}) و تحلیل گرافی RVG:\n`;
+                          summary += `• پرونده ${selectedClaim.claimNumber} مربوط به بیمار ${selectedClaim.patientName} در ${selectedClaim.clinicName} بررسی گردید.\n`;
+                          summary += `• تعداد ${toFa(aiMarkersCount)} نقطه آنالیز هوش مصنوعی ارزیابی گردید که ${
+                            overridesCount > 0
+                              ? `${toFa(overridesCount)} مورد آن با نظر تخصصی پزشک معتمد تغییر/اصلاح یافت`
+                              : 'تماماً مورد تأیید قرار گرفت'
+                          }.\n`;
+                          summary += `• تعداد ${toFa(answeredCount)} سوال کارشناسی بالینی در بخش دوم پاسخ داده شد.\n`;
+                          summary += `• نظر اولیه بازبین ادعا (${claimReviewerInfo.name}): "${claimReviewerInfo.note}"\n`;
+                          summary += `• جمع‌بندی پزشک معتمد: پس از تطبیق با آئین‌نامه ${systemVersions.rulesEngine}، اسناد و گرافی‌های درمانی فاقد مغایرت قانونی شناخته شد.`;
+
+                          setReviewerSummaryText(summary);
+                        }
                       }}
                       className="bg-[#ffe552] hover:bg-[#ffd200] text-[#005581] text-[11px] font-black px-3 py-1.5 rounded-xl border border-[#ffd200] flex items-center gap-1.5 cursor-pointer transition-all shrink-0"
                     >

@@ -13,14 +13,23 @@ import {
   Sparkles,
   ExternalLink,
   ChevronLeft,
+  Lock,
+  Phone,
+  CreditCard,
+  AlertCircle,
+  Flame,
+  Truck,
+  Layers,
 } from 'lucide-react';
 import { ClinicRegistration, UserRole } from '../../types';
+import { isValidMobile, isValidNationalId, isValidPassword, toEnglishDigits } from '../../utils/validators';
 
 interface DentoraLandingPageProps {
   registeredClinics: ClinicRegistration[];
-  onRegisterClinic: (clinic: ClinicRegistration) => void;
+  onRegisterClinic: (clinic: ClinicRegistration, ownerPassword?: string, ownerNationalId?: string) => void;
   onSelectClinic: (clinic: ClinicRegistration) => void;
   onGoToInsurerPortal: () => void;
+  onGoToLabPortal: () => void;
 }
 
 export const DentoraLandingPage: React.FC<DentoraLandingPageProps> = ({
@@ -28,6 +37,7 @@ export const DentoraLandingPage: React.FC<DentoraLandingPageProps> = ({
   onRegisterClinic,
   onSelectClinic,
   onGoToInsurerPortal,
+  onGoToLabPortal,
 }) => {
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
 
@@ -35,53 +45,86 @@ export const DentoraLandingPage: React.FC<DentoraLandingPageProps> = ({
   const [clinicName, setClinicName] = useState('');
   const [nationalCode, setNationalCode] = useState('');
   const [ownerName, setOwnerName] = useState('');
+  const [ownerNationalId, setOwnerNationalId] = useState('');
   const [ownerMobile, setOwnerMobile] = useState('');
+  const [ownerPassword, setOwnerPassword] = useState('');
   const [ownerRole, setOwnerRole] = useState<'dentist' | 'manager'>('dentist');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
-  // Active roles selection: Receptionist and Dentist are MANDATORY, Accountant and Manager are OPTIONAL
+  // Active roles selection: Receptionist, Dentist, and Lab are default/built-in. Accountant and Manager are optional.
   const [activeAccountant, setActiveAccountant] = useState(true);
   const [activeManager, setActiveManager] = useState(true);
 
   const handleSubmitNewClinic = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!clinicName.trim() || !ownerName.trim() || !ownerMobile.trim()) {
-      alert('لطفاً تمامی فیلدهای ضروری را تکمیل فرمایید.');
+    setErrorMessage(null);
+
+    const cleanClinicName = clinicName.trim();
+    const cleanOwnerName = ownerName.trim();
+    const cleanMobile = toEnglishDigits(ownerMobile).trim();
+    const cleanOwnerNationalId = toEnglishDigits(ownerNationalId).trim();
+    const cleanPass = ownerPassword.trim();
+    const cleanLegalCode = toEnglishDigits(nationalCode).trim();
+
+    if (!cleanClinicName || cleanClinicName.length < 3) {
+      setErrorMessage('نام کلینیک باید حداقل ۳ کاراکتر باشد.');
+      return;
+    }
+    if (cleanLegalCode && cleanLegalCode.length < 10) {
+      setErrorMessage('شناسه ملی / کد اقتصادی باید حداقل ۱۰ رقم باشد.');
+      return;
+    }
+    if (!cleanOwnerName || cleanOwnerName.length < 3) {
+      setErrorMessage('نام و نام خانوادگی مالک کلینیک را به طور کامل وارد فرمایید.');
+      return;
+    }
+    if (!cleanOwnerNationalId || !isValidNationalId(cleanOwnerNationalId)) {
+      setErrorMessage('کد ملی مالک کلینیک نامعتبر است (باید ۱۰ رقم معتبر باشد).');
+      return;
+    }
+    if (!isValidMobile(cleanMobile)) {
+      setErrorMessage('شماره همراه مالک نامعتبر است (الگوی صحیح: 09xxxxxxxxx).');
+      return;
+    }
+    const passCheck = isValidPassword(cleanPass);
+    if (!passCheck.valid) {
+      setErrorMessage(passCheck.message || 'رمز عبور باید حداقل ۶ کاراکتر باشد.');
       return;
     }
 
-    const activeRoles: UserRole[] = ['receptionist', 'dentist'];
+    const activeRoles: UserRole[] = ['receptionist', 'dentist', 'lab', 'owner'];
     if (activeAccountant) activeRoles.push('accountant');
     if (activeManager) activeRoles.push('manager');
 
     const newClinic: ClinicRegistration = {
       id: `clinic-${Date.now()}`,
-      name: clinicName,
-      nationalCode: nationalCode || '۱۴۰۰۹۸۷۶۵۴۳',
-      ownerName,
-      ownerMobile,
+      name: cleanClinicName,
+      nationalCode: cleanLegalCode || '۱۴۰۰۹۸۷۶۵۴۳',
+      ownerName: cleanOwnerName,
+      ownerMobile: cleanMobile,
       ownerRole,
       activeRoles,
       createdAt: new Date().toLocaleDateString('fa-IR'),
     };
 
-    onRegisterClinic(newClinic);
+    onRegisterClinic(newClinic, cleanPass, cleanOwnerNationalId);
     setIsRegisterModalOpen(false);
     
     // Reset form
     setClinicName('');
     setNationalCode('');
     setOwnerName('');
+    setOwnerNationalId('');
     setOwnerMobile('');
-    
-    alert(`کلینیک «${newClinic.name}» با موفقیت در دنتورا ثبت گردید.\nشما اکنون به عنوان مالک کلینیک وارد سیستم می‌شوید.`);
-    onSelectClinic(newClinic);
+    setOwnerPassword('');
+    setErrorMessage(null);
   };
 
   return (
     <div className="min-h-screen bg-[#fffffa] text-slate-900 font-sans dir-rtl">
       {/* Top Navbar */}
-      <header className="sticky top-0 z-40 bg-[#fffffa]/90 backdrop-blur-md border-b border-slate-200/80 shadow-xs">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between gap-4">
+      <header className="sticky top-0 z-40 bg-[#fffffa]/95 backdrop-blur-md border-b border-slate-200/80 shadow-xs">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between gap-3">
           
           {/* Brand */}
           <div className="flex items-center gap-3">
@@ -95,26 +138,51 @@ export const DentoraLandingPage: React.FC<DentoraLandingPageProps> = ({
                   Dental OS
                 </span>
               </div>
-              <p className="text-xs text-slate-500 font-medium">سیستم عامل یکپارچه کلینیک‌های دندان‌پزشکی</p>
+              <p className="text-xs text-slate-500 font-medium hidden sm:block">سیستم عامل یکپارچه کلینیک‌های دندان‌پزشکی</p>
             </div>
           </div>
 
-          {/* Nav Actions */}
-          <div className="flex items-center gap-3">
-            <button
-              onClick={onGoToInsurerPortal}
-              className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-[#005581] font-bold text-xs transition cursor-pointer border border-slate-200"
-            >
-              <ShieldCheck className="w-4 h-4 text-[#005581]" />
-              <span>پورتال بیمه‌گران</span>
-            </button>
+          {/* Nav Actions - Unified Specialist Portals Group & Registration */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            
+            {/* Unified Specialized Portals Switcher */}
+            <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl border border-slate-200 dark:border-slate-700">
+              {/* Lab Portal Button */}
+              <button
+                type="button"
+                onClick={onGoToLabPortal}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl hover:bg-white dark:hover:bg-slate-700 text-[#005581] dark:text-cyan-400 font-bold text-xs transition cursor-pointer shadow-2xs hover:shadow-xs"
+                title="ورود به پورتال جامع لابراتوارهای دندان‌سازی (مدیریت سفارشات تمام کلینیک‌ها)"
+              >
+                <Flame className="w-3.5 h-3.5 text-amber-500" />
+                <span className="hidden md:inline">پورتال</span>
+                <span>لابراتوار</span>
+              </button>
 
+              <div className="w-[1px] h-4 bg-slate-300 dark:bg-slate-600 my-auto mx-0.5"></div>
+
+              {/* Insurer Portal Button */}
+              <button
+                type="button"
+                onClick={onGoToInsurerPortal}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl hover:bg-white dark:hover:bg-slate-700 text-[#005581] dark:text-cyan-400 font-bold text-xs transition cursor-pointer shadow-2xs hover:shadow-xs"
+                title="ورود به پورتال ممیزی و تسویه بیمه‌گران"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
+                <span className="hidden md:inline">پورتال</span>
+                <span>بیمه‌گران</span>
+              </button>
+            </div>
+
+            {/* Main Registration Button */}
             <button
+              type="button"
               onClick={() => setIsRegisterModalOpen(true)}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#ffd200] hover:bg-[#ffe552] text-[#005581] font-extrabold text-xs shadow-md transition cursor-pointer transform hover:-translate-y-0.5"
+              className="flex items-center gap-2 px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-xl bg-[#ffd200] hover:bg-[#ffe552] text-[#005581] font-extrabold text-xs shadow-md transition cursor-pointer transform hover:-translate-y-0.5 shrink-0"
             >
               <PlusCircle className="w-4 h-4 text-[#005581]" />
-              <span>ثبت کلینیک جدید در دنتورا</span>
+              <span className="hidden sm:inline">ثبت کلینیک جدید</span>
+              <span className="sm:hidden">ثبت کلینیک</span>
             </button>
           </div>
 
@@ -275,6 +343,13 @@ export const DentoraLandingPage: React.FC<DentoraLandingPageProps> = ({
 
             <form onSubmit={handleSubmitNewClinic} className="space-y-4">
               
+              {errorMessage && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs font-bold text-rose-700 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+                  <span>{errorMessage}</span>
+                </div>
+              )}
+
               {/* Clinic Name */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
@@ -293,7 +368,7 @@ export const DentoraLandingPage: React.FC<DentoraLandingPageProps> = ({
               {/* National Code / Reg ID */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  شناسه ملی / کد ثبتی کلینیک
+                  شناسه ملی / کد ثبتی یا پروانه کلینیک
                 </label>
                 <input
                   type="text"
@@ -322,6 +397,22 @@ export const DentoraLandingPage: React.FC<DentoraLandingPageProps> = ({
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    کد ملی مالک <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="۱۰ رقم کد ملی مالک"
+                    value={ownerNationalId}
+                    onChange={(e) => setOwnerNationalId(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border-2 border-slate-200 focus:border-[#005581] text-sm font-mono outline-none transition"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
                     موبایل مالک <span className="text-rose-500">*</span>
                   </label>
                   <input
@@ -331,6 +422,20 @@ export const DentoraLandingPage: React.FC<DentoraLandingPageProps> = ({
                     value={ownerMobile}
                     onChange={(e) => setOwnerMobile(e.target.value)}
                     className="w-full px-4 py-2.5 rounded-xl border-2 border-slate-200 focus:border-[#005581] text-sm font-mono outline-none transition"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    رمز عبور امن مالک <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="حداقل ۶ کاراکتر"
+                    value={ownerPassword}
+                    onChange={(e) => setOwnerPassword(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border-2 border-slate-200 focus:border-[#005581] text-sm outline-none transition"
                   />
                 </div>
               </div>
@@ -349,36 +454,39 @@ export const DentoraLandingPage: React.FC<DentoraLandingPageProps> = ({
                   <option value="manager">مدیر ارشد و مالک کلینیک</option>
                 </select>
                 <p className="text-[11px] text-slate-400 mt-1">
-                  مالک کلینیک (Owner) حق دسترسی ویژه تنظیمات و فعال‌سازی ماژول بیمه را بر عهده دارد.
+                  مالک کلینیک (Owner) حق دسترسی ویژه تنظیمات، تایید کاربران و فعال‌سازی ماژول بیمه را بر عهده دارد.
                 </p>
               </div>
 
               {/* Active Roles Selection */}
               <div className="pt-3 border-t border-slate-200 space-y-2">
-                <label className="block text-xs font-extrabold text-slate-800">
-                  انتخاب نقش‌های فعال کلینیک در دنتورا:
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-extrabold text-slate-800">
+                    پیکربندی نقش‌های سازمانی کلینیک:
+                  </label>
+                  <span className="text-[10px] text-slate-500">پذیرش، پزشک و لابراتوار به صورت پیش‌فرض فعال هستند</span>
+                </div>
                 
                 <div className="space-y-2 bg-slate-50 p-3.5 rounded-2xl border border-slate-200 text-xs">
-                  {/* Receptionist - Mandatory */}
+                  {/* Receptionist - Default */}
                   <label className="flex items-center justify-between p-2 rounded-xl bg-white border border-slate-200 cursor-not-allowed opacity-90">
                     <span className="font-bold text-slate-800 flex items-center gap-2">
                       <Check className="w-4 h-4 text-[#005581]" />
                       <span>۱. منشی / پذیرش بیمار</span>
                     </span>
                     <span className="text-[10px] px-2 py-0.5 rounded bg-[#005581] text-white font-bold">
-                      اجباری
+                      پیش‌فرض
                     </span>
                   </label>
 
-                  {/* Dentist - Mandatory */}
+                  {/* Dentist - Default */}
                   <label className="flex items-center justify-between p-2 rounded-xl bg-white border border-slate-200 cursor-not-allowed opacity-90">
                     <span className="font-bold text-slate-800 flex items-center gap-2">
                       <Check className="w-4 h-4 text-[#005581]" />
                       <span>۲. پزشک معالج</span>
                     </span>
                     <span className="text-[10px] px-2 py-0.5 rounded bg-[#005581] text-white font-bold">
-                      اجباری
+                      پیش‌فرض
                     </span>
                   </label>
 
@@ -422,7 +530,7 @@ export const DentoraLandingPage: React.FC<DentoraLandingPageProps> = ({
                 className="w-full py-3.5 rounded-2xl bg-[#005581] hover:bg-[#004266] text-[#fffffa] font-extrabold text-sm shadow-md transition cursor-pointer flex items-center justify-center gap-2"
               >
                 <PlusCircle className="w-5 h-5 text-[#ffd200]" />
-                <span>ثبت نهایی و ورود به پورتال کلینیک</span>
+                <span>ثبت نهایی و ورود به پورتال کلینیک (Zero-Data)</span>
               </button>
 
             </form>

@@ -185,7 +185,6 @@ export const InsuranceDocsWorkspace: React.FC<InsuranceDocsWorkspaceProps> = ({
       setActiveKanbanModalType(null);
     }
     showToast('✅ مدارک پرونده با موفقیت تایید و به کارتابل حسابدار کلینیک ارسال گردید.');
-    alert('پرونده و مدارک بیمه با موفقیت ارزیابی شد و به کارتابل مالی حسابدار ارجاع گردید.');
   };
 
   const handleSendClaimDirectToInsurerLocal = (claimId: string) => {
@@ -216,7 +215,6 @@ export const InsuranceDocsWorkspace: React.FC<InsuranceDocsWorkspaceProps> = ({
       setActiveKanbanModalType(null);
     }
     showToast('✅ ادعای بیمه با موفقیت تایید و مستقیماً به سازمان بیمه‌گر ارسال شد.');
-    alert('ادعای بیمه با موفقیت بررسی و مستقیماً به پورتال سازمان بیمه‌گر ارسال شد.');
   };
 
   // Kanban card click router:

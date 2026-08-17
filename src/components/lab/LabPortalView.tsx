@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { LabOrder } from '../../types';
+import { ClinicRegistration, LabOrder } from '../../types';
 import {
   Truck,
   Flame,
@@ -16,23 +16,32 @@ import {
   Layers,
   ArrowRight,
   Sparkles,
+  Building2,
+  RefreshCw,
+  Home,
+  Check,
 } from 'lucide-react';
 
 interface LabPortalViewProps {
   labOrders: LabOrder[];
-  onUpdateOrderStatus: (orderId: string, status: LabOrder['status'], milestone: string) => void;
-  onAddLabOrder?: (newOrder: LabOrder) => void;
+  clinics?: ClinicRegistration[];
+  onUpdateOrderStatus: (orderId: string, status: LabOrder['status'], milestone: string, targetClinicId?: string) => void;
+  onAddLabOrder?: (newOrder: LabOrder, targetClinicId?: string) => void;
+  onBackToLanding?: () => void;
 }
 
 type LabFilterTab = 'all' | 'designing' | 'in_furnace' | 'shipped' | 'delivered';
 
 export const LabPortalView: React.FC<LabPortalViewProps> = ({
   labOrders,
+  clinics = [],
   onUpdateOrderStatus,
   onAddLabOrder,
+  onBackToLanding,
 }) => {
   // Navigation & Filter State
   const [activeTab, setActiveTab] = useState<LabFilterTab>('all');
+  const [selectedClinicId, setSelectedClinicId] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedOrder, setSelectedOrder] = useState<LabOrder | null>(null);
 
@@ -41,11 +50,12 @@ export const LabPortalView: React.FC<LabPortalViewProps> = ({
   const [newOrderNumber, setNewOrderNumber] = useState(`LAB-${Math.floor(1000 + Math.random() * 9000)}`);
   const [newPatientName, setNewPatientName] = useState('');
   const [newDentistName, setNewDentistName] = useState('دکتر حسینی');
-  const [newLabName, setNewLabName] = useState('لابراتوار پارس دنال');
+  const [newLabName, setNewLabName] = useState('لابراتوار تخصصی پارس دنتال');
+  const [newClinicTargetId, setNewClinicTargetId] = useState(clinics[0]?.id || 'clinic-alborz');
   const [newItemType, setNewItemType] = useState<LabOrder['itemType']>('روکش زيرکونيا');
   const [newToothFdi, setNewToothFdi] = useState<number>(36);
   const [newStatus, setNewStatus] = useState<LabOrder['status']>('designing');
-  const [newExpectedDate, setNewExpectedDate] = useState('۱۴۰۵/۰۵/۲۰');
+  const [newExpectedDate, setNewExpectedDate] = useState('۱۴۰۵/۰۵/۲۵');
 
   // Custom Milestone Edit Input in Detail Modal
   const [customMilestone, setCustomMilestone] = useState('');
@@ -72,28 +82,28 @@ export const LabPortalView: React.FC<LabPortalViewProps> = ({
     switch (status) {
       case 'designing':
         return (
-          <span className="px-3 py-1 rounded-full bg-blue-100 dark:bg-blue-950/80 text-blue-800 dark:text-blue-200 font-bold text-xs flex items-center gap-1.5 border border-blue-200 dark:border-blue-900">
+          <span className="px-2.5 py-1 rounded-full bg-blue-100 dark:bg-blue-950/80 text-blue-800 dark:text-blue-200 font-bold text-xs flex items-center gap-1.5 border border-blue-200 dark:border-blue-900">
             <PenTool className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-            <span>طراحی</span>
+            <span>طراحی CAD</span>
           </span>
         );
       case 'in_furnace':
         return (
-          <span className="px-3 py-1 rounded-full bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-200 font-bold text-xs flex items-center gap-1.5 border border-amber-200 dark:border-amber-900">
+          <span className="px-2.5 py-1 rounded-full bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-200 font-bold text-xs flex items-center gap-1.5 border border-amber-200 dark:border-amber-900">
             <Flame className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
             <span>کوره سانتر</span>
           </span>
         );
       case 'shipped':
         return (
-          <span className="px-3 py-1 rounded-full bg-sky-100 dark:bg-sky-950/80 text-sky-800 dark:text-sky-200 font-bold text-xs flex items-center gap-1.5 border border-sky-200 dark:border-sky-900">
+          <span className="px-2.5 py-1 rounded-full bg-sky-100 dark:bg-sky-950/80 text-sky-800 dark:text-sky-200 font-bold text-xs flex items-center gap-1.5 border border-sky-200 dark:border-sky-900">
             <Truck className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
-            <span>ارسال‌شده به مطب</span>
+            <span>ارسال به مطب</span>
           </span>
         );
       case 'delivered':
         return (
-          <span className="px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-200 font-bold text-xs flex items-center gap-1.5 border border-emerald-200 dark:border-emerald-900">
+          <span className="px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-200 font-bold text-xs flex items-center gap-1.5 border border-emerald-200 dark:border-emerald-900">
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
             <span>تحویل نهایی</span>
           </span>
@@ -101,7 +111,7 @@ export const LabPortalView: React.FC<LabPortalViewProps> = ({
       case 'ordered':
       default:
         return (
-          <span className="px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center gap-1.5">
+          <span className="px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center gap-1.5">
             <Clock className="w-3.5 h-3.5 text-slate-500" />
             <span>ثبت سفارش</span>
           </span>
@@ -109,8 +119,9 @@ export const LabPortalView: React.FC<LabPortalViewProps> = ({
     }
   };
 
-  // Filter Orders
+  // Filter Orders by Tab, Clinic, and Search query
   const filteredOrders = labOrders.filter((order) => {
+    // 1. Status tab filter
     const matchesTab =
       activeTab === 'all'
         ? true
@@ -118,16 +129,22 @@ export const LabPortalView: React.FC<LabPortalViewProps> = ({
         ? order.status === 'designing' || order.status === 'ordered'
         : order.status === activeTab;
 
+    // 2. Clinic filter
+    const matchesClinic =
+      selectedClinicId === 'all' || !order.clinicId || order.clinicId === selectedClinicId;
+
+    // 3. Search query
     const query = searchQuery.trim().toLowerCase();
     const matchesSearch =
       !query ||
       order.patientName.toLowerCase().includes(query) ||
       order.orderNumber.toLowerCase().includes(query) ||
       order.dentistName.toLowerCase().includes(query) ||
+      (order.clinicName && order.clinicName.toLowerCase().includes(query)) ||
       order.itemType.toLowerCase().includes(query) ||
       order.toothFdi.toString().includes(query);
 
-    return matchesTab && matchesSearch;
+    return matchesTab && matchesClinic && matchesSearch;
   });
 
   // Calculate Order Status Counts
@@ -136,12 +153,15 @@ export const LabPortalView: React.FC<LabPortalViewProps> = ({
   const countShipped = labOrders.filter((o) => o.status === 'shipped').length;
   const countDelivered = labOrders.filter((o) => o.status === 'delivered').length;
 
+  // List of distinct clinics associated with orders
+  const uniqueClinicsCount = clinics.length > 0 ? clinics.length : 2;
+
   // Handle Status Update
   const handleApplyStatusChange = (newSt: LabOrder['status'], milestoneOverride?: string) => {
     if (!selectedOrder) return;
 
     const ms = milestoneOverride || customMilestone.trim() || getMilestoneForStatus(newSt);
-    onUpdateOrderStatus(selectedOrder.id, newSt, ms);
+    onUpdateOrderStatus(selectedOrder.id, newSt, ms, selectedOrder.clinicId);
 
     // Update selectedOrder local view state
     setSelectedOrder((prev) => (prev ? { ...prev, status: newSt, currentMilestone: ms } : null));
@@ -156,23 +176,27 @@ export const LabPortalView: React.FC<LabPortalViewProps> = ({
       return;
     }
 
+    const selectedClinicObj = clinics.find((c) => c.id === newClinicTargetId);
+
     const created: LabOrder = {
       id: `lab-${Date.now()}`,
       orderNumber: newOrderNumber,
       patientId: `p-${Date.now()}`,
       patientName: newPatientName.trim(),
-      dentistName: newDentistName,
+      dentistName: newDentistName.trim() || 'دندان‌پزشک معالج',
       toothFdi: Number(newToothFdi) || 36,
-      labName: newLabName,
+      labName: newLabName.trim() || 'لابراتوار دندان‌سازی',
+      clinicId: newClinicTargetId,
+      clinicName: selectedClinicObj?.name || 'کلینیک دندان‌پزشکی',
       itemType: newItemType,
       status: newStatus,
-      orderedDate: '۱۴۰۵/۰۵/۱۳',
+      orderedDate: '۱۴۰۵/۰۵/۱۵',
       expectedDeliveryDate: newExpectedDate,
       currentMilestone: getMilestoneForStatus(newStatus),
     };
 
     if (onAddLabOrder) {
-      onAddLabOrder(created);
+      onAddLabOrder(created, newClinicTargetId);
     } else {
       labOrders.unshift(created);
     }
@@ -180,7 +204,6 @@ export const LabPortalView: React.FC<LabPortalViewProps> = ({
     setIsAddModalOpen(false);
     setNewPatientName('');
     setNewOrderNumber(`LAB-${Math.floor(1000 + Math.random() * 9000)}`);
-    alert(`سفارش جدید ${created.orderNumber} با موفقیت ثبت گردید.`);
   };
 
   return (
@@ -190,138 +213,203 @@ export const LabPortalView: React.FC<LabPortalViewProps> = ({
         <div className="absolute top-0 left-0 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none"></div>
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-300 font-bold shadow-inner">
-              <Truck className="w-6 h-6 text-cyan-300" />
+            <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-300 font-bold shadow-inner">
+              <Flame className="w-6 h-6 text-amber-400" />
             </div>
             <div>
-              <h2 className="text-xl font-black text-white flex items-center gap-2">
-                <span>پورتال مدیریت و ردیابی سفارشات لابراتوار</span>
-                <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/30 text-cyan-200 border border-cyan-400/30 text-xs font-mono">
-                  {labOrders.length} سفارش
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl font-black text-white flex items-center gap-2">
+                  <span>پورتال جامع لابراتوارهای دندان‌سازی</span>
+                  <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/30 text-cyan-200 border border-cyan-400/30 text-xs font-mono">
+                    {labOrders.length} سفارش فعال
+                  </span>
+                </h2>
+              </div>
+              <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300 mt-1">
+                <span className="flex items-center gap-1 text-emerald-300">
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-400" />
+                  <span>همگام‌سازی بلادرنگ با {uniqueClinicsCount} کلینیک همکار</span>
                 </span>
-              </h2>
-              <p className="text-xs text-slate-300 mt-1">
-                شفافیت کامل مراحل ساخت پروتز، روکش و اباتمنت (طراحی ← کوره ← ارسال ← تحویل)
-              </p>
+                <span className="text-slate-500">•</span>
+                <span>ردیابی مراحل CAD/CAM، کوره، ارسال و تحویل</span>
+              </div>
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setIsAddModalOpen(true)}
-            className="px-4 py-2.5 rounded-xl bg-[#ffd200] hover:bg-[#e6be00] text-slate-950 font-black text-xs shadow-md cursor-pointer transition flex items-center justify-center gap-2 shrink-0"
-          >
-            <Plus className="w-4 h-4" />
-            <span>ثبت سفارش جدید لابراتوار</span>
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {onBackToLanding && (
+              <button
+                type="button"
+                onClick={onBackToLanding}
+                className="px-3.5 py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 transition cursor-pointer flex items-center gap-1.5"
+              >
+                <Home className="w-4 h-4 text-cyan-400" />
+                <span>صفحه اصلی</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setIsAddModalOpen(true)}
+              className="px-4 py-2.5 rounded-xl bg-[#ffd200] hover:bg-[#ffe552] text-slate-950 font-black text-xs shadow-md cursor-pointer transition flex items-center justify-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              <span>ثبت سفارش جدید</span>
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* LAB NAVIGATION MENU & FILTER TABS (منو و فیلترها) */}
+      {/* CLINIC FILTER & LAB CONTROLS BAR */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-xs space-y-4">
-        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
-          {/* Status Tabs Navigation Menu */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0 scrollbar-none">
-            <button
-              onClick={() => setActiveTab('all')}
-              className={`px-3.5 py-2 rounded-xl font-bold text-xs transition cursor-pointer flex items-center gap-2 shrink-0 ${
-                activeTab === 'all'
-                  ? 'bg-[#005581] text-white shadow-sm'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
-              }`}
-            >
-              <Layers className="w-4 h-4 text-[#ffd200]" />
-              <span>همه سفارشات</span>
-              <span className="px-1.5 py-0.5 rounded-full bg-white/20 text-[10px] font-mono">
-                {labOrders.length}
-              </span>
-            </button>
+        
+        {/* Top Filter Row: Multi-clinic switcher & Search */}
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+          {/* Multi-Clinic Selection Bar */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0 scrollbar-none">
+            <span className="text-xs font-bold text-slate-500 flex items-center gap-1 shrink-0">
+              <Building2 className="w-4 h-4 text-[#005581]" />
+              <span>کلینیک طرف قرارداد:</span>
+            </span>
 
             <button
-              onClick={() => setActiveTab('designing')}
-              className={`px-3.5 py-2 rounded-xl font-bold text-xs transition cursor-pointer flex items-center gap-2 shrink-0 ${
-                activeTab === 'designing'
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+              type="button"
+              onClick={() => setSelectedClinicId('all')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
+                selectedClinicId === 'all'
+                  ? 'bg-[#005581] text-white shadow-xs'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'
               }`}
             >
-              <PenTool className="w-4 h-4 text-blue-400" />
-              <span>طراحی</span>
-              <span className="px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-800 dark:text-blue-200 text-[10px] font-mono">
-                {countDesigning}
-              </span>
+              همه کلینیک‌ها ({labOrders.length})
             </button>
 
-            <button
-              onClick={() => setActiveTab('in_furnace')}
-              className={`px-3.5 py-2 rounded-xl font-bold text-xs transition cursor-pointer flex items-center gap-2 shrink-0 ${
-                activeTab === 'in_furnace'
-                  ? 'bg-amber-600 text-white shadow-sm'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
-              }`}
-            >
-              <Flame className="w-4 h-4 text-amber-400" />
-              <span>کوره</span>
-              <span className="px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-800 dark:text-amber-200 text-[10px] font-mono">
-                {countFurnace}
-              </span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('shipped')}
-              className={`px-3.5 py-2 rounded-xl font-bold text-xs transition cursor-pointer flex items-center gap-2 shrink-0 ${
-                activeTab === 'shipped'
-                  ? 'bg-sky-600 text-white shadow-sm'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
-              }`}
-            >
-              <Truck className="w-4 h-4 text-sky-400" />
-              <span>ارسال</span>
-              <span className="px-1.5 py-0.5 rounded-full bg-sky-500/20 text-sky-800 dark:text-sky-200 text-[10px] font-mono">
-                {countShipped}
-              </span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('delivered')}
-              className={`px-3.5 py-2 rounded-xl font-bold text-xs transition cursor-pointer flex items-center gap-2 shrink-0 ${
-                activeTab === 'delivered'
-                  ? 'bg-emerald-600 text-white shadow-sm'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
-              }`}
-            >
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              <span>تحویل</span>
-              <span className="px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-800 dark:text-emerald-200 text-[10px] font-mono">
-                {countDelivered}
-              </span>
-            </button>
+            {clinics.map((c) => {
+              const clinicOrdersCount = labOrders.filter((o) => o.clinicId === c.id).length;
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => setSelectedClinicId(c.id)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 flex items-center gap-1.5 ${
+                    selectedClinicId === c.id
+                      ? 'bg-[#005581] text-white shadow-xs'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'
+                  }`}
+                >
+                  <span>{c.name}</span>
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                    selectedClinicId === c.id ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                  }`}>
+                    {clinicOrdersCount}
+                  </span>
+                </button>
+              );
+            })}
           </div>
 
           {/* Search Box */}
           <div className="relative min-w-[240px]">
-            <Search className="w-4 h-4 text-slate-400 absolute right-3 top-3" />
+            <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
             <input
               type="text"
-              placeholder="جستجو بر اساس نام بیمار، کد سفارش، پزشک..."
+              placeholder="جستجوی بیمار، کد سفارش، پزشک، کلینیک..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pr-9 pl-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs font-bold focus:ring-2 focus:ring-[#005581]"
             />
           </div>
         </div>
+
+        {/* Bottom Status Filter Tabs */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+          <button
+            onClick={() => setActiveTab('all')}
+            className={`px-3.5 py-2 rounded-xl font-bold text-xs transition cursor-pointer flex items-center gap-2 shrink-0 ${
+              activeTab === 'all'
+                ? 'bg-slate-900 dark:bg-slate-700 text-white shadow-sm'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+            }`}
+          >
+            <Layers className="w-4 h-4 text-[#ffd200]" />
+            <span>همه مراحل</span>
+            <span className="px-1.5 py-0.5 rounded-full bg-white/20 text-[10px] font-mono">
+              {labOrders.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('designing')}
+            className={`px-3.5 py-2 rounded-xl font-bold text-xs transition cursor-pointer flex items-center gap-2 shrink-0 ${
+              activeTab === 'designing'
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+            }`}
+          >
+            <PenTool className="w-4 h-4 text-blue-400" />
+            <span>۱. طراحی CAD</span>
+            <span className="px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-800 dark:text-blue-200 text-[10px] font-mono">
+              {countDesigning}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('in_furnace')}
+            className={`px-3.5 py-2 rounded-xl font-bold text-xs transition cursor-pointer flex items-center gap-2 shrink-0 ${
+              activeTab === 'in_furnace'
+                ? 'bg-amber-600 text-white shadow-sm'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+            }`}
+          >
+            <Flame className="w-4 h-4 text-amber-400" />
+            <span>۲. کوره سانتر</span>
+            <span className="px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-800 dark:text-amber-200 text-[10px] font-mono">
+              {countFurnace}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('shipped')}
+            className={`px-3.5 py-2 rounded-xl font-bold text-xs transition cursor-pointer flex items-center gap-2 shrink-0 ${
+              activeTab === 'shipped'
+                ? 'bg-sky-600 text-white shadow-sm'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+            }`}
+          >
+            <Truck className="w-4 h-4 text-sky-400" />
+            <span>۳. ارسال به مطب</span>
+            <span className="px-1.5 py-0.5 rounded-full bg-sky-500/20 text-sky-800 dark:text-sky-200 text-[10px] font-mono">
+              {countShipped}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('delivered')}
+            className={`px-3.5 py-2 rounded-xl font-bold text-xs transition cursor-pointer flex items-center gap-2 shrink-0 ${
+              activeTab === 'delivered'
+                ? 'bg-emerald-600 text-white shadow-sm'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+            }`}
+          >
+            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            <span>۴. تحویل نهایی</span>
+            <span className="px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-800 dark:text-emerald-200 text-[10px] font-mono">
+              {countDelivered}
+            </span>
+          </button>
+        </div>
       </div>
 
-      {/* ORDERS LIST (لیست سفارشات) */}
+      {/* ORDERS LIST */}
       {filteredOrders.length === 0 ? (
         <div className="p-12 text-center text-xs text-slate-500 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
-          سفارشی با این مشخصات یافت نشد.
+          سفارشی با فیلترهای انتخابی یافت نشد.
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredOrders.map((order) => (
+          {filteredOrders.map((order, idx) => (
             <div
-              key={order.id}
+              key={`${order.clinicId || 'cl'}_${order.id || idx}`}
               onClick={() => setSelectedOrder(order)}
               className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-xs hover:shadow-md hover:border-[#005581] transition cursor-pointer space-y-4 group relative flex flex-col justify-between"
             >
@@ -329,10 +417,18 @@ export const LabPortalView: React.FC<LabPortalViewProps> = ({
                 {/* Header Row */}
                 <div className="flex items-start justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
                   <div>
-                    <span className="font-mono text-xs font-black text-[#005581] dark:text-cyan-400 bg-sky-50 dark:bg-sky-950 px-2 py-0.5 rounded">
-                      {order.orderNumber}
-                    </span>
-                    <h3 className="font-black text-sm text-slate-900 dark:text-slate-100 mt-1 group-hover:text-[#005581] transition">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs font-black text-[#005581] dark:text-cyan-400 bg-sky-50 dark:bg-sky-950 px-2 py-0.5 rounded">
+                        {order.orderNumber}
+                      </span>
+                      {order.clinicName && (
+                        <span className="text-[10px] font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded flex items-center gap-1">
+                          <Building2 className="w-3 h-3 text-[#005581]" />
+                          <span>{order.clinicName}</span>
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="font-black text-sm text-slate-900 dark:text-slate-100 mt-1.5 group-hover:text-[#005581] transition">
                       {order.itemType} (دندان {order.toothFdi})
                     </h3>
                   </div>
@@ -348,7 +444,7 @@ export const LabPortalView: React.FC<LabPortalViewProps> = ({
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-slate-500">پزشک معالج:</span>
-                    <span className="font-medium">{order.dentistName}</span>
+                    <span className="font-medium text-slate-800 dark:text-slate-200">{order.dentistName}</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-slate-500">لابراتوار:</span>
@@ -372,7 +468,7 @@ export const LabPortalView: React.FC<LabPortalViewProps> = ({
               <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs font-bold text-[#005581] dark:text-cyan-400">
                 <span className="flex items-center gap-1">
                   <Eye className="w-3.5 h-3.5" />
-                  <span>جزئیات و تغییر وضعیت</span>
+                  <span>تغییر وضعیت و ثبت گام</span>
                 </span>
                 <ChevronLeft className="w-4 h-4 transform group-hover:-translate-x-1 transition" />
               </div>
@@ -381,7 +477,7 @@ export const LabPortalView: React.FC<LabPortalViewProps> = ({
         </div>
       )}
 
-      {/* ORDER DETAILS & STATUS CHANGE MODAL (جزئیات سفارش و تغییر وضعیت) */}
+      {/* ORDER DETAILS & STATUS CHANGE MODAL */}
       {selectedOrder && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs z-50 flex items-center justify-center p-3 md:p-6 overflow-y-auto">
           <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-2xl w-full max-h-[92vh] overflow-y-auto border border-slate-200 dark:border-slate-800 shadow-2xl p-6 space-y-6 animate-scaleUp">
@@ -389,7 +485,7 @@ export const LabPortalView: React.FC<LabPortalViewProps> = ({
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-[#005581] text-[#ffd200] font-black flex items-center justify-center text-sm shadow">
-                  <Truck className="w-5 h-5" />
+                  <Flame className="w-5 h-5" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
@@ -421,6 +517,14 @@ export const LabPortalView: React.FC<LabPortalViewProps> = ({
               </div>
 
               <div className="space-y-1">
+                <span className="text-slate-500 font-medium">کلینیک طرف قرارداد:</span>
+                <p className="font-bold text-[#005581] dark:text-cyan-400 flex items-center gap-1">
+                  <Building2 className="w-3.5 h-3.5" />
+                  <span>{selectedOrder.clinicName || 'کلینیک دندان‌پزشکی'}</span>
+                </p>
+              </div>
+
+              <div className="space-y-1">
                 <span className="text-slate-500 font-medium">دندان‌پزشک معالج:</span>
                 <p className="font-bold text-slate-800 dark:text-slate-200">{selectedOrder.dentistName}</p>
               </div>
@@ -430,7 +534,7 @@ export const LabPortalView: React.FC<LabPortalViewProps> = ({
                 <p className="font-bold text-slate-800 dark:text-slate-200">{selectedOrder.labName}</p>
               </div>
 
-              <div className="space-y-1">
+              <div className="space-y-1 md:col-span-2">
                 <span className="text-slate-500 font-medium">تاریخ سفارش و تحویل:</span>
                 <p className="font-bold text-slate-800 dark:text-slate-200">
                   ثبت: {selectedOrder.orderedDate} | پیش‌بینی تحویل: <span className="text-cyan-600">{selectedOrder.expectedDeliveryDate}</span>
@@ -438,12 +542,12 @@ export const LabPortalView: React.FC<LabPortalViewProps> = ({
               </div>
             </div>
 
-            {/* VISUAL WORKFLOW STEPPER (طراحی ← کوره ← ارسال ← تحویل) */}
+            {/* VISUAL WORKFLOW STEPPER */}
             <div className="space-y-3">
               <h4 className="font-black text-sm text-slate-900 dark:text-slate-100 flex items-center justify-between">
                 <span>روند وضعیت سفارش ساخت لابراتوار</span>
                 <span className="text-xs text-slate-500 font-normal">
-                  حالت‌های ۴ گانه: طراحی ← کوره ← ارسال ← تحویل
+                  همگام‌سازی لحظه‌ای با پورتال کلینیک
                 </span>
               </h4>
 
@@ -510,10 +614,10 @@ export const LabPortalView: React.FC<LabPortalViewProps> = ({
               </div>
             </div>
 
-            {/* ACTION BUTTONS TO CHANGE STATUS (تغییر وضعیت مستقیم) */}
+            {/* ACTION BUTTONS TO CHANGE STATUS */}
             <div className="space-y-3 pt-2 border-t border-slate-200 dark:border-slate-800">
               <h4 className="font-black text-xs text-slate-700 dark:text-slate-300">
-                تغییر وضعیت سفارش به حالت دلخواه:
+                تغییر وضعیت سفارش (ثبت آنی در دیتابیس کلینیک):
               </h4>
 
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -573,7 +677,7 @@ export const LabPortalView: React.FC<LabPortalViewProps> = ({
               {/* Custom Milestone Input */}
               <div className="pt-2">
                 <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
-                  توضیحات / گام ساخت اختصاصی (اختیاری):
+                  توضیحات و گام ساخت اختصاصی (در پرونده دندان‌پزشک نیز نمایش داده می‌شود):
                 </label>
                 <div className="flex gap-2">
                   <input
@@ -597,14 +701,14 @@ export const LabPortalView: React.FC<LabPortalViewProps> = ({
         </div>
       )}
 
-      {/* NEW LAB ORDER MODAL (ثبت سفارش جدید) */}
+      {/* NEW LAB ORDER MODAL */}
       {isAddModalOpen && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs z-50 flex items-center justify-center p-3 md:p-6 overflow-y-auto">
           <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full border border-slate-200 dark:border-slate-800 shadow-2xl p-6 space-y-5 animate-scaleUp">
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
               <h3 className="font-black text-base text-slate-900 dark:text-slate-100 flex items-center gap-2">
                 <Plus className="w-5 h-5 text-[#005581]" />
-                <span>ثبت سفارش جدید در سیستم لابراتوار</span>
+                <span>ثبت سفارش جدید در شبکه سراسری لابراتوار</span>
               </h3>
               <button
                 type="button"
@@ -616,6 +720,24 @@ export const LabPortalView: React.FC<LabPortalViewProps> = ({
             </div>
 
             <form onSubmit={handleAddNewOrderSubmit} className="space-y-4 text-xs font-bold">
+              {/* Target Clinic Selection */}
+              <div>
+                <label className="block text-slate-700 dark:text-slate-300 mb-1">
+                  انتخاب کلینیک طرف قرارداد: <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={newClinicTargetId}
+                  onChange={(e) => setNewClinicTargetId(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-bold"
+                >
+                  {clinics.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} ({c.ownerName})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div>
                 <label className="block text-slate-700 dark:text-slate-300 mb-1">شماره سفارش:</label>
                 <input
@@ -674,6 +796,8 @@ export const LabPortalView: React.FC<LabPortalViewProps> = ({
                     <option value="نایت گارد">نایت گارد</option>
                     <option value="اباتمنت ایمپلنت">اباتمنت ایمپلنت</option>
                     <option value="پروتز پارسیل">پروتز پارسیل</option>
+                    <option value="لمینت Emax">لمینت Emax</option>
+                    <option value="اینله / آنله">اینله / آنله</option>
                   </select>
                 </div>
 
@@ -684,8 +808,8 @@ export const LabPortalView: React.FC<LabPortalViewProps> = ({
                     onChange={(e) => setNewStatus(e.target.value as any)}
                     className="w-full px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                   >
-                    <option value="designing">طراحی</option>
-                    <option value="in_furnace">کوره</option>
+                    <option value="designing">طراحی CAD</option>
+                    <option value="in_furnace">کوره سانتر</option>
                     <option value="shipped">ارسال به مطب</option>
                     <option value="delivered">تحویل شده</option>
                   </select>
@@ -693,7 +817,7 @@ export const LabPortalView: React.FC<LabPortalViewProps> = ({
               </div>
 
               <div>
-                <label className="block text-slate-700 dark:text-slate-300 mb-1">لابراتوار طرف قرارداد:</label>
+                <label className="block text-slate-700 dark:text-slate-300 mb-1">لابراتوار سازنده:</label>
                 <input
                   type="text"
                   value={newLabName}
@@ -717,7 +841,7 @@ export const LabPortalView: React.FC<LabPortalViewProps> = ({
                   type="submit"
                   className="w-full py-3 rounded-xl bg-[#005581] hover:bg-[#004266] text-white font-black text-sm shadow-md cursor-pointer transition"
                 >
-                  ذخیره و ایجاد سفارش
+                  ذخیره و ایجاد سفارش در پرونده کلینیک
                 </button>
               </div>
             </form>

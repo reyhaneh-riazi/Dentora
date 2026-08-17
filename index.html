@@ -7,6 +7,30 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script>
+      // Suppress benign Vite WebSocket / HMR connection notices in sandboxed preview
+      window.addEventListener('unhandledrejection', function(event) {
+        if (
+          event.reason &&
+          (typeof event.reason.message === 'string' &&
+            (event.reason.message.includes('WebSocket') ||
+             event.reason.message.includes('websocket') ||
+             event.reason.message.includes('failed to connect to websocket')))
+        ) {
+          event.preventDefault();
+        }
+      });
+      window.addEventListener('error', function(event) {
+        if (
+          event.message &&
+          (event.message.includes('WebSocket') ||
+           event.message.includes('websocket') ||
+           event.message.includes('failed to connect to websocket'))
+        ) {
+          event.preventDefault();
+        }
+      });
+    </script>
   </head>
   <body>
     <div id="root"></div>

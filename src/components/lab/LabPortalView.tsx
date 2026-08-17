@@ -1,25 +1,47 @@
-import React, { useState } from 'react';
-import { ClinicRegistration, LabOrder } from '../../types';
+import React, { useState, useEffect } from 'react';
+import { ClinicRegistration, LabOrder, DentalLab, LabStaffAccount } from '../../types';
+import {
+  getStoredLabs,
+  registerLabWithAccount,
+  addStaffToLab,
+  authenticateLabStaff,
+  getActiveLabSession,
+  setActiveLabSession,
+  clearActiveLabSession,
+  getActiveLabStaffSession,
+  setActiveLabStaffSession,
+} from '../../services/clinicDataStore';
 import {
   Truck,
   Flame,
   PenTool,
   CheckCircle2,
   Clock,
-  AlertTriangle,
   Search,
   Plus,
   X,
   ChevronLeft,
-  Filter,
   Eye,
   Layers,
-  ArrowRight,
   Sparkles,
   Building2,
-  RefreshCw,
   Home,
   Check,
+  UserCheck,
+  Phone,
+  LogIn,
+  UserPlus,
+  LogOut,
+  Stethoscope,
+  Calendar,
+  ShieldCheck,
+  Users,
+  KeyRound,
+  Lock,
+  ArrowRight,
+  Shield,
+  Send,
+  SlidersHorizontal,
 } from 'lucide-react';
 
 interface LabPortalViewProps {
@@ -30,7 +52,7 @@ interface LabPortalViewProps {
   onBackToLanding?: () => void;
 }
 
-type LabFilterTab = 'all' | 'designing' | 'in_furnace' | 'shipped' | 'delivered';
+type LabFilterTab = 'all' | 'ordered' | 'designing' | 'in_furnace' | 'shipped' | 'delivered';
 
 export const LabPortalView: React.FC<LabPortalViewProps> = ({
   labOrders,
@@ -39,815 +61,1558 @@ export const LabPortalView: React.FC<LabPortalViewProps> = ({
   onAddLabOrder,
   onBackToLanding,
 }) => {
-  // Navigation & Filter State
-  const [activeTab, setActiveTab] = useState<LabFilterTab>('all');
-  const [selectedClinicId, setSelectedClinicId] = useState<string>('all');
-  const [searchQuery, setSearchQuery] = useState('');
+  // Stored Labs list
+  const [labs, setLabs] = useState<DentalLab[]>(() => getStoredLabs());
+
+  // Active Lab & Staff Sessions
+  const [activeLab, setActiveLab] = useState<DentalLab | null>(() => getActiveLabSession());
+  const [activeStaff, setActiveStaff] = useState<LabStaffAccount | null>(() => getActiveLabStaffSession());
+
+  // Gateway View State (when not logged in)
+  const [gatewayMode, setGatewayMode] = useState<'landing' | 'login' | 'register'>(() => {
+    return activeLab ? 'landing' : 'landing';
+  });
+
+  // Modal States
+  const [isAddStaffModalOpen, setIsAddStaffModalOpen] = useState(false);
+  const [isAddOrderModalOpen, setIsAddOrderModalOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<LabOrder | null>(null);
 
-  // New Order Form Modal State
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  // Filters
+  const [activeTab, setActiveTab] = useState<LabFilterTab>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Login Form State
+  const [loginUsername, setLoginUsername] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+
+  // Lab Registration Form State
+  const [regLabName, setRegLabName] = useState('');
+  const [regManagerName, setRegManagerName] = useState('');
+  const [regLicenseNumber, setRegLicenseNumber] = useState('');
+  const [regPhone, setRegPhone] = useState('');
+  const [regMobile, setRegMobile] = useState('');
+  const [regAddress, setRegAddress] = useState('');
+  const [regDays, setRegDays] = useState(4);
+  const [regUsername, setRegUsername] = useState('');
+  const [regPassword, setRegPassword] = useState('');
+  const [regError, setRegError] = useState('');
+
+  // Add Staff Modal Form State (Creator Only)
+  const [newStaffFullName, setNewStaffFullName] = useState('');
+  const [newStaffRole, setNewStaffRole] = useState<'technician' | 'staff'>('technician');
+  const [newStaffMobile, setNewStaffMobile] = useState('');
+  const [newStaffUsername, setNewStaffUsername] = useState('');
+  const [newStaffPassword, setNewStaffPassword] = useState('');
+
+  // New Order Form State
   const [newOrderNumber, setNewOrderNumber] = useState(`LAB-${Math.floor(1000 + Math.random() * 9000)}`);
   const [newPatientName, setNewPatientName] = useState('');
-  const [newDentistName, setNewDentistName] = useState('دکتر حسینی');
-  const [newLabName, setNewLabName] = useState('لابراتوار تخصصی پارس دنتال');
+  const [newDentistName, setNewDentistName] = useState(
+    clinics[0]?.ownerRole === 'dentist' ? clinics[0].ownerName : 'دکتر سارا فرهمند'
+  );
+  const [newDentistSpecialty, setNewDentistSpecialty] = useState('متخصص پروتزهای دندانی و زیبایی');
   const [newClinicTargetId, setNewClinicTargetId] = useState(clinics[0]?.id || 'clinic-alborz');
-  const [newItemType, setNewItemType] = useState<LabOrder['itemType']>('روکش زيرکونيا');
+  const [newItemType, setNewItemType] = useState<string>('روکش زيرکونيا کامل');
   const [newToothFdi, setNewToothFdi] = useState<number>(36);
+  const [newShade, setNewShade] = useState('A2');
+  const [newAlloy, setNewAlloy] = useState('زیرکونیا چند لایه (Multi-layer)');
   const [newStatus, setNewStatus] = useState<LabOrder['status']>('designing');
   const [newExpectedDate, setNewExpectedDate] = useState('۱۴۰۵/۰۵/۲۵');
+  const [newDoctorNotes, setNewDoctorNotes] = useState('مارجین چمفر، شیدینگ طبیعی، رعایت اکلوژن دندان مجاور');
 
-  // Custom Milestone Edit Input in Detail Modal
+  // Milestone modification in detail modal
   const [customMilestone, setCustomMilestone] = useState('');
 
-  // Default Milestones Mapping
-  const getMilestoneForStatus = (status: LabOrder['status']): string => {
-    switch (status) {
-      case 'designing':
-        return 'در حال طراحی 3D و CAD/CAM فریم روکش';
-      case 'in_furnace':
-        return 'مرحله پخت پودر زيرکونيا / سرامیک در کوره سانتر High-Temp';
-      case 'shipped':
-        return 'تحویل به پیک جهت ارسال به کلینیک دندان‌پزشکی';
-      case 'delivered':
-        return 'تحویل نهایی به مطب و آماده‌سازی جهت نصب روی دندان بیمار';
-      case 'ordered':
-      default:
-        return 'ثبت اولیه سفارش در سیستم لابراتوار';
+  // Sync state if session updates
+  useEffect(() => {
+    setLabs(getStoredLabs());
+  }, []);
+
+  // Handle Lab Staff Login
+  const handleLoginSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError('');
+    if (!loginUsername.trim()) {
+      setLoginError('لطفاً نام کاربری یا شماره موبایل را وارد نمایید.');
+      return;
+    }
+
+    const authResult = authenticateLabStaff(loginUsername, loginPassword);
+    if (!authResult) {
+      setLoginError('اطلاعات ورود نامعتبر است. نام کاربری یا کلمه عبور اشتباه است.');
+      return;
+    }
+
+    setActiveLab(authResult.lab);
+    setActiveStaff(authResult.staff);
+    setGatewayMode('landing');
+    setLoginUsername('');
+    setLoginPassword('');
+  };
+
+  // Quick Demo Login Handler
+  const handleQuickDemoLogin = (username: string, pass: string) => {
+    const authResult = authenticateLabStaff(username, pass);
+    if (authResult) {
+      setActiveLab(authResult.lab);
+      setActiveStaff(authResult.staff);
+      setGatewayMode('landing');
     }
   };
 
-  // Status Labels and Color Helpers
-  const getStatusBadge = (status: LabOrder['status']) => {
+  // Handle New Lab Registration
+  const handleRegisterLabSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setRegError('');
+    if (!regLabName.trim() || !regManagerName.trim() || !regPhone.trim() || !regUsername.trim() || !regPassword.trim()) {
+      setRegError('لطفاً تمامی فیلدهای الزامی ستاره‌دار را تکمیل نمایید.');
+      return;
+    }
+
+    try {
+      const { lab, staff } = registerLabWithAccount(
+        {
+          name: regLabName.trim(),
+          managerName: regManagerName.trim(),
+          licenseNumber: regLicenseNumber.trim() || `PL-${Math.floor(1000 + Math.random() * 9000)}`,
+          phone: regPhone.trim(),
+          mobile: regMobile.trim() || regPhone.trim(),
+          address: regAddress.trim() || 'تهران، مرکز تخصصی ساخت پروتز دندانی',
+          specialties: ['روکش زیرکونیا چند لایه CAD/CAM', 'لمینت سرامیکی Emax', 'اباتمنت ایمپلنت'],
+          averageTurnaroundDays: Number(regDays) || 4,
+        },
+        {
+          fullName: regManagerName.trim(),
+          username: regUsername.trim(),
+          password: regPassword.trim(),
+          mobile: regMobile.trim() || regPhone.trim(),
+        }
+      );
+
+      setLabs(getStoredLabs());
+      setActiveLab(lab);
+      setActiveStaff(staff);
+      setGatewayMode('landing');
+
+      // Reset Form
+      setRegLabName('');
+      setRegManagerName('');
+      setRegLicenseNumber('');
+      setRegPhone('');
+      setRegMobile('');
+      setRegAddress('');
+      setRegUsername('');
+      setRegPassword('');
+
+      alert(`لابراتوار «${lab.name}» با موفقیت ثبت شد و حساب کاربری مدیر ارشد برای ${staff.fullName} فعال گردید.`);
+    } catch (err) {
+      setRegError('خطا در ثبت‌نام لابراتوار. لطفاً مجدداً تلاش نمایید.');
+    }
+  };
+
+  // Handle Add New Staff / Technician (Creator/Owner Only)
+  const handleAddStaffSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeLab) return;
+    if (!newStaffFullName.trim() || !newStaffUsername.trim() || !newStaffPassword.trim()) {
+      alert('لطفاً نام، نام کاربری و کلمه عبور همکار جدید را وارد نمایید.');
+      return;
+    }
+
+    const createdStaff = addStaffToLab(activeLab.id, {
+      fullName: newStaffFullName.trim(),
+      username: newStaffUsername.trim(),
+      password: newStaffPassword.trim(),
+      role: newStaffRole,
+      mobile: newStaffMobile.trim() || activeLab.phone,
+    });
+
+    if (createdStaff) {
+      const refreshedLabs = getStoredLabs();
+      setLabs(refreshedLabs);
+      const updatedLab = refreshedLabs.find((l) => l.id === activeLab.id) || activeLab;
+      setActiveLab(updatedLab);
+      setIsAddStaffModalOpen(false);
+      setNewStaffFullName('');
+      setNewStaffUsername('');
+      setNewStaffPassword('');
+      setNewStaffMobile('');
+      alert(`همکار جدید «${createdStaff.fullName}» با نام کاربری ${createdStaff.username} به لابراتوار اضافه شد.`);
+    }
+  };
+
+  // Handle Logout
+  const handleLogout = () => {
+    clearActiveLabSession();
+    setActiveLab(null);
+    setActiveStaff(null);
+    setGatewayMode('landing');
+  };
+
+  // Handle Create Lab Order Direct
+  const handleAddOrderSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeLab || !newPatientName.trim()) {
+      alert('لطفاً نام و نام خانوادگی بیمار را وارد کنید.');
+      return;
+    }
+
+    const clinicObj = clinics.find((c) => c.id === newClinicTargetId) || clinics[0];
+    const newOrder: LabOrder = {
+      id: newOrderNumber,
+      orderNumber: newOrderNumber,
+      patientId: `p-${Date.now()}`,
+      patientName: newPatientName.trim(),
+      dentistName: newDentistName.trim() || 'دکتر معالج',
+      dentistSpecialty: newDentistSpecialty,
+      toothFdi: newToothFdi,
+      itemType: newItemType,
+      shade: newShade,
+      alloyOrMaterial: newAlloy,
+      labId: activeLab.id,
+      labName: activeLab.name,
+      clinicId: newClinicTargetId,
+      clinicName: clinicObj?.name || 'کلینیک تخصصی البرز',
+      status: newStatus,
+      orderedDate: new Date().toLocaleDateString('fa-IR'),
+      expectedDeliveryDate: newExpectedDate,
+      currentMilestone: getMilestoneForStatus(newStatus),
+      doctorNotes: newDoctorNotes,
+      stages: [
+        { name: 'ثبت سفارش و دریافت قالب/اسکن دیجیتال', done: true },
+        { name: 'طراحی 3D CAD/CAM و کست دیجیتال', done: newStatus !== 'ordered' },
+        { name: `پخت کوره سانتر و شیدینگ رنگ ${newShade}`, done: newStatus === 'in_furnace' || newStatus === 'shipped' || newStatus === 'delivered' },
+        { name: 'کنترل نهایی کیفیت و ارسال به مطب', done: newStatus === 'shipped' || newStatus === 'delivered' },
+      ],
+    };
+
+    if (onAddLabOrder) {
+      onAddLabOrder(newOrder, newClinicTargetId);
+    }
+
+    setIsAddOrderModalOpen(false);
+    setNewPatientName('');
+    setNewOrderNumber(`LAB-${Math.floor(1000 + Math.random() * 9000)}`);
+  };
+
+  const getMilestoneForStatus = (status: LabOrder['status']): string => {
     switch (status) {
       case 'designing':
-        return (
-          <span className="px-2.5 py-1 rounded-full bg-blue-100 dark:bg-blue-950/80 text-blue-800 dark:text-blue-200 font-bold text-xs flex items-center gap-1.5 border border-blue-200 dark:border-blue-900">
-            <PenTool className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-            <span>طراحی CAD</span>
-          </span>
-        );
+        return 'طراحی 3D CAD/CAM و کست دیجیتال';
+      case 'in_furnace':
+        return 'مرحله پخت پودر زيرکونيا در کوره سانتر';
+      case 'shipped':
+        return 'تحویل به پیک جهت ارسال به کلینیک';
+      case 'delivered':
+        return 'تحویل به مطب و آماده نصب روی دندان بیمار';
+      case 'ordered':
+      default:
+        return 'ثبت اولیه سفارش و دریافت اسکن/قالب';
+    }
+  };
+
+  // Status Badge Component matching screenshot
+  const renderStatusBadge = (status: LabOrder['status']) => {
+    switch (status) {
       case 'in_furnace':
         return (
-          <span className="px-2.5 py-1 rounded-full bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-200 font-bold text-xs flex items-center gap-1.5 border border-amber-200 dark:border-amber-900">
-            <Flame className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+          <span className="px-3 py-1 rounded-full bg-[#ffd200]/25 text-[#005581] font-bold text-xs flex items-center gap-1.5 border border-[#ffe552]">
+            <Flame className="w-3.5 h-3.5 text-[#005581]" />
             <span>کوره سانتر</span>
           </span>
         );
       case 'shipped':
         return (
-          <span className="px-2.5 py-1 rounded-full bg-sky-100 dark:bg-sky-950/80 text-sky-800 dark:text-sky-200 font-bold text-xs flex items-center gap-1.5 border border-sky-200 dark:border-sky-900">
-            <Truck className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
-            <span>ارسال به مطب</span>
+          <span className="px-3 py-1 rounded-full bg-[#72cdf4]/25 text-[#005581] font-bold text-xs flex items-center gap-1.5 border border-[#72cdf4]">
+            <Truck className="w-3.5 h-3.5 text-[#005581]" />
+            <span>ارسال‌شده به مطب</span>
+          </span>
+        );
+      case 'designing':
+        return (
+          <span className="px-3 py-1 rounded-full bg-[#005581] text-[#fffffa] font-bold text-xs flex items-center gap-1.5 shadow-xs">
+            <PenTool className="w-3.5 h-3.5 text-[#ffd200]" />
+            <span>طراحی CAD</span>
           </span>
         );
       case 'delivered':
         return (
-          <span className="px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-200 font-bold text-xs flex items-center gap-1.5 border border-emerald-200 dark:border-emerald-900">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span>تحویل نهایی</span>
+          <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 font-black text-xs flex items-center gap-1.5 border border-emerald-300">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+            <span>تحویل نهایی مطب</span>
           </span>
         );
       case 'ordered':
       default:
         return (
-          <span className="px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center gap-1.5">
+          <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-700 font-bold text-xs flex items-center gap-1.5 border border-slate-300">
             <Clock className="w-3.5 h-3.5 text-slate-500" />
-            <span>ثبت سفارش</span>
+            <span>ثبت اولیه</span>
           </span>
         );
     }
   };
 
-  // Filter Orders by Tab, Clinic, and Search query
-  const filteredOrders = labOrders.filter((order) => {
-    // 1. Status tab filter
-    const matchesTab =
-      activeTab === 'all'
-        ? true
-        : activeTab === 'designing'
-        ? order.status === 'designing' || order.status === 'ordered'
-        : order.status === activeTab;
+  // =========================================================================
+  // GATEWAY: NOT LOGGED IN / AUTH CHOICE SCREEN
+  // =========================================================================
+  if (!activeLab || !activeStaff) {
+    return (
+      <div className="min-h-screen bg-[#fffffa] text-[#0b2535] p-4 sm:p-6 lg:p-10 font-sans antialiased dir-rtl flex flex-col justify-between select-none">
+        <div className="max-w-4xl mx-auto w-full space-y-8 my-auto">
+          
+          {/* Top Bar for Gateway */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-[#005581] text-[#ffd200] flex items-center justify-center font-black text-xl shadow-md border-2 border-[#72cdf4]">
+                <Truck className="w-6 h-6" />
+              </div>
+              <div>
+                <h1 className="text-xl sm:text-2xl font-black text-[#005581]">
+                  درگاه پورتال لابراتوار دندان‌پزشکی دنتورا
+                </h1>
+                <p className="text-xs text-[#005581]/70 font-bold">
+                  اتصال مستقیم کلینیک‌ها به لابراتوارهای تخصصی ساخت پروتز و روکش دیجیتال
+                </p>
+              </div>
+            </div>
 
-    // 2. Clinic filter
-    const matchesClinic =
-      selectedClinicId === 'all' || !order.clinicId || order.clinicId === selectedClinicId;
+            {onBackToLanding && (
+              <button
+                onClick={onBackToLanding}
+                className="px-4 py-2 rounded-xl bg-[#fffffa] hover:bg-[#72cdf4]/15 text-[#005581] border border-[#72cdf4] font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Home className="w-4 h-4 text-[#005581]" />
+                <span>بازگشت به صفحه اصلی</span>
+              </button>
+            )}
+          </div>
 
-    // 3. Search query
-    const query = searchQuery.trim().toLowerCase();
-    const matchesSearch =
-      !query ||
-      order.patientName.toLowerCase().includes(query) ||
-      order.orderNumber.toLowerCase().includes(query) ||
-      order.dentistName.toLowerCase().includes(query) ||
-      (order.clinicName && order.clinicName.toLowerCase().includes(query)) ||
-      order.itemType.toLowerCase().includes(query) ||
-      order.toothFdi.toString().includes(query);
+          {/* GATEWAY LANDING: 2 MAIN BUTTONS */}
+          {gatewayMode === 'landing' && (
+            <div className="space-y-6">
+              <div className="bg-[#005581] text-[#fffffa] rounded-3xl p-6 sm:p-8 shadow-xl border-2 border-[#72cdf4] text-center space-y-4">
+                <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-[#ffd200] text-[#005581] text-xs font-black">
+                  <Sparkles className="w-4 h-4" />
+                  <span>سامانه یکپارچه Dentora Lab Network</span>
+                </div>
+                <h2 className="text-2xl sm:text-3xl font-black text-[#ffd200]">
+                  ورود یا ثبت‌نام در پورتال تخصصی لابراتوار
+                </h2>
+                <p className="text-xs sm:text-sm text-[#fffffa]/80 max-w-xl mx-auto leading-relaxed font-medium">
+                  جهت مدیریت سفارشات پروتز، تغییر وضعیت مراحل طراحی، کوره سانتر، کنترل کیفیت و ارسال پیک، لطفاً وارد حساب خود شوید یا لابراتوار جدیدی ثبت نمایید.
+                </p>
 
-    return matchesTab && matchesClinic && matchesSearch;
+                <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-4 max-w-md mx-auto">
+                  {/* Button 1: Register New Lab */}
+                  <button
+                    onClick={() => setGatewayMode('register')}
+                    className="w-full sm:w-1/2 py-3.5 px-5 rounded-2xl bg-[#ffd200] hover:bg-[#ffe552] text-[#005581] font-black text-sm flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer border-2 border-[#ffe552]"
+                  >
+                    <UserPlus className="w-5 h-5" />
+                    <span>ثبت لابراتوار جدید</span>
+                  </button>
+
+                  {/* Button 2: Login Lab Staff */}
+                  <button
+                    onClick={() => setGatewayMode('login')}
+                    className="w-full sm:w-1/2 py-3.5 px-5 rounded-2xl bg-[#fffffa] hover:bg-[#72cdf4]/20 text-[#005581] font-black text-sm flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer border-2 border-[#72cdf4]"
+                  >
+                    <LogIn className="w-5 h-5" />
+                    <span>ورود مسئول لابراتوار</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* QUICK DEMO ACCOUNTS FOR INSTANT TESTING */}
+              <div className="bg-[#fffffa] border border-[#72cdf4] rounded-2xl p-5 shadow-xs space-y-3">
+                <div className="flex items-center justify-between border-b border-[#72cdf4]/30 pb-2">
+                  <span className="text-xs font-black text-[#005581] flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-[#005581]" />
+                    حساب‌های آزمایشی آماده جهت ورود سریع:
+                  </span>
+                  <span className="text-[11px] text-[#005581]/70">رمز عبور تمام اکانت‌ها: 123</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div
+                    onClick={() => handleQuickDemoLogin('farhad.lab', '123')}
+                    className="p-3 rounded-xl border border-[#72cdf4] bg-[#72cdf4]/10 hover:bg-[#72cdf4]/25 cursor-pointer transition-all space-y-1"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-[#005581]">پارس دنتال (CAD/CAM)</span>
+                      <span className="px-2 py-0.5 rounded-full bg-[#005581] text-[#ffd200] text-[10px] font-black">مؤسس</span>
+                    </div>
+                    <p className="text-[11px] text-[#005581]/80">مهندس فرهاد رضوی</p>
+                    <p className="text-[10px] text-[#005581]/60 font-mono">کاربری: farhad.lab</p>
+                  </div>
+
+                  <div
+                    onClick={() => handleQuickDemoLogin('reza.cad', '123')}
+                    className="p-3 rounded-xl border border-[#72cdf4] bg-[#72cdf4]/10 hover:bg-[#72cdf4]/25 cursor-pointer transition-all space-y-1"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-[#005581]">پارس دنتال (CAD/CAM)</span>
+                      <span className="px-2 py-0.5 rounded-full bg-[#72cdf4] text-[#005581] text-[10px] font-black">تکنسین</span>
+                    </div>
+                    <p className="text-[11px] text-[#005581]/80">مهندس رضا کریمی</p>
+                    <p className="text-[10px] text-[#005581]/60 font-mono">کاربری: reza.cad</p>
+                  </div>
+
+                  <div
+                    onClick={() => handleQuickDemoLogin('keyvan.art', '123')}
+                    className="p-3 rounded-xl border border-[#72cdf4] bg-[#72cdf4]/10 hover:bg-[#72cdf4]/25 cursor-pointer transition-all space-y-1"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-[#005581]">آرت دنتال (Art Dental)</span>
+                      <span className="px-2 py-0.5 rounded-full bg-[#005581] text-[#ffd200] text-[10px] font-black">مؤسس</span>
+                    </div>
+                    <p className="text-[11px] text-[#005581]/80">استاد کیوان امینی</p>
+                    <p className="text-[10px] text-[#005581]/60 font-mono">کاربری: keyvan.art</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* GATEWAY LOGIN FORM */}
+          {gatewayMode === 'login' && (
+            <div className="bg-[#fffffa] border-2 border-[#005581] rounded-3xl p-6 sm:p-8 shadow-2xl space-y-5 animate-fadeIn">
+              <div className="flex items-center justify-between border-b border-[#72cdf4]/40 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-2xl bg-[#005581] text-[#ffd200] flex items-center justify-center font-black">
+                    <LogIn className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="font-black text-lg text-[#005581]">ورود مسئول یا همکاران لابراتوار</h2>
+                    <p className="text-xs text-[#005581]/70">نام کاربری و رمز عبور تخصیص داده شده را وارد نمایید</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setGatewayMode('landing')}
+                  className="px-3 py-1.5 rounded-xl border border-[#72cdf4] text-xs font-bold text-[#005581] hover:bg-[#72cdf4]/15"
+                >
+                  بازگشت
+                </button>
+              </div>
+
+              {loginError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-300 text-rose-800 text-xs font-bold">
+                  {loginError}
+                </div>
+              )}
+
+              <form onSubmit={handleLoginSubmit} className="space-y-4 text-xs">
+                <div>
+                  <label className="block font-black text-[#005581] mb-1">
+                    نام کاربری یا شماره موبایل:
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="مثلاً farhad.lab یا 09123456789"
+                    value={loginUsername}
+                    onChange={(e) => setLoginUsername(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#fffffa] border border-[#72cdf4] text-[#005581] font-bold focus:ring-2 focus:ring-[#005581] focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-black text-[#005581] mb-1">
+                    کلمه عبور:
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="رمز عبور خود را وارد کنید"
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#fffffa] border border-[#72cdf4] text-[#005581] font-bold focus:ring-2 focus:ring-[#005581] focus:outline-none"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setGatewayMode('register')}
+                    className="text-xs font-bold text-[#005581] hover:underline"
+                  >
+                    لابراتوار شما ثبت نشده؟ <strong>ثبت‌نام لابراتوار جدید</strong>
+                  </button>
+
+                  <button
+                    type="submit"
+                    className="px-6 py-2.5 rounded-xl bg-[#005581] hover:bg-[#004266] text-[#ffd200] font-black text-xs shadow-md flex items-center gap-2 cursor-pointer border border-[#72cdf4]"
+                  >
+                    <LogIn className="w-4 h-4" />
+                    <span>ورود به کارتابل لابراتوار</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* GATEWAY REGISTRATION FORM */}
+          {gatewayMode === 'register' && (
+            <div className="bg-[#fffffa] border-2 border-[#005581] rounded-3xl p-6 sm:p-8 shadow-2xl space-y-5 animate-fadeIn">
+              <div className="flex items-center justify-between border-b border-[#72cdf4]/40 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-2xl bg-[#ffd200] text-[#005581] flex items-center justify-center font-black border border-[#ffe552]">
+                    <UserPlus className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="font-black text-lg text-[#005581]">ثبت و احراز هویت لابراتوار همکار جدید</h2>
+                    <p className="text-xs text-[#005581]/70">
+                      ایجاد شناسه رسمی لابراتوار، اضافه شدن به لیست کلینیک‌ها و ساخت اکانت مدیر ارشد
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setGatewayMode('landing')}
+                  className="px-3 py-1.5 rounded-xl border border-[#72cdf4] text-xs font-bold text-[#005581] hover:bg-[#72cdf4]/15"
+                >
+                  بازگشت
+                </button>
+              </div>
+
+              {regError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-300 text-rose-800 text-xs font-bold">
+                  {regError}
+                </div>
+              )}
+
+              <form onSubmit={handleRegisterLabSubmit} className="space-y-4 text-xs">
+                {/* Section 1: Lab Info */}
+                <div className="p-4 rounded-2xl bg-[#72cdf4]/10 border border-[#72cdf4]/40 space-y-3">
+                  <span className="font-black text-xs text-[#005581] flex items-center gap-1.5">
+                    <Building2 className="w-4 h-4 text-[#005581]" />
+                    ۱. مشخصات رسمی لابراتوار دندان‌پزشکی
+                  </span>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-bold text-[#005581] mb-1">
+                        نام کامل لابراتوار: <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="مثلاً: لابراتوار دیجیتال صبا دنتال"
+                        value={regLabName}
+                        onChange={(e) => setRegLabName(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-[#fffffa] border border-[#72cdf4] text-[#005581] font-bold focus:ring-2 focus:ring-[#005581] focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-[#005581] mb-1">
+                        شماره پروانه ساخت / مجوز بهداشت:
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="PL-6623"
+                        value={regLicenseNumber}
+                        onChange={(e) => setRegLicenseNumber(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-[#fffffa] border border-[#72cdf4] text-[#005581] font-mono font-bold focus:ring-2 focus:ring-[#005581] focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block font-bold text-[#005581] mb-1">
+                        تلفن ثابت لابراتوار: <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="021-88112233"
+                        value={regPhone}
+                        onChange={(e) => setRegPhone(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-[#fffffa] border border-[#72cdf4] text-[#005581] font-mono font-bold focus:ring-2 focus:ring-[#005581] focus:outline-none dir-ltr text-right"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-[#005581] mb-1">
+                        شماره همراه هماهنگی پیک:
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="09121112233"
+                        value={regMobile}
+                        onChange={(e) => setRegMobile(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-[#fffffa] border border-[#72cdf4] text-[#005581] font-mono font-bold focus:ring-2 focus:ring-[#005581] focus:outline-none dir-ltr text-right"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-[#005581] mb-1">
+                        میانگین زمان تحویل (روز کاری):
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={20}
+                        value={regDays}
+                        onChange={(e) => setRegDays(Number(e.target.value))}
+                        className="w-full px-3 py-2 rounded-xl bg-[#fffffa] border border-[#72cdf4] text-[#005581] font-mono font-bold focus:ring-2 focus:ring-[#005581] focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-[#005581] mb-1">
+                      آدرس دقیق فیزیکی لابراتوار:
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="تهران، خیابان ولیعصر، نرسیده به توانیر، پلاک ۴۲"
+                      value={regAddress}
+                      onChange={(e) => setRegAddress(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-[#fffffa] border border-[#72cdf4] text-[#005581] font-bold focus:ring-2 focus:ring-[#005581] focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Section 2: Creator / Founder Account */}
+                <div className="p-4 rounded-2xl bg-[#ffd200]/15 border border-[#ffe552] space-y-3">
+                  <span className="font-black text-xs text-[#005581] flex items-center gap-1.5">
+                    <KeyRound className="w-4 h-4 text-[#005581]" />
+                    ۲. حساب کاربری مؤسس و مدیر ارشد (شخص ایجادکننده)
+                  </span>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block font-bold text-[#005581] mb-1">
+                        نام و نام خانوادگی مدیر: <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="مهندس مسعود صادقی"
+                        value={regManagerName}
+                        onChange={(e) => setRegManagerName(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-[#fffffa] border border-[#72cdf4] text-[#005581] font-bold focus:ring-2 focus:ring-[#005581] focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-[#005581] mb-1">
+                        نام کاربری جهت ورود: <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="masoud.lab"
+                        value={regUsername}
+                        onChange={(e) => setRegUsername(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-[#fffffa] border border-[#72cdf4] text-[#005581] font-mono font-bold focus:ring-2 focus:ring-[#005581] focus:outline-none dir-ltr text-right"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-[#005581] mb-1">
+                        کلمه عبور اختصاصی: <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="password"
+                        required
+                        placeholder="حداقل ۴ کاراکتر"
+                        value={regPassword}
+                        onChange={(e) => setRegPassword(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-[#fffffa] border border-[#72cdf4] text-[#005581] font-bold focus:ring-2 focus:ring-[#005581] focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setGatewayMode('login')}
+                    className="text-xs font-bold text-[#005581] hover:underline"
+                  >
+                    قبلاً ثبت‌نام کرده‌اید؟ <strong>ورود به حساب</strong>
+                  </button>
+
+                  <button
+                    type="submit"
+                    className="px-6 py-2.5 rounded-xl bg-[#005581] hover:bg-[#004266] text-[#ffd200] font-black text-xs shadow-md flex items-center gap-2 cursor-pointer border border-[#72cdf4]"
+                  >
+                    <CheckCircle2 className="w-4 h-4 text-[#ffd200]" />
+                    <span>تکمیل ثبت‌نام و ورود به پنل</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+        </div>
+      </div>
+    );
+  }
+
+  // =========================================================================
+  // LOGGED-IN DASHBOARD VIEW (MATCHING EXACT IMAGE.PNG LAYOUT)
+  // =========================================================================
+
+  // Filter orders strictly for the current active lab
+  const myLabOrders = labOrders.filter((o) => {
+    const matchId = o.labId === activeLab.id;
+    const matchName =
+      o.labName &&
+      (o.labName.toLowerCase().includes(activeLab.name.toLowerCase()) ||
+        activeLab.name.toLowerCase().includes(o.labName.toLowerCase()));
+    return matchId || matchName;
   });
 
-  // Calculate Order Status Counts
-  const countDesigning = labOrders.filter((o) => o.status === 'designing' || o.status === 'ordered').length;
-  const countFurnace = labOrders.filter((o) => o.status === 'in_furnace').length;
-  const countShipped = labOrders.filter((o) => o.status === 'shipped').length;
-  const countDelivered = labOrders.filter((o) => o.status === 'delivered').length;
+  // Calculate counters
+  const countAll = myLabOrders.length;
+  const countDesigning = myLabOrders.filter((o) => o.status === 'designing').length;
+  const countFurnace = myLabOrders.filter((o) => o.status === 'in_furnace').length;
+  const countShipped = myLabOrders.filter((o) => o.status === 'shipped').length;
+  const countDelivered = myLabOrders.filter((o) => o.status === 'delivered').length;
 
-  // List of distinct clinics associated with orders
-  const uniqueClinicsCount = clinics.length > 0 ? clinics.length : 2;
-
-  // Handle Status Update
-  const handleApplyStatusChange = (newSt: LabOrder['status'], milestoneOverride?: string) => {
-    if (!selectedOrder) return;
-
-    const ms = milestoneOverride || customMilestone.trim() || getMilestoneForStatus(newSt);
-    onUpdateOrderStatus(selectedOrder.id, newSt, ms, selectedOrder.clinicId);
-
-    // Update selectedOrder local view state
-    setSelectedOrder((prev) => (prev ? { ...prev, status: newSt, currentMilestone: ms } : null));
-    setCustomMilestone('');
-  };
-
-  // Handle Add New Order Submit
-  const handleAddNewOrderSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newPatientName.trim()) {
-      alert('لطفاً نام بیمار را وارد کنید.');
-      return;
+  // Filter based on active tab and search query
+  const displayedOrders = myLabOrders.filter((order) => {
+    if (activeTab !== 'all' && order.status !== activeTab) {
+      return false;
     }
-
-    const selectedClinicObj = clinics.find((c) => c.id === newClinicTargetId);
-
-    const created: LabOrder = {
-      id: `lab-${Date.now()}`,
-      orderNumber: newOrderNumber,
-      patientId: `p-${Date.now()}`,
-      patientName: newPatientName.trim(),
-      dentistName: newDentistName.trim() || 'دندان‌پزشک معالج',
-      toothFdi: Number(newToothFdi) || 36,
-      labName: newLabName.trim() || 'لابراتوار دندان‌سازی',
-      clinicId: newClinicTargetId,
-      clinicName: selectedClinicObj?.name || 'کلینیک دندان‌پزشکی',
-      itemType: newItemType,
-      status: newStatus,
-      orderedDate: '۱۴۰۵/۰۵/۱۵',
-      expectedDeliveryDate: newExpectedDate,
-      currentMilestone: getMilestoneForStatus(newStatus),
-    };
-
-    if (onAddLabOrder) {
-      onAddLabOrder(created, newClinicTargetId);
-    } else {
-      labOrders.unshift(created);
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      const matchPatient = order.patientName?.toLowerCase().includes(q);
+      const matchDentist = order.dentistName?.toLowerCase().includes(q);
+      const matchNum = order.orderNumber?.toLowerCase().includes(q);
+      const matchTooth = order.toothFdi?.toString().includes(q);
+      const matchItem = order.itemType?.toLowerCase().includes(q);
+      return matchPatient || matchDentist || matchNum || matchTooth || matchItem;
     }
+    return true;
+  });
 
-    setIsAddModalOpen(false);
-    setNewPatientName('');
-    setNewOrderNumber(`LAB-${Math.floor(1000 + Math.random() * 9000)}`);
-  };
+  const isCreator = activeStaff.isCreator || activeStaff.role === 'owner';
 
   return (
-    <div className="space-y-6 pb-12">
-      {/* HEADER BANNER */}
-      <div className="bg-gradient-to-r from-slate-900 via-[#003857] to-slate-900 text-white rounded-3xl p-6 shadow-xl border border-slate-800 relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none"></div>
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-300 font-bold shadow-inner">
-              <Flame className="w-6 h-6 text-amber-400" />
+    <div className="min-h-screen bg-[#fffffa] text-[#0b2535] p-3 sm:p-6 lg:p-8 font-sans antialiased dir-rtl select-none">
+      <div className="max-w-7xl mx-auto space-y-5">
+
+        {/* TOP STATUS BAR (MATCHING HEADER OF IMAGE) */}
+        <header className="flex flex-wrap items-center justify-between gap-3 bg-[#005581] text-[#fffffa] p-3 sm:p-4 rounded-2xl shadow-md border-2 border-[#72cdf4]/40">
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Dentora OS Brand Logo Box */}
+            <div className="w-10 h-10 rounded-xl bg-[#ffd200] text-[#005581] flex items-center justify-center font-black text-xl border border-[#ffe552] shadow-xs">
+              <span>د</span>
             </div>
-            <div>
+
+            <div className="space-y-0.5">
               <div className="flex items-center gap-2">
-                <h2 className="text-xl font-black text-white flex items-center gap-2">
-                  <span>پورتال جامع لابراتوارهای دندان‌سازی</span>
-                  <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/30 text-cyan-200 border border-cyan-400/30 text-xs font-mono">
-                    {labOrders.length} سفارش فعال
-                  </span>
-                </h2>
-              </div>
-              <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300 mt-1">
-                <span className="flex items-center gap-1 text-emerald-300">
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-400" />
-                  <span>همگام‌سازی بلادرنگ با {uniqueClinicsCount} کلینیک همکار</span>
+                <span className="font-black text-sm sm:text-base text-[#fffffa]">
+                  {activeLab.name}
                 </span>
-                <span className="text-slate-500">•</span>
-                <span>ردیابی مراحل CAD/CAM، کوره، ارسال و تحویل</span>
+                <span className="text-[11px] text-[#ffd200] font-bold">| Dentora Lab OS</span>
               </div>
+              <p className="text-[11px] text-[#72cdf4] flex items-center gap-2">
+                <span>کاربر: <strong>{activeStaff.fullName}</strong></span>
+                <span className="px-2 py-0.2 rounded-full bg-[#fffffa]/20 text-[#fffffa] text-[10px] font-mono">
+                  {activeStaff.role === 'owner' ? 'مؤسس / مدیر ارشد' : 'تکنسین پروتز'}
+                </span>
+              </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#fffffa]/10 text-emerald-300 text-xs font-bold border border-emerald-400/30">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>سیستم آنلاین و متصل به کلینیک‌ها</span>
+            </div>
+
             {onBackToLanding && (
               <button
-                type="button"
                 onClick={onBackToLanding}
-                className="px-3.5 py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 transition cursor-pointer flex items-center gap-1.5"
+                className="px-3 py-1.5 rounded-xl bg-[#fffffa]/15 hover:bg-[#fffffa]/25 text-[#fffffa] text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
               >
-                <Home className="w-4 h-4 text-cyan-400" />
+                <Home className="w-3.5 h-3.5" />
                 <span>صفحه اصلی</span>
               </button>
             )}
 
             <button
-              type="button"
-              onClick={() => setIsAddModalOpen(true)}
-              className="px-4 py-2.5 rounded-xl bg-[#ffd200] hover:bg-[#ffe552] text-slate-950 font-black text-xs shadow-md cursor-pointer transition flex items-center justify-center gap-2"
+              onClick={handleLogout}
+              className="px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-400/40 text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
             >
-              <Plus className="w-4 h-4" />
-              <span>ثبت سفارش جدید</span>
+              <LogOut className="w-3.5 h-3.5" />
+              <span>خروج از حساب</span>
             </button>
           </div>
-        </div>
-      </div>
+        </header>
 
-      {/* CLINIC FILTER & LAB CONTROLS BAR */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-xs space-y-4">
-        
-        {/* Top Filter Row: Multi-clinic switcher & Search */}
-        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
-          {/* Multi-Clinic Selection Bar */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0 scrollbar-none">
-            <span className="text-xs font-bold text-slate-500 flex items-center gap-1 shrink-0">
-              <Building2 className="w-4 h-4 text-[#005581]" />
-              <span>کلینیک طرف قرارداد:</span>
-            </span>
+        {/* HERO BANNER (EXACTLY MATCHING IMAGE.PNG) */}
+        <section className="bg-[#005581] text-[#fffffa] rounded-3xl p-4 sm:p-6 shadow-xl border border-[#72cdf4]/50 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-[#004266] text-[#72cdf4] flex items-center justify-center font-black shadow-inner border border-[#72cdf4]/40 shrink-0">
+              <Truck className="w-7 h-7" />
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-lg sm:text-xl font-black text-[#fffffa]">
+                  پورتال مدیریت و ردیابی سفارشات لابراتوار
+                </h1>
+                <span className="px-3 py-0.5 rounded-full bg-[#72cdf4]/30 text-[#fffffa] text-xs font-black border border-[#72cdf4]">
+                  {countAll} سفارش
+                </span>
+              </div>
+              <p className="text-xs text-[#72cdf4] font-medium">
+                شفافیت کامل مراحل ساخت پروتز، روکش و اباتمنت (طراحی ⬅️ کوره ⬅️ ارسال ⬅️ تحویل)
+              </p>
+            </div>
+          </div>
 
+          <div className="flex items-center gap-2.5 flex-wrap self-start md:self-center">
+            {/* ADD NEW STAFF BUTTON: ONLY VISIBLE FOR LAB CREATOR/OWNER */}
+            {isCreator && (
+              <button
+                onClick={() => setIsAddStaffModalOpen(true)}
+                className="px-4 py-2.5 rounded-2xl bg-[#fffffa] hover:bg-[#72cdf4]/20 text-[#005581] font-black text-xs flex items-center gap-2 shadow-md transition-all cursor-pointer border border-[#72cdf4]"
+              >
+                <Users className="w-4 h-4 text-[#005581]" />
+                <span>+ افزودن همکار جدید</span>
+              </button>
+            )}
+
+            {/* ADD NEW ORDER BUTTON (YELLOW BUTTON AS IN IMAGE) */}
             <button
-              type="button"
-              onClick={() => setSelectedClinicId('all')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
-                selectedClinicId === 'all'
-                  ? 'bg-[#005581] text-white shadow-xs'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'
-              }`}
+              onClick={() => setIsAddOrderModalOpen(true)}
+              className="px-4 py-2.5 rounded-2xl bg-[#ffd200] hover:bg-[#ffe552] text-[#005581] font-black text-xs flex items-center gap-2 shadow-md transition-all cursor-pointer border border-[#ffe552]"
             >
-              همه کلینیک‌ها ({labOrders.length})
+              <Plus className="w-4 h-4 text-[#005581]" />
+              <span>ثبت سفارش جدید لابراتوار</span>
             </button>
-
-            {clinics.map((c) => {
-              const clinicOrdersCount = labOrders.filter((o) => o.clinicId === c.id).length;
-              return (
-                <button
-                  key={c.id}
-                  type="button"
-                  onClick={() => setSelectedClinicId(c.id)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 flex items-center gap-1.5 ${
-                    selectedClinicId === c.id
-                      ? 'bg-[#005581] text-white shadow-xs'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'
-                  }`}
-                >
-                  <span>{c.name}</span>
-                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
-                    selectedClinicId === c.id ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                  }`}>
-                    {clinicOrdersCount}
-                  </span>
-                </button>
-              );
-            })}
           </div>
+        </section>
 
+        {/* SEARCH AND FILTER TABS ROW (EXACTLY MATCHING IMAGE.PNG) */}
+        <section className="bg-[#fffffa] border border-[#72cdf4]/50 rounded-2xl p-3 sm:p-4 shadow-xs flex flex-col md:flex-row items-center justify-between gap-3">
           {/* Search Box */}
-          <div className="relative min-w-[240px]">
-            <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
+          <div className="relative w-full md:w-80">
+            <Search className="w-4 h-4 text-[#005581]/50 absolute right-3.5 top-3" />
             <input
               type="text"
-              placeholder="جستجوی بیمار، کد سفارش، پزشک، کلینیک..."
+              placeholder="جستجو بر اساس نام بیمار، کد سفارش..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pr-9 pl-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs font-bold focus:ring-2 focus:ring-[#005581]"
+              className="w-full pl-3 pr-10 py-2.5 rounded-2xl bg-[#fffffa] border border-[#72cdf4] text-xs font-bold text-[#005581] placeholder-[#005581]/40 focus:outline-none focus:ring-2 focus:ring-[#005581]"
             />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute left-3 top-3 text-[#005581]/50 hover:text-[#005581]"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
-        </div>
 
-        {/* Bottom Status Filter Tabs */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-          <button
-            onClick={() => setActiveTab('all')}
-            className={`px-3.5 py-2 rounded-xl font-bold text-xs transition cursor-pointer flex items-center gap-2 shrink-0 ${
-              activeTab === 'all'
-                ? 'bg-slate-900 dark:bg-slate-700 text-white shadow-sm'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
-            }`}
-          >
-            <Layers className="w-4 h-4 text-[#ffd200]" />
-            <span>همه مراحل</span>
-            <span className="px-1.5 py-0.5 rounded-full bg-white/20 text-[10px] font-mono">
-              {labOrders.length}
-            </span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('designing')}
-            className={`px-3.5 py-2 rounded-xl font-bold text-xs transition cursor-pointer flex items-center gap-2 shrink-0 ${
-              activeTab === 'designing'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
-            }`}
-          >
-            <PenTool className="w-4 h-4 text-blue-400" />
-            <span>۱. طراحی CAD</span>
-            <span className="px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-800 dark:text-blue-200 text-[10px] font-mono">
-              {countDesigning}
-            </span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('in_furnace')}
-            className={`px-3.5 py-2 rounded-xl font-bold text-xs transition cursor-pointer flex items-center gap-2 shrink-0 ${
-              activeTab === 'in_furnace'
-                ? 'bg-amber-600 text-white shadow-sm'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
-            }`}
-          >
-            <Flame className="w-4 h-4 text-amber-400" />
-            <span>۲. کوره سانتر</span>
-            <span className="px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-800 dark:text-amber-200 text-[10px] font-mono">
-              {countFurnace}
-            </span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('shipped')}
-            className={`px-3.5 py-2 rounded-xl font-bold text-xs transition cursor-pointer flex items-center gap-2 shrink-0 ${
-              activeTab === 'shipped'
-                ? 'bg-sky-600 text-white shadow-sm'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
-            }`}
-          >
-            <Truck className="w-4 h-4 text-sky-400" />
-            <span>۳. ارسال به مطب</span>
-            <span className="px-1.5 py-0.5 rounded-full bg-sky-500/20 text-sky-800 dark:text-sky-200 text-[10px] font-mono">
-              {countShipped}
-            </span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('delivered')}
-            className={`px-3.5 py-2 rounded-xl font-bold text-xs transition cursor-pointer flex items-center gap-2 shrink-0 ${
-              activeTab === 'delivered'
-                ? 'bg-emerald-600 text-white shadow-sm'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
-            }`}
-          >
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-            <span>۴. تحویل نهایی</span>
-            <span className="px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-800 dark:text-emerald-200 text-[10px] font-mono">
-              {countDelivered}
-            </span>
-          </button>
-        </div>
-      </div>
-
-      {/* ORDERS LIST */}
-      {filteredOrders.length === 0 ? (
-        <div className="p-12 text-center text-xs text-slate-500 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
-          سفارشی با فیلترهای انتخابی یافت نشد.
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredOrders.map((order, idx) => (
-            <div
-              key={`${order.clinicId || 'cl'}_${order.id || idx}`}
-              onClick={() => setSelectedOrder(order)}
-              className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-xs hover:shadow-md hover:border-[#005581] transition cursor-pointer space-y-4 group relative flex flex-col justify-between"
+          {/* Filter Pills with Exact Counters (Matching Image.png) */}
+          <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-1 md:pb-0">
+            {/* 1. All Orders */}
+            <button
+              onClick={() => setActiveTab('all')}
+              className={`px-3.5 py-1.5 rounded-2xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeTab === 'all'
+                  ? 'bg-[#005581] text-[#fffffa] shadow-sm'
+                  : 'bg-[#fffffa] text-[#005581] border border-[#72cdf4] hover:bg-[#72cdf4]/15'
+              }`}
             >
-              <div className="space-y-3">
-                {/* Header Row */}
-                <div className="flex items-start justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs font-black text-[#005581] dark:text-cyan-400 bg-sky-50 dark:bg-sky-950 px-2 py-0.5 rounded">
-                        {order.orderNumber}
-                      </span>
-                      {order.clinicName && (
-                        <span className="text-[10px] font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded flex items-center gap-1">
-                          <Building2 className="w-3 h-3 text-[#005581]" />
-                          <span>{order.clinicName}</span>
-                        </span>
-                      )}
-                    </div>
-                    <h3 className="font-black text-sm text-slate-900 dark:text-slate-100 mt-1.5 group-hover:text-[#005581] transition">
+              <Layers className="w-3.5 h-3.5" />
+              <span>همه سفارشات</span>
+              <span className="w-5 h-5 rounded-full bg-[#fffffa] text-[#005581] font-mono text-[11px] flex items-center justify-center font-black mr-1">
+                {countAll}
+              </span>
+            </button>
+
+            {/* 2. Designing */}
+            <button
+              onClick={() => setActiveTab('designing')}
+              className={`px-3 py-1.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeTab === 'designing'
+                  ? 'bg-[#005581] text-[#ffd200] shadow-sm'
+                  : 'bg-[#72cdf4]/15 text-[#005581] border border-[#72cdf4]/40 hover:bg-[#72cdf4]/30'
+              }`}
+            >
+              <PenTool className="w-3.5 h-3.5 text-[#005581]" />
+              <span>طراحی</span>
+              <span className="w-5 h-5 rounded-full bg-[#fffffa] text-[#005581] font-mono text-[11px] flex items-center justify-center font-bold mr-1">
+                {countDesigning}
+              </span>
+            </button>
+
+            {/* 3. In Furnace */}
+            <button
+              onClick={() => setActiveTab('in_furnace')}
+              className={`px-3 py-1.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeTab === 'in_furnace'
+                  ? 'bg-[#ffd200] text-[#005581] shadow-sm font-black border border-[#ffe552]'
+                  : 'bg-[#ffd200]/20 text-[#005581] border border-[#ffe552] hover:bg-[#ffd200]/35'
+              }`}
+            >
+              <Flame className="w-3.5 h-3.5 text-[#005581]" />
+              <span>کوره</span>
+              <span className="w-5 h-5 rounded-full bg-[#fffffa] text-[#005581] font-mono text-[11px] flex items-center justify-center font-black mr-1">
+                {countFurnace}
+              </span>
+            </button>
+
+            {/* 4. Shipped */}
+            <button
+              onClick={() => setActiveTab('shipped')}
+              className={`px-3 py-1.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeTab === 'shipped'
+                  ? 'bg-[#72cdf4] text-[#005581] shadow-sm font-black'
+                  : 'bg-[#72cdf4]/20 text-[#005581] border border-[#72cdf4] hover:bg-[#72cdf4]/35'
+              }`}
+            >
+              <Truck className="w-3.5 h-3.5 text-[#005581]" />
+              <span>ارسال</span>
+              <span className="w-5 h-5 rounded-full bg-[#fffffa] text-[#005581] font-mono text-[11px] flex items-center justify-center font-bold mr-1">
+                {countShipped}
+              </span>
+            </button>
+
+            {/* 5. Delivered */}
+            <button
+              onClick={() => setActiveTab('delivered')}
+              className={`px-3 py-1.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeTab === 'delivered'
+                  ? 'bg-emerald-600 text-[#fffffa] shadow-sm font-black'
+                  : 'bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100'
+              }`}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+              <span>تحویل</span>
+              <span className="w-5 h-5 rounded-full bg-[#fffffa] text-emerald-800 font-mono text-[11px] flex items-center justify-center font-bold mr-1">
+                {countDelivered}
+              </span>
+            </button>
+          </div>
+        </section>
+
+        {/* ORDER CARDS GRID (EXACTLY MATCHING IMAGE.PNG STRUCTURE) */}
+        {displayedOrders.length === 0 ? (
+          <div className="bg-[#fffffa] border border-[#72cdf4]/50 rounded-3xl p-12 text-center space-y-3 shadow-xs">
+            <div className="w-16 h-16 rounded-full bg-[#72cdf4]/20 text-[#005581] flex items-center justify-center mx-auto">
+              <Truck className="w-8 h-8" />
+            </div>
+            <h3 className="text-base font-black text-[#005581]">هیچ سفارشی در این وضعیت موجود نیست</h3>
+            <p className="text-xs text-[#005581]/70 max-w-md mx-auto">
+              سفارشات ارجاعی از مطب دندان‌پزشکان پس از ثبت توسط پزشک بلافاصله در این کارتابل نمایش داده می‌شوند.
+            </p>
+            <button
+              onClick={() => setIsAddOrderModalOpen(true)}
+              className="mt-2 px-4 py-2 rounded-xl bg-[#005581] text-[#ffd200] font-black text-xs shadow-md cursor-pointer"
+            >
+              + ثبت سفارش جدید
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {displayedOrders.map((order) => (
+              <div
+                key={order.id}
+                className="bg-[#fffffa] border-2 border-[#72cdf4]/40 rounded-3xl p-5 shadow-sm hover:shadow-md transition-shadow space-y-4 flex flex-col justify-between"
+              >
+                {/* Card Top Header: Order ID + Item + Status Badge */}
+                <div className="flex items-start justify-between gap-3 border-b border-[#72cdf4]/30 pb-3">
+                  <div className="space-y-1">
+                    <span className="font-mono font-black text-xs text-[#005581] px-2 py-0.5 rounded-lg bg-[#72cdf4]/15 border border-[#72cdf4]/40 inline-block">
+                      {order.orderNumber}
+                    </span>
+                    <h3 className="text-sm sm:text-base font-black text-[#005581]">
                       {order.itemType} (دندان {order.toothFdi})
                     </h3>
                   </div>
 
-                  {getStatusBadge(order.status)}
+                  <div>{renderStatusBadge(order.status)}</div>
                 </div>
 
-                {/* Details Meta */}
-                <div className="text-xs space-y-1.5 text-slate-600 dark:text-slate-300">
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-500">بیمار:</span>
-                    <span className="font-bold text-slate-900 dark:text-slate-100">{order.patientName}</span>
+                {/* Patient / Dentist / Lab Info */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                  <div className="space-y-1.5">
+                    <p className="text-[#005581]/70">
+                      بیمار: <strong className="text-[#005581] text-xs sm:text-sm">{order.patientName}</strong>
+                    </p>
+                    <p className="text-[#005581]/70">
+                      پزشک معالج: <strong className="text-[#005581]">{order.dentistName}</strong>
+                    </p>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-500">پزشک معالج:</span>
-                    <span className="font-medium text-slate-800 dark:text-slate-200">{order.dentistName}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-500">لابراتوار:</span>
-                    <span className="font-medium text-slate-700 dark:text-slate-300">{order.labName}</span>
+
+                  <div className="space-y-1.5">
+                    <p className="text-[#005581]/70">
+                      لابراتوار: <strong className="text-[#005581]">{order.labName}</strong>
+                    </p>
+                    {order.shade && (
+                      <p className="text-[#005581]/70">
+                        شید رنگ: <strong className="text-[#005581] font-mono">{order.shade}</strong>
+                      </p>
+                    )}
                   </div>
                 </div>
 
-                {/* Current Milestone Banner */}
-                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-xs space-y-1 border border-slate-100 dark:border-slate-800">
-                  <div className="font-bold text-slate-800 dark:text-slate-200 text-[11px] flex items-center justify-between">
-                    <span>گام فعلی ساخت:</span>
-                    <span className="text-[10px] text-slate-400 font-mono">تحویل: {order.expectedDeliveryDate}</span>
-                  </div>
-                  <div className="text-[#005581] dark:text-cyan-400 font-bold line-clamp-1 text-xs">
-                    {order.currentMilestone}
-                  </div>
-                </div>
-              </div>
-
-              {/* View & Change Status Trigger */}
-              <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs font-bold text-[#005581] dark:text-cyan-400">
-                <span className="flex items-center gap-1">
-                  <Eye className="w-3.5 h-3.5" />
-                  <span>تغییر وضعیت و ثبت گام</span>
-                </span>
-                <ChevronLeft className="w-4 h-4 transform group-hover:-translate-x-1 transition" />
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* ORDER DETAILS & STATUS CHANGE MODAL */}
-      {selectedOrder && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs z-50 flex items-center justify-center p-3 md:p-6 overflow-y-auto">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-2xl w-full max-h-[92vh] overflow-y-auto border border-slate-200 dark:border-slate-800 shadow-2xl p-6 space-y-6 animate-scaleUp">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-[#005581] text-[#ffd200] font-black flex items-center justify-center text-sm shadow">
-                  <Flame className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs font-black text-[#005581] dark:text-cyan-400">
-                      {selectedOrder.orderNumber}
+                {/* Current Milestone Gray/Blue Box */}
+                <div className="p-3 rounded-2xl bg-[#72cdf4]/10 border border-[#72cdf4]/30 space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-[#005581] flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-[#005581]" />
+                      گام فعلی ساخت:
                     </span>
-                    {getStatusBadge(selectedOrder.status)}
+                    <span className="text-[11px] font-mono text-[#005581]/70">
+                      تحویل: {order.expectedDeliveryDate}
+                    </span>
                   </div>
-                  <h3 className="font-black text-base text-slate-900 dark:text-slate-100 mt-0.5">
-                    جزئیات سفارش {selectedOrder.itemType} (دندان {selectedOrder.toothFdi})
-                  </h3>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setSelectedOrder(null)}
-                className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Order Information Details Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-200 dark:border-slate-800">
-              <div className="space-y-1">
-                <span className="text-slate-500 font-medium">نام بیمار:</span>
-                <p className="font-bold text-slate-900 dark:text-slate-100 text-sm">{selectedOrder.patientName}</p>
-              </div>
-
-              <div className="space-y-1">
-                <span className="text-slate-500 font-medium">کلینیک طرف قرارداد:</span>
-                <p className="font-bold text-[#005581] dark:text-cyan-400 flex items-center gap-1">
-                  <Building2 className="w-3.5 h-3.5" />
-                  <span>{selectedOrder.clinicName || 'کلینیک دندان‌پزشکی'}</span>
-                </p>
-              </div>
-
-              <div className="space-y-1">
-                <span className="text-slate-500 font-medium">دندان‌پزشک معالج:</span>
-                <p className="font-bold text-slate-800 dark:text-slate-200">{selectedOrder.dentistName}</p>
-              </div>
-
-              <div className="space-y-1">
-                <span className="text-slate-500 font-medium">لابراتوار سازنده:</span>
-                <p className="font-bold text-slate-800 dark:text-slate-200">{selectedOrder.labName}</p>
-              </div>
-
-              <div className="space-y-1 md:col-span-2">
-                <span className="text-slate-500 font-medium">تاریخ سفارش و تحویل:</span>
-                <p className="font-bold text-slate-800 dark:text-slate-200">
-                  ثبت: {selectedOrder.orderedDate} | پیش‌بینی تحویل: <span className="text-cyan-600">{selectedOrder.expectedDeliveryDate}</span>
-                </p>
-              </div>
-            </div>
-
-            {/* VISUAL WORKFLOW STEPPER */}
-            <div className="space-y-3">
-              <h4 className="font-black text-sm text-slate-900 dark:text-slate-100 flex items-center justify-between">
-                <span>روند وضعیت سفارش ساخت لابراتوار</span>
-                <span className="text-xs text-slate-500 font-normal">
-                  همگام‌سازی لحظه‌ای با پورتال کلینیک
-                </span>
-              </h4>
-
-              <div className="grid grid-cols-4 gap-2 pt-1">
-                {/* Step 1: طراحی */}
-                <div
-                  className={`p-3 rounded-2xl border text-center space-y-1 transition ${
-                    selectedOrder.status === 'designing' || selectedOrder.status === 'ordered'
-                      ? 'bg-blue-600 text-white border-blue-700 shadow-md ring-2 ring-blue-300'
-                      : selectedOrder.status === 'in_furnace' ||
-                        selectedOrder.status === 'shipped' ||
-                        selectedOrder.status === 'delivered'
-                      ? 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 text-blue-900 dark:text-blue-300'
-                      : 'bg-slate-100 text-slate-500 border-slate-200'
-                  }`}
-                >
-                  <PenTool className="w-5 h-5 mx-auto" />
-                  <div className="font-black text-xs">۱. طراحی</div>
-                  <div className="text-[10px] opacity-80">CAD/CAM</div>
+                  <p className="text-xs font-black text-[#005581] pr-4">
+                    {order.currentMilestone}
+                  </p>
                 </div>
 
-                {/* Step 2: کوره */}
-                <div
-                  className={`p-3 rounded-2xl border text-center space-y-1 transition ${
-                    selectedOrder.status === 'in_furnace'
-                      ? 'bg-amber-600 text-white border-amber-700 shadow-md ring-2 ring-amber-300'
-                      : selectedOrder.status === 'shipped' || selectedOrder.status === 'delivered'
-                      ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 text-amber-900 dark:text-amber-300'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700'
-                  }`}
-                >
-                  <Flame className="w-5 h-5 mx-auto" />
-                  <div className="font-black text-xs">۲. کوره</div>
-                  <div className="text-[10px] opacity-80">پخت زیرکونیا</div>
-                </div>
-
-                {/* Step 3: ارسال */}
-                <div
-                  className={`p-3 rounded-2xl border text-center space-y-1 transition ${
-                    selectedOrder.status === 'shipped'
-                      ? 'bg-sky-600 text-white border-sky-700 shadow-md ring-2 ring-sky-300'
-                      : selectedOrder.status === 'delivered'
-                      ? 'bg-sky-50 dark:bg-sky-950/40 border-sky-200 text-sky-900 dark:text-sky-300'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700'
-                  }`}
-                >
-                  <Truck className="w-5 h-5 mx-auto" />
-                  <div className="font-black text-xs">۳. ارسال</div>
-                  <div className="text-[10px] opacity-80">تحویل به پیک</div>
-                </div>
-
-                {/* Step 4: تحویل */}
-                <div
-                  className={`p-3 rounded-2xl border text-center space-y-1 transition ${
-                    selectedOrder.status === 'delivered'
-                      ? 'bg-emerald-600 text-white border-emerald-700 shadow-md ring-2 ring-emerald-300'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700'
-                  }`}
-                >
-                  <CheckCircle2 className="w-5 h-5 mx-auto" />
-                  <div className="font-black text-xs">۴. تحویل</div>
-                  <div className="text-[10px] opacity-80">تحویل مطب</div>
-                </div>
-              </div>
-            </div>
-
-            {/* ACTION BUTTONS TO CHANGE STATUS */}
-            <div className="space-y-3 pt-2 border-t border-slate-200 dark:border-slate-800">
-              <h4 className="font-black text-xs text-slate-700 dark:text-slate-300">
-                تغییر وضعیت سفارش (ثبت آنی در دیتابیس کلینیک):
-              </h4>
-
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleApplyStatusChange('designing')}
-                  className={`py-2.5 px-3 rounded-xl font-bold text-xs cursor-pointer transition flex items-center justify-center gap-1.5 ${
-                    selectedOrder.status === 'designing'
-                      ? 'bg-blue-700 text-white shadow-inner ring-2 ring-blue-400'
-                      : 'bg-blue-600 hover:bg-blue-700 text-white shadow-xs'
-                  }`}
-                >
-                  <PenTool className="w-4 h-4 text-[#ffd200]" />
-                  <span>طراحی</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleApplyStatusChange('in_furnace')}
-                  className={`py-2.5 px-3 rounded-xl font-bold text-xs cursor-pointer transition flex items-center justify-center gap-1.5 ${
-                    selectedOrder.status === 'in_furnace'
-                      ? 'bg-amber-700 text-white shadow-inner ring-2 ring-amber-400'
-                      : 'bg-amber-600 hover:bg-amber-700 text-white shadow-xs'
-                  }`}
-                >
-                  <Flame className="w-4 h-4 text-[#ffd200]" />
-                  <span>کوره</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleApplyStatusChange('shipped')}
-                  className={`py-2.5 px-3 rounded-xl font-bold text-xs cursor-pointer transition flex items-center justify-center gap-1.5 ${
-                    selectedOrder.status === 'shipped'
-                      ? 'bg-sky-700 text-white shadow-inner ring-2 ring-sky-400'
-                      : 'bg-sky-600 hover:bg-sky-700 text-white shadow-xs'
-                  }`}
-                >
-                  <Truck className="w-4 h-4 text-[#ffd200]" />
-                  <span>ارسال</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleApplyStatusChange('delivered')}
-                  className={`py-2.5 px-3 rounded-xl font-bold text-xs cursor-pointer transition flex items-center justify-center gap-1.5 ${
-                    selectedOrder.status === 'delivered'
-                      ? 'bg-emerald-700 text-white shadow-inner ring-2 ring-emerald-400'
-                      : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
-                  }`}
-                >
-                  <CheckCircle2 className="w-4 h-4 text-[#ffd200]" />
-                  <span>تحویل</span>
-                </button>
-              </div>
-
-              {/* Custom Milestone Input */}
-              <div className="pt-2">
-                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
-                  توضیحات و گام ساخت اختصاصی (در پرونده دندان‌پزشک نیز نمایش داده می‌شود):
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={customMilestone}
-                    onChange={(e) => setCustomMilestone(e.target.value)}
-                    placeholder={`مثال: ${getMilestoneForStatus(selectedOrder.status)}`}
-                    className="flex-1 px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-medium text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-[#005581]"
-                  />
+                {/* Card Footer: Detail & Status Change Button */}
+                <div className="pt-1 flex items-center justify-between border-t border-[#72cdf4]/20">
                   <button
-                    type="button"
-                    onClick={() => handleApplyStatusChange(selectedOrder.status, customMilestone)}
-                    className="px-4 py-2 rounded-xl bg-[#005581] hover:bg-[#004266] text-white font-bold text-xs cursor-pointer shadow-xs"
+                    onClick={() => {
+                      setSelectedOrder(order);
+                      setCustomMilestone(order.currentMilestone);
+                    }}
+                    className="text-xs font-black text-[#005581] hover:text-[#004266] flex items-center gap-1.5 cursor-pointer"
                   >
-                    ثبت گام
+                    <ChevronLeft className="w-4 h-4 text-[#005581]" />
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>جزئیات و تغییر وضعیت</span>
                   </button>
+
+                  <div className="flex items-center gap-1.5">
+                    {order.status === 'ordered' && (
+                      <button
+                        onClick={() =>
+                          onUpdateOrderStatus(
+                            order.id,
+                            'designing',
+                            'طراحی 3D CAD/CAM و کست دیجیتال',
+                            order.clinicId
+                          )
+                        }
+                        className="px-2.5 py-1 rounded-xl bg-[#005581] text-[#fffffa] font-bold text-[11px]"
+                      >
+                        شروع طراحی CAD
+                      </button>
+                    )}
+                    {order.status === 'designing' && (
+                      <button
+                        onClick={() =>
+                          onUpdateOrderStatus(
+                            order.id,
+                            'in_furnace',
+                            'مرحله پخت پودر زيرکونيا در کوره سانتر',
+                            order.clinicId
+                          )
+                        }
+                        className="px-2.5 py-1 rounded-xl bg-[#ffd200] text-[#005581] font-black text-[11px] border border-[#ffe552]"
+                      >
+                        ورود به کوره
+                      </button>
+                    )}
+                    {order.status === 'in_furnace' && (
+                      <button
+                        onClick={() =>
+                          onUpdateOrderStatus(
+                            order.id,
+                            'shipped',
+                            'تحویل به پیک جهت ارسال به کلینیک',
+                            order.clinicId
+                          )
+                        }
+                        className="px-2.5 py-1 rounded-xl bg-[#72cdf4] text-[#005581] font-black text-[11px]"
+                      >
+                        ارسال با پیک
+                      </button>
+                    )}
+                    {order.status === 'shipped' && (
+                      <button
+                        onClick={() =>
+                          onUpdateOrderStatus(
+                            order.id,
+                            'delivered',
+                            'تحویل به مطب و آماده نصب روی دندان بیمار',
+                            order.clinicId
+                          )
+                        }
+                        className="px-2.5 py-1 rounded-xl bg-emerald-600 text-[#fffffa] font-black text-[11px]"
+                      >
+                        تایید تحویل
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
+            ))}
           </div>
-        </div>
-      )}
+        )}
 
-      {/* NEW LAB ORDER MODAL */}
-      {isAddModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs z-50 flex items-center justify-center p-3 md:p-6 overflow-y-auto">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full border border-slate-200 dark:border-slate-800 shadow-2xl p-6 space-y-5 animate-scaleUp">
-            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
-              <h3 className="font-black text-base text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                <Plus className="w-5 h-5 text-[#005581]" />
-                <span>ثبت سفارش جدید در شبکه سراسری لابراتوار</span>
-              </h3>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* MODAL 1: ADD NEW COLLEAGUE / STAFF (CREATOR ONLY) */}
+      {/* ========================================================================= */}
+      {isAddStaffModalOpen && isCreator && (
+        <div className="fixed inset-0 bg-[#005581]/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-[#fffffa] rounded-3xl max-w-lg w-full border-2 border-[#005581] shadow-2xl p-6 space-y-4 animate-fadeIn">
+            <div className="flex items-center justify-between border-b border-[#72cdf4]/40 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-[#ffd200] text-[#005581] flex items-center justify-center font-black border border-[#ffe552]">
+                  <Users className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-base text-[#005581]">
+                    افزودن همکار جدید به «{activeLab.name}»
+                  </h3>
+                  <p className="text-xs text-[#005581]/70">
+                    ساخت اکانت برای تکنسین‌های CAD/CAM و کوره سانتر جهت دسترسی به پنل
+                  </p>
+                </div>
+              </div>
               <button
-                type="button"
-                onClick={() => setIsAddModalOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-full cursor-pointer"
+                onClick={() => setIsAddStaffModalOpen(false)}
+                className="p-1 text-[#005581]/60 hover:text-[#005581] rounded-lg"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleAddNewOrderSubmit} className="space-y-4 text-xs font-bold">
-              {/* Target Clinic Selection */}
+            <form onSubmit={handleAddStaffSubmit} className="space-y-3.5 text-xs">
               <div>
-                <label className="block text-slate-700 dark:text-slate-300 mb-1">
-                  انتخاب کلینیک طرف قرارداد: <span className="text-rose-500">*</span>
+                <label className="block font-bold text-[#005581] mb-1">
+                  نام و نام خانوادگی همکار: <span className="text-rose-500">*</span>
                 </label>
-                <select
-                  value={newClinicTargetId}
-                  onChange={(e) => setNewClinicTargetId(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-bold"
-                >
-                  {clinics.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} ({c.ownerName})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-slate-700 dark:text-slate-300 mb-1">شماره سفارش:</label>
                 <input
                   type="text"
                   required
-                  value={newOrderNumber}
-                  onChange={(e) => setNewOrderNumber(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-mono text-slate-900 dark:text-slate-100"
+                  placeholder="مهندس رضا کریمی"
+                  value={newStaffFullName}
+                  onChange={(e) => setNewStaffFullName(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-[#fffffa] border border-[#72cdf4] text-[#005581] font-bold focus:ring-2 focus:ring-[#005581] focus:outline-none"
                 />
               </div>
 
-              <div>
-                <label className="block text-slate-700 dark:text-slate-300 mb-1">نام و نام خانوادگی بیمار:</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="مثال: کامران حسینی"
-                  value={newPatientName}
-                  onChange={(e) => setNewPatientName(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-700 dark:text-slate-300 mb-1">دندان‌پزشک معالج:</label>
+                  <label className="block font-bold text-[#005581] mb-1">
+                    نقش سازمانی در لابراتوار:
+                  </label>
+                  <div className="w-full px-3 py-2.5 rounded-xl bg-[#72cdf4]/20 border border-[#72cdf4] text-[#005581] font-black flex items-center justify-between">
+                    <span>مسئول لابراتوار</span>
+                    <span className="px-2 py-0.5 rounded-md bg-[#005581] text-[#ffd200] text-[10px] font-bold">پیش‌فرض</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-[#005581] mb-1">
+                    شماره موبایل همکار:
+                  </label>
                   <input
                     type="text"
-                    value={newDentistName}
-                    onChange={(e) => setNewDentistName(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                    placeholder="09129998877"
+                    value={newStaffMobile}
+                    onChange={(e) => setNewStaffMobile(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-[#fffffa] border border-[#72cdf4] text-[#005581] font-mono font-bold focus:ring-2 focus:ring-[#005581] focus:outline-none dir-ltr text-right"
                   />
                 </div>
+              </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-700 dark:text-slate-300 mb-1">شماره دندان (FDI):</label>
+                  <label className="block font-bold text-[#005581] mb-1">
+                    نام کاربری ورود: <span className="text-rose-500">*</span>
+                  </label>
                   <input
-                    type="number"
-                    value={newToothFdi}
-                    onChange={(e) => setNewToothFdi(Number(e.target.value))}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-mono text-slate-900 dark:text-slate-100"
+                    type="text"
+                    required
+                    placeholder="reza.cad"
+                    value={newStaffUsername}
+                    onChange={(e) => setNewStaffUsername(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-[#fffffa] border border-[#72cdf4] text-[#005581] font-mono font-bold focus:ring-2 focus:ring-[#005581] focus:outline-none dir-ltr text-right"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-[#005581] mb-1">
+                    کلمه عبور اختصاصی: <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="حداقل ۴ کاراکتر"
+                    value={newStaffPassword}
+                    onChange={(e) => setNewStaffPassword(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-[#fffffa] border border-[#72cdf4] text-[#005581] font-bold focus:ring-2 focus:ring-[#005581] focus:outline-none"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-700 dark:text-slate-300 mb-1">نوع کار لابراتواری:</label>
-                  <select
-                    value={newItemType}
-                    onChange={(e) => setNewItemType(e.target.value as any)}
-                    className="w-full px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                  >
-                    <option value="روکش زيرکونيا">روکش زيرکونيا</option>
-                    <option value="سرامیک PFM">سرامیک PFM</option>
-                    <option value="نایت گارد">نایت گارد</option>
-                    <option value="اباتمنت ایمپلنت">اباتمنت ایمپلنت</option>
-                    <option value="پروتز پارسیل">پروتز پارسیل</option>
-                    <option value="لمینت Emax">لمینت Emax</option>
-                    <option value="اینله / آنله">اینله / آنله</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 dark:text-slate-300 mb-1">وضعیت اولیه:</label>
-                  <select
-                    value={newStatus}
-                    onChange={(e) => setNewStatus(e.target.value as any)}
-                    className="w-full px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                  >
-                    <option value="designing">طراحی CAD</option>
-                    <option value="in_furnace">کوره سانتر</option>
-                    <option value="shipped">ارسال به مطب</option>
-                    <option value="delivered">تحویل شده</option>
-                  </select>
-                </div>
+              <div className="p-3 rounded-xl bg-[#72cdf4]/15 border border-[#72cdf4] text-[#005581] space-y-1">
+                <p className="font-black text-xs flex items-center gap-1">
+                  <ShieldCheck className="w-3.5 h-3.5 text-[#005581]" />
+                  دسترسی همکار:
+                </p>
+                <p className="text-[11px] text-[#005581]/80">
+                  این همکار می‌تواند از صفحه اصلی لاگین کرده و سفارشات را تغییر وضعیت دهد، اما دکمه افزودن همکار جدید فقط برای شما (مؤسس لابراتوار) فعال خواهد بود.
+                </p>
               </div>
 
-              <div>
-                <label className="block text-slate-700 dark:text-slate-300 mb-1">لابراتوار سازنده:</label>
-                <input
-                  type="text"
-                  value={newLabName}
-                  onChange={(e) => setNewLabName(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-700 dark:text-slate-300 mb-1">تاریخ تحویل پیش‌بینی‌شده:</label>
-                <input
-                  type="text"
-                  value={newExpectedDate}
-                  onChange={(e) => setNewExpectedDate(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                />
-              </div>
-
-              <div className="pt-3">
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#72cdf4]/40">
+                <button
+                  type="button"
+                  onClick={() => setIsAddStaffModalOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-[#fffffa] border border-[#72cdf4] text-[#005581] font-bold text-xs"
+                >
+                  انصراف
+                </button>
                 <button
                   type="submit"
-                  className="w-full py-3 rounded-xl bg-[#005581] hover:bg-[#004266] text-white font-black text-sm shadow-md cursor-pointer transition"
+                  className="px-5 py-2 rounded-xl bg-[#005581] text-[#ffd200] font-black text-xs shadow-md border border-[#72cdf4]"
                 >
-                  ذخیره و ایجاد سفارش در پرونده کلینیک
+                  ثبت و صدور دسترسی
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 2: ADD NEW ORDER DIRECTLY (LAB SIDE) */}
+      {/* ========================================================================= */}
+      {isAddOrderModalOpen && (
+        <div className="fixed inset-0 bg-[#005581]/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-[#fffffa] rounded-3xl max-w-xl w-full border-2 border-[#005581] shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto animate-fadeIn">
+            <div className="flex items-center justify-between border-b border-[#72cdf4]/40 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-[#ffd200] text-[#005581] flex items-center justify-center font-black border border-[#ffe552]">
+                  <Plus className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-base text-[#005581]">
+                    ثبت سفارش مستقیم در کارتابل «{activeLab.name}»
+                  </h3>
+                  <p className="text-xs text-[#005581]/70">
+                    ورود دستی مشخصات قالب فیزیکی یا اسکن دیجیتال ارسالی از کلینیک
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsAddOrderModalOpen(false)}
+                className="p-1 text-[#005581]/60 hover:text-[#005581] rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddOrderSubmit} className="space-y-3.5 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-[#005581] mb-1">
+                    شماره رهگیری سفارش:
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newOrderNumber}
+                    onChange={(e) => setNewOrderNumber(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-[#fffffa] border border-[#72cdf4] font-mono font-bold text-[#005581]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-[#005581] mb-1">
+                    نام و نام خانوادگی بیمار: <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="زهرا حسینی"
+                    value={newPatientName}
+                    onChange={(e) => setNewPatientName(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-[#fffffa] border border-[#72cdf4] font-bold text-[#005581]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-[#005581] mb-1">
+                    پزشک معالج سفارشدهنده:
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="دکتر سارا فرهمند"
+                    value={newDentistName}
+                    onChange={(e) => setNewDentistName(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-[#fffffa] border border-[#72cdf4] font-bold text-[#005581]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-[#005581] mb-1">
+                    کلینیک مقصد:
+                  </label>
+                  <select
+                    value={newClinicTargetId}
+                    onChange={(e) => setNewClinicTargetId(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-[#fffffa] border border-[#72cdf4] font-bold text-[#005581]"
+                  >
+                    {clinics.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} ({c.cityName || 'مرکزی'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block font-bold text-[#005581] mb-1">
+                    نوع پروتز / روکش:
+                  </label>
+                  <select
+                    value={newItemType}
+                    onChange={(e) => setNewItemType(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-[#fffffa] border border-[#72cdf4] font-bold text-[#005581]"
+                  >
+                    <option value="روکش زيرکونيا کامل">روکش زيرکونيا کامل</option>
+                    <option value="لمینت Emax">لمینت Emax</option>
+                    <option value="اباتمنت ایمپلنت">اباتمنت ایمپلنت</option>
+                    <option value="سرامیک PFM">سرامیک PFM</option>
+                    <option value="پروتز پارسیل">پروتز پارسیل</option>
+                    <option value="نایت گارد">نایت گارد</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-[#005581] mb-1">
+                    شماره دندان (FDI):
+                  </label>
+                  <input
+                    type="number"
+                    min={11}
+                    max={48}
+                    value={newToothFdi}
+                    onChange={(e) => setNewToothFdi(Number(e.target.value))}
+                    className="w-full px-3 py-2 rounded-xl bg-[#fffffa] border border-[#72cdf4] font-mono font-bold text-[#005581]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-[#005581] mb-1">
+                    شید رنگ انتخابی:
+                  </label>
+                  <select
+                    value={newShade}
+                    onChange={(e) => setNewShade(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-[#fffffa] border border-[#72cdf4] font-mono font-bold text-[#005581]"
+                  >
+                    {['A1', 'A2', 'A3', 'A3.5', 'B1', 'B2', 'BL1', 'BL2', 'BL3'].map((s) => (
+                      <option key={s} value={s}>
+                        شید {s}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-[#005581] mb-1">
+                    وضعیت اولیه سفارش:
+                  </label>
+                  <select
+                    value={newStatus}
+                    onChange={(e) => setNewStatus(e.target.value as LabOrder['status'])}
+                    className="w-full px-3 py-2 rounded-xl bg-[#fffffa] border border-[#72cdf4] font-bold text-[#005581]"
+                  >
+                    <option value="designing">طراحی CAD/CAM</option>
+                    <option value="in_furnace">کوره سانتر</option>
+                    <option value="shipped">ارسال با پیک</option>
+                    <option value="ordered">ثبت اولیه</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-[#005581] mb-1">
+                    تاریخ تخمینی تحویل:
+                  </label>
+                  <input
+                    type="text"
+                    value={newExpectedDate}
+                    onChange={(e) => setNewExpectedDate(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-[#fffffa] border border-[#72cdf4] font-mono font-bold text-[#005581]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-[#005581] mb-1">
+                  دستور تراش و یادداشت پزشک معالج:
+                </label>
+                <textarea
+                  rows={2}
+                  value={newDoctorNotes}
+                  onChange={(e) => setNewDoctorNotes(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-[#fffffa] border border-[#72cdf4] font-bold text-[#005581]"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#72cdf4]/40">
+                <button
+                  type="button"
+                  onClick={() => setIsAddOrderModalOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-[#fffffa] border border-[#72cdf4] text-[#005581] font-bold text-xs"
+                >
+                  انصراف
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-[#005581] text-[#ffd200] font-black text-xs shadow-md border border-[#72cdf4]"
+                >
+                  ثبت و انتقال به کارتابل
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 3: ORDER DETAIL AND STATUS UPDATE */}
+      {/* ========================================================================= */}
+      {selectedOrder && (
+        <div className="fixed inset-0 bg-[#005581]/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-[#fffffa] rounded-3xl max-w-xl w-full border-2 border-[#005581] shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto animate-fadeIn">
+            <div className="flex items-center justify-between border-b border-[#72cdf4]/40 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-[#005581] text-[#ffd200] flex items-center justify-center font-black">
+                  <Eye className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-base text-[#005581]">
+                    پرونده فنی ساخت پروتز {selectedOrder.orderNumber}
+                  </h3>
+                  <p className="text-xs text-[#005581]/70">
+                    بیمار: {selectedOrder.patientName} | دندان #{selectedOrder.toothFdi}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedOrder(null)}
+                className="p-1 text-[#005581]/60 hover:text-[#005581] rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3.5 text-xs">
+              <div className="grid grid-cols-2 gap-3 p-3 rounded-2xl bg-[#72cdf4]/10 border border-[#72cdf4]/40">
+                <div>
+                  <p className="text-[#005581]/70">پزشک معالج:</p>
+                  <p className="font-black text-[#005581] mt-0.5">{selectedOrder.dentistName}</p>
+                </div>
+                <div>
+                  <p className="text-[#005581]/70">نوع پروتز / متریال:</p>
+                  <p className="font-black text-[#005581] mt-0.5">{selectedOrder.itemType} - {selectedOrder.shade}</p>
+                </div>
+                <div>
+                  <p className="text-[#005581]/70">تاریخ ثبت سفارش:</p>
+                  <p className="font-mono font-bold text-[#005581] mt-0.5">{selectedOrder.orderedDate}</p>
+                </div>
+                <div>
+                  <p className="text-[#005581]/70">موعد تحویل:</p>
+                  <p className="font-mono font-bold text-[#005581] mt-0.5">{selectedOrder.expectedDeliveryDate}</p>
+                </div>
+              </div>
+
+              {selectedOrder.doctorNotes && (
+                <div className="p-3 rounded-2xl bg-[#fffffa] border border-[#72cdf4] space-y-1">
+                  <p className="font-bold text-[#005581]">دستور تراش و نکات پزشک معالج:</p>
+                  <p className="text-[#005581]/90">{selectedOrder.doctorNotes}</p>
+                </div>
+              )}
+
+              {/* Status Selector */}
+              <div className="space-y-2 pt-2 border-t border-[#72cdf4]/40">
+                <label className="block font-black text-[#005581]">
+                  تغییر گام ساخت و ارسال پیام به پزشک معالج:
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {[
+                    { key: 'ordered', label: 'ثبت اولیه' },
+                    { key: 'designing', label: 'طراحی CAD' },
+                    { key: 'in_furnace', label: 'کوره سانتر' },
+                    { key: 'shipped', label: 'ارسال با پیک' },
+                  ].map((s) => (
+                    <button
+                      key={s.key}
+                      type="button"
+                      onClick={() => {
+                        const newM = getMilestoneForStatus(s.key as LabOrder['status']);
+                        setCustomMilestone(newM);
+                        onUpdateOrderStatus(selectedOrder.id, s.key as LabOrder['status'], newM, selectedOrder.clinicId);
+                        setSelectedOrder({ ...selectedOrder, status: s.key as LabOrder['status'], currentMilestone: newM });
+                      }}
+                      className={`p-2 rounded-xl text-xs font-bold transition-all border ${
+                        selectedOrder.status === s.key
+                          ? 'bg-[#005581] text-[#ffd200] border-[#005581] shadow-xs'
+                          : 'bg-[#fffffa] text-[#005581] border-[#72cdf4] hover:bg-[#72cdf4]/20'
+                      }`}
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-[#005581] mb-1">
+                  توضیح وضعیت جاری (گام فعلی ساخت):
+                </label>
+                <input
+                  type="text"
+                  value={customMilestone}
+                  onChange={(e) => setCustomMilestone(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-[#fffffa] border border-[#72cdf4] text-[#005581] font-bold"
+                />
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-[#72cdf4]/40">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onUpdateOrderStatus(
+                      selectedOrder.id,
+                      selectedOrder.status,
+                      customMilestone || selectedOrder.currentMilestone,
+                      selectedOrder.clinicId
+                    );
+                    setSelectedOrder(null);
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-[#005581] text-[#ffd200] font-black text-xs shadow-md border border-[#72cdf4]"
+                >
+                  ذخیره تغییرات و همگام‌سازی با مطب پزشک
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

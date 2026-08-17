@@ -1,5 +1,24 @@
 import React, { useState } from 'react';
-import { Appointment, Patient, WaitlistEntry, ToothDetail, Claim, ClaimStatus, GreenLaneStatus, DoctorSubmission, DoctorRequestReminder, PatientQuestion as GlobalPatientQuestion, PatientInsuranceDispute, PatientImageRecord } from '../../types';
+import {
+  Appointment,
+  Patient,
+  WaitlistEntry,
+  ToothDetail,
+  Claim,
+  ClaimStatus,
+  GreenLaneStatus,
+  DoctorSubmission,
+  DoctorRequestReminder,
+  PatientQuestion as GlobalPatientQuestion,
+  PatientInsuranceDispute,
+  PatientImageRecord,
+  UserProfile,
+  ClinicRegistration,
+} from '../../types';
+import {
+  SUGGESTED_BASE_INSURANCES,
+  SUGGESTED_SUPPLEMENTARY_INSURANCES,
+} from '../../data/insuranceConstants';
 import { Odontogram } from '../dentist/Odontogram';
 import { ImageXrayViewer } from '../dentist/ImageXrayViewer';
 import { InsuranceDocsWorkspace } from './InsuranceDocsWorkspace';
@@ -98,6 +117,8 @@ interface AppointmentsViewProps {
   onReplyQuestion?: (questionId: string, replyMessage: string, senderRole: 'receptionist' | 'dentist', senderName: string) => void;
   insuranceDisputes?: PatientInsuranceDispute[];
   onReplyDispute?: (disputeId: string, responseMessage: string, status?: 'under_review' | 'approved_pay' | 'need_docs' | 'rejected') => void;
+  users?: UserProfile[];
+  currentClinic?: ClinicRegistration;
 }
 
 // Right Sidebar Navigation Tabs
@@ -227,7 +248,41 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
   onReplyQuestion,
   insuranceDisputes: propsInsuranceDisputes,
   onReplyDispute,
+  users = [],
+  currentClinic,
 }) => {
+  // Dynamic clinic dentists from clinic owner and users
+  const clinicDentists = React.useMemo(() => {
+    const list: { id: string; name: string; specialty?: string }[] = [];
+    if (currentClinic?.ownerRole === 'dentist' && currentClinic?.ownerName) {
+      list.push({
+        id: 'u-owner-dentist',
+        name: currentClinic.ownerName.startsWith('دکتر') ? currentClinic.ownerName : `دکتر ${currentClinic.ownerName}`,
+        specialty: 'مؤسس کلینیک و دندان‌پزشک',
+      });
+    }
+    (users || []).forEach((u) => {
+      if (u.role === 'dentist') {
+        const already = list.some((x) => x.name === u.name || x.id === u.id);
+        if (!already) {
+          list.push({
+            id: u.id,
+            name: u.name,
+            specialty: u.specialty || 'دندان‌پزشک معالج',
+          });
+        }
+      }
+    });
+    if (list.length === 0) {
+      list.push({
+        id: 'u-dentist1',
+        name: currentClinic?.ownerName ? (currentClinic.ownerName.startsWith('دکتر') ? currentClinic.ownerName : `دکتر ${currentClinic.ownerName}`) : 'دکتر کاویانی',
+        specialty: 'دندان‌پزشک معالج',
+      });
+    }
+    return list;
+  }, [users, currentClinic]);
+
   // Navigation State
   const [activeTab, setActiveTab] = useState<ReceptionTab>('today_kanban');
   const [callCenterSubTab, setCallCenterSubTab] = useState<'quick_booking' | 'waitlist' | 'logs'>('quick_booking');
@@ -388,7 +443,7 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
   const [newPatientName, setNewPatientName] = useState('');
   const [newPatientPhone, setNewPatientPhone] = useState('');
   const [newNationalId, setNewNationalId] = useState('');
-  const [newDentistName, setNewDentistName] = useState('دکتر نوری');
+  const [newDentistName, setNewDentistName] = useState(clinicDentists[0]?.name || 'دکتر کاویانی');
   const [newReason, setNewReason] = useState('معاینه و پیگیری درمان');
   const [newTimeSlot, setNewTimeSlot] = useState('11:30');
   const [bookingSlotCount, setBookingSlotCount] = useState<number>(1);
@@ -400,8 +455,10 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
   const [rawPhone, setRawPhone] = useState('');
   const [rawBirthDate, setRawBirthDate] = useState('۱۳۷۰/۰۴/۱۵');
   const [rawGender, setRawGender] = useState<'male' | 'female'>('male');
-  const [rawPrimaryInsurance, setRawPrimaryInsurance] = useState('تامین اجتماعی');
+  const [rawPrimaryInsurance, setRawPrimaryInsurance] = useState('بیمه تامین اجتماعی');
+  const [customPrimaryInsurance, setCustomPrimaryInsurance] = useState('');
   const [rawSupplementaryInsurance, setRawSupplementaryInsurance] = useState('بیمه سامان');
+  const [customSupplementaryInsurance, setCustomSupplementaryInsurance] = useState('');
   const [rawMedicalHistory, setRawMedicalHistory] = useState('بدون بیماری زمینه خاص');
   const [rawAllergies, setRawAllergies] = useState('بدون حساسیت دارویی ثبت‌شده');
   const [rawEmergencyContact, setRawEmergencyContact] = useState('۰۹۱۲۱۱۱۲۲۳۳');
@@ -632,7 +689,7 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
 
   // Quick Smart Booking Form State
   const [quickBookingDateIndex, setQuickBookingDateIndex] = useState(0);
-  const [quickBookingDoctor, setQuickBookingDoctor] = useState('دکتر نوری');
+  const [quickBookingDoctor, setQuickBookingDoctor] = useState(clinicDentists[0]?.name || 'دکتر کاویانی');
   const [quickBookingStartSlot, setQuickBookingStartSlot] = useState('09:00');
   const [quickBookingSlotCount, setQuickBookingSlotCount] = useState(1);
   const [quickBookingName, setQuickBookingName] = useState('');
@@ -829,6 +886,19 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
       return;
     }
 
+    const finalPrimary =
+      rawPrimaryInsurance === '__other__'
+        ? customPrimaryInsurance.trim() || 'سایر بیمه‌های پایه'
+        : rawPrimaryInsurance;
+
+    const finalSuppl =
+      rawSupplementaryInsurance === '__other__'
+        ? customSupplementaryInsurance.trim() || 'سایر بیمه‌های تکمیلی'
+        : rawSupplementaryInsurance;
+
+    const isPrimaryActive = !finalPrimary.includes('فاقد بیمه') && finalPrimary !== 'آزاد';
+    const isSupplActive = !finalSuppl.includes('فاقد بیمه') && !finalSuppl.includes('بدون بیمه');
+
     const udrCode = `UDR-1405-${Math.floor(1000 + Math.random() * 9000)}`;
     const newPatientObj: Patient = {
       id: `p-${Date.now()}`,
@@ -842,16 +912,16 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
       allergies: rawAllergies ? rawAllergies.split('،').map((s) => s.trim()) : [],
       consentTokens: [],
       primaryInsurance: {
-        provider: rawPrimaryInsurance,
-        policyNumber: 'POL-' + Math.floor(10000000 + Math.random() * 90000000),
-        active: true,
+        provider: finalPrimary,
+        policyNumber: isPrimaryActive ? 'POL-' + Math.floor(10000000 + Math.random() * 90000000) : 'آزاد',
+        active: isPrimaryActive,
       },
       supplementaryInsurance: {
-        provider: rawSupplementaryInsurance,
-        policyNumber: 'SUP-' + Math.floor(10000000 + Math.random() * 90000000),
-        ceilingRemaining: 30000000,
+        provider: finalSuppl,
+        policyNumber: isSupplActive ? 'SUP-' + Math.floor(10000000 + Math.random() * 90000000) : 'ندارد',
+        ceilingRemaining: isSupplActive ? 30000000 : 0,
         waitingPeriodDays: 0,
-        active: true,
+        active: isSupplActive,
       },
       teethMap: defaultTeethMap,
     };
@@ -861,10 +931,12 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
       onAddPatient(newPatientObj);
     }
 
-    alert(`پرونده خام با موفقیت صادر گردید.\nنام بیمار: ${rawFullName}\nکد پرونده UDR: ${udrCode}`);
+    alert(`پرونده خام با موفقیت صادر گردید.\nنام بیمار: ${rawFullName}\nکد پرونده UDR: ${udrCode}\nبیمه پایه: ${finalPrimary}\nبیمه تکمیلی: ${finalSuppl}`);
     setRawFullName('');
     setRawNationalId('');
     setRawPhone('');
+    setCustomPrimaryInsurance('');
+    setCustomSupplementaryInsurance('');
     setActiveTab('patient_records');
   };
 
@@ -1772,44 +1844,124 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                             <span>شماره تماس: <strong className="font-mono text-slate-800 dark:text-slate-200">{p.phone}</strong></span>
                           </div>
 
-                          <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700/80 space-y-1.5 shadow-2xs">
-                            <div className="flex items-center justify-between text-[11px]">
-                              <span className="font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1">
-                                <Activity className="w-3.5 h-3.5 text-rose-500" />
-                                <span>سوابق پزشکی و بیماری‌های زمینه‌ای:</span>
-                              </span>
-                              {p.allergies && (
-                                <span className="px-2 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 font-bold text-[10px] border border-rose-200 dark:border-rose-800">
-                                  حساسیت: {p.allergies}
+                          <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700/80 space-y-2.5 shadow-2xs">
+                            {/* Medical History & Allergies */}
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                                  <Activity className="w-3.5 h-3.5 text-rose-500" />
+                                  <span>بیماری‌های زمینه‌ای:</span>
                                 </span>
-                              )}
-                            </div>
-                            <div className="flex flex-wrap gap-1.5 pt-0.5">
-                              {p.medicalHistory && p.medicalHistory.length > 0 ? (
-                                p.medicalHistory.map((item, idx) => (
-                                  <span
-                                    key={idx}
-                                    className={`px-2 py-0.5 rounded-lg text-[11px] font-bold inline-flex items-center gap-1 ${
-                                      item.includes('فشار') || item.includes('قلب') || item.includes('سکته')
-                                        ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
-                                        : item.includes('دیابت') || item.includes('قند')
-                                        ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
-                                        : item.includes('آسم') || item.includes('تنفسی')
-                                        ? 'bg-sky-50 dark:bg-sky-950/40 text-sky-800 dark:text-sky-300 border border-sky-200 dark:border-sky-800'
-                                        : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
-                                    }`}
-                                  >
-                                    <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
-                                    {item}
+                                {p.allergies && (Array.isArray(p.allergies) ? p.allergies.length > 0 : Boolean(p.allergies)) ? (
+                                  <span className="px-2 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 font-bold text-[10px] border border-rose-200 dark:border-rose-800 flex items-center gap-1">
+                                    <ShieldAlert className="w-3 h-3 text-rose-500" />
+                                    <span>حساسیت: {Array.isArray(p.allergies) ? p.allergies.join('، ') : p.allergies}</span>
                                   </span>
-                                ))
-                              ) : (
-                                <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium inline-flex items-center gap-1">
-                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                                  بدون سابقه بیماری خاص
-                                </span>
-                              )}
+                                ) : (
+                                  <span className="text-[10px] text-slate-400">فاقد حساسیت دارویی</span>
+                                )}
+                              </div>
+
+                              <div className="flex flex-wrap gap-1.5 pt-0.5">
+                                {(() => {
+                                  const cleanHistory = (p.medicalHistory || []).filter(
+                                    (item) => !item.startsWith('ثبت تصویر') && !item.includes('[هوش مصنوعی]') && !item.includes('RVG') && !item.includes('OPG') && !item.startsWith('درمان توسط')
+                                  );
+
+                                  if (cleanHistory.length === 0) {
+                                    return (
+                                      <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium inline-flex items-center gap-1">
+                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                        سلامت عمومی کامل / فاقد بیماری زمینه‌ای
+                                      </span>
+                                    );
+                                  }
+
+                                  return cleanHistory.map((item, idx) => (
+                                    <span
+                                      key={idx}
+                                      className={`px-2 py-0.5 rounded-lg text-[11px] font-bold inline-flex items-center gap-1 ${
+                                        item.includes('فشار') || item.includes('قلب') || item.includes('سکته')
+                                          ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                                          : item.includes('دیابت') || item.includes('قند')
+                                          ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                                          : item.includes('بارداری')
+                                          ? 'bg-purple-50 dark:bg-purple-950/40 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
+                                          : item.includes('آسم') || item.includes('تنفسی')
+                                          ? 'bg-sky-50 dark:bg-sky-950/40 text-sky-800 dark:text-sky-300 border border-sky-200 dark:border-sky-800'
+                                          : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+                                      }`}
+                                    >
+                                      <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
+                                      {item}
+                                    </span>
+                                  ));
+                                })()}
+                              </div>
                             </div>
+
+                            {/* Recent Clinical Treatment Logs */}
+                            {(() => {
+                              const recentLogs: { id: string; date: string; procedure: string; dentist: string; toothFdi?: number }[] = [];
+                              
+                              // Extract from teethMap
+                              Object.values(p.teethMap || {}).forEach((t: ToothDetail) => {
+                                (t.treatmentHistory || []).forEach((th) => {
+                                  recentLogs.push({
+                                    id: th.id,
+                                    date: th.date,
+                                    procedure: th.procedureName,
+                                    dentist: th.dentistName,
+                                    toothFdi: t.fdiNumber,
+                                  });
+                                });
+                              });
+
+                              // Also check doctor submissions if matching
+                              doctorSubmissions
+                                .filter((s) => s.patientId === p.id || s.nationalId === p.nationalId)
+                                .forEach((s) => {
+                                  const proc = s.treatmentSummary.split('\n')[0].replace(/^[0-9.-]+\s*/, '').trim();
+                                  if (!recentLogs.some((l) => l.procedure.includes(proc))) {
+                                    recentLogs.unshift({
+                                      id: s.id,
+                                      date: s.submittedAt,
+                                      procedure: proc,
+                                      dentist: s.dentistName,
+                                      toothFdi: s.toothFdi,
+                                    });
+                                  }
+                                });
+
+                              if (recentLogs.length === 0) return null;
+
+                              return (
+                                <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-1">
+                                  <span className="text-[11px] font-bold text-[#005581] dark:text-[#72cdf4] flex items-center gap-1">
+                                    <Stethoscope className="w-3.5 h-3.5" />
+                                    <span>سوابق درمان دندان‌پزشکی در کلینیک:</span>
+                                  </span>
+                                  <div className="space-y-1">
+                                    {recentLogs.slice(0, 2).map((log, lIdx) => (
+                                      <div
+                                        key={lIdx}
+                                        className="p-1.5 rounded-lg bg-sky-50/70 dark:bg-sky-950/30 border border-sky-200/70 dark:border-sky-900/40 text-[11px] flex items-center justify-between text-slate-800 dark:text-slate-200"
+                                      >
+                                        <div className="flex items-center gap-1.5 truncate">
+                                          {log.toothFdi && (
+                                            <span className="font-mono font-bold text-[10px] px-1.5 py-0.5 rounded bg-white dark:bg-slate-900 text-[#005581] dark:text-sky-300 border border-sky-200 dark:border-sky-800 shrink-0">
+                                              دندان {log.toothFdi}
+                                            </span>
+                                          )}
+                                          <span className="font-bold truncate">{log.procedure}</span>
+                                        </div>
+                                        <span className="text-[10px] text-slate-500 font-mono shrink-0 mr-1">{log.date}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })()}
                           </div>
                         </div>
 
@@ -2675,33 +2827,57 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
-                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">بیمه پایه اصلی:</label>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      بیمه پایه اصلی:
+                    </label>
                     <select
                       value={rawPrimaryInsurance}
                       onChange={(e) => setRawPrimaryInsurance(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold text-slate-800 dark:text-slate-100"
                     >
-                      <option value="تامین اجتماعی">بیمه تامین اجتماعی</option>
-                      <option value="خدمات درمانی (سلامت)">بیمه خدمات درمانی (سلامت)</option>
-                      <option value="نیروهای مسلح">بیمه نیروهای مسلح</option>
-                      <option value="آزاد / بدون بیمه">آزاد / بدون بیمه پایه</option>
+                      {SUGGESTED_BASE_INSURANCES.map((item) => (
+                        <option key={item.value} value={item.value}>
+                          {item.label}
+                        </option>
+                      ))}
                     </select>
+                    {rawPrimaryInsurance === '__other__' && (
+                      <input
+                        type="text"
+                        placeholder="نام بیمه پایه را وارد کنید..."
+                        value={customPrimaryInsurance}
+                        onChange={(e) => setCustomPrimaryInsurance(e.target.value)}
+                        className="mt-2 w-full px-3 py-2 rounded-xl border border-[#72cdf4] bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-bold"
+                        required
+                      />
+                    )}
                   </div>
 
                   <div>
-                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">بیمه تکمیلی:</label>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      بیمه تکمیلی:
+                    </label>
                     <select
                       value={rawSupplementaryInsurance}
                       onChange={(e) => setRawSupplementaryInsurance(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold text-slate-800 dark:text-slate-100"
                     >
-                      <option value="بیمه سامان">بیمه سامان (طرح طلایی)</option>
-                      <option value="بیمه ایران">بیمه ایران</option>
-                      <option value="بیمه دانا">بیمه دانا</option>
-                      <option value="بیمه البرز">بیمه البرز</option>
-                      <option value="آتیه‌سازان حافظ">آتیه‌سازان حافظ</option>
-                      <option value="بدون بیمه تکمیلی">بدون بیمه تکمیلی</option>
+                      {SUGGESTED_SUPPLEMENTARY_INSURANCES.map((item) => (
+                        <option key={item.value} value={item.value}>
+                          {item.label}
+                        </option>
+                      ))}
                     </select>
+                    {rawSupplementaryInsurance === '__other__' && (
+                      <input
+                        type="text"
+                        placeholder="نام بیمه تکمیلی را وارد کنید..."
+                        value={customSupplementaryInsurance}
+                        onChange={(e) => setCustomSupplementaryInsurance(e.target.value)}
+                        className="mt-2 w-full px-3 py-2 rounded-xl border border-[#72cdf4] bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-bold"
+                        required
+                      />
+                    )}
                   </div>
                 </div>
 
@@ -2785,8 +2961,11 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                     className="px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold"
                   >
                     <option value="همه پزشکان">همه پزشکان کلینیک</option>
-                    <option value="دکتر نوری">دکتر نوری</option>
-                    <option value="دکتر کاویانی">دکتر کاویانی</option>
+                    {clinicDentists.map((cd) => (
+                      <option key={cd.id} value={cd.name}>
+                        {cd.name} {cd.specialty ? `(${cd.specialty})` : ''}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -3001,9 +3180,11 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                         onChange={(e) => setQuickBookingDoctor(e.target.value)}
                         className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 font-bold"
                       >
-                        <option value="دکتر نوری">دکتر نوری (متخصص ترمیم و زیبایی)</option>
-                        <option value="دکتر کاویانی">دکتر کاویانی (متخصص عصب‌کشی)</option>
-                        <option value="دکتر شریفی">دکتر شریفی (جراح فک و ایمپلنت)</option>
+                        {clinicDentists.map((cd) => (
+                          <option key={cd.id} value={cd.name}>
+                            {cd.name} {cd.specialty ? `(${cd.specialty})` : ''}
+                          </option>
+                        ))}
                       </select>
                     </div>
                   </div>
@@ -3675,8 +3856,21 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                     <div>
                       <span className="text-slate-500 font-bold text-[11px] block mb-1">بیماری‌های زمینه‌ای ثبت‌شده:</span>
                       <div className="flex flex-wrap gap-1.5">
-                        {selectedPatientFile.medicalHistory && selectedPatientFile.medicalHistory.length > 0 ? (
-                          selectedPatientFile.medicalHistory.map((mh, idx) => (
+                        {(() => {
+                          const cleanList = (selectedPatientFile.medicalHistory || []).filter(
+                            (mh) => !mh.startsWith('ثبت تصویر') && !mh.includes('[هوش مصنوعی]') && !mh.includes('RVG') && !mh.includes('OPG') && !mh.startsWith('درمان توسط')
+                          );
+
+                          if (cleanList.length === 0) {
+                            return (
+                              <span className="px-2.5 py-1 rounded-xl bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 text-xs font-bold inline-flex items-center gap-1">
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                سلامت عمومی کامل / فاقد بیماری زمینه‌ای
+                              </span>
+                            );
+                          }
+
+                          return cleanList.map((mh, idx) => (
                             <span
                               key={idx}
                               className={`px-2.5 py-1 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 shadow-2xs ${
@@ -3684,19 +3878,16 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                                   ? 'bg-rose-100 dark:bg-rose-950/50 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-800'
                                   : mh.includes('دیابت') || mh.includes('قند')
                                   ? 'bg-amber-100 dark:bg-amber-950/50 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+                                  : mh.includes('بارداری')
+                                  ? 'bg-purple-100 dark:bg-purple-950/50 text-purple-900 dark:text-purple-300 border border-purple-300 dark:border-purple-800'
                                   : 'bg-sky-100 dark:bg-sky-950/50 text-[#005581] dark:text-sky-300 border border-sky-300 dark:border-sky-800'
                               }`}
                             >
                               <span className="w-2 h-2 rounded-full bg-current"></span>
                               {mh}
                             </span>
-                          ))
-                        ) : (
-                          <span className="px-2.5 py-1 rounded-xl bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 text-xs font-bold inline-flex items-center gap-1">
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            هیچ بیماری خاصی ثبت نشده است
-                          </span>
-                        )}
+                          ));
+                        })()}
                       </div>
                     </div>
 
@@ -4040,8 +4231,11 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                     onChange={(e) => setNewDentistName(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
                   >
-                    <option value="دکتر نوری">دکتر نوری</option>
-                    <option value="دکتر کاویانی">دکتر کاویانی</option>
+                    {clinicDentists.map((cd) => (
+                      <option key={cd.id} value={cd.name}>
+                        {cd.name} {cd.specialty ? `(${cd.specialty})` : ''}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>

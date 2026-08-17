@@ -86,54 +86,61 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <header className="bg-[#005581] text-white border-b border-[#004266] sticky top-0 z-50 shadow-md backdrop-blur-md dir-rtl">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5">
-        <div className="flex flex-col md:flex-row items-center justify-between gap-3">
+        <div className="flex flex-col lg:flex-row items-center justify-between gap-3.5">
           
-          {/* Logo & Brand */}
-          <div className="flex items-center gap-3">
-            <button
-              onClick={onGoToDentoraLanding}
-              className="w-10 h-10 rounded-xl bg-[#ffd200] text-[#005581] flex items-center justify-center shadow-md font-black text-2xl ring-2 ring-white/30 cursor-pointer hover:bg-[#ffe552] transition shrink-0"
-              title="بازگشت به لندینگ اصلی دنتورا"
-            >
-              د
-            </button>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-xl font-black tracking-tight text-[#fffffa]">
-                  {currentClinic?.name || clinicName} <span className="text-[#72cdf4] text-sm font-semibold">| Dentora OS</span>
-                </h1>
-                {isOwner && (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#ffd200] text-[#005581] font-extrabold font-mono shadow-xs shrink-0">
-                    دسترسی مالک (Owner)
+          {/* Zone 1: Logo & Clinic Brand & Current User Identity */}
+          <div className="flex items-center gap-3 w-full lg:w-auto justify-between lg:justify-start">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={onGoToDentoraLanding}
+                className="w-10 h-10 rounded-xl bg-[#ffd200] text-[#005581] flex items-center justify-center shadow-md font-black text-2xl ring-2 ring-white/30 cursor-pointer hover:bg-[#ffe552] transition shrink-0"
+                title="بازگشت به لندینگ اصلی دنتورا"
+              >
+                د
+              </button>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h1 className="text-lg sm:text-xl font-black tracking-tight text-[#fffffa]">
+                    {currentClinic?.name || clinicName}
+                  </h1>
+                  <span className="text-[#72cdf4] text-xs font-semibold px-2 py-0.5 rounded-md bg-[#004266] border border-[#72cdf4]/30 hidden sm:inline-block">
+                    Dentora OS
                   </span>
-                )}
+                  {isOwner && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#ffd200] text-[#005581] font-extrabold font-mono shadow-xs shrink-0">
+                      دسترسی مالک (Owner)
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-[#72cdf4]/90 font-medium flex items-center gap-2 mt-0.5 flex-wrap">
+                  <span className="text-slate-100 font-bold">
+                    {currentUserName} <span className="text-[#72cdf4] font-normal">({roleLabels[currentRole]?.title || currentRole})</span>
+                  </span>
+                  {currentClinic?.ownerName && (
+                    <span className="bg-[#003858] text-[#ffe552] px-2 py-0.5 rounded-md text-[10px] font-bold border border-[#72cdf4]/30">
+                      مالک: {currentClinic.ownerName} ({currentClinic.ownerRole === 'dentist' ? 'دندان‌پزشک' : 'مدیر کلینیک'})
+                    </span>
+                  )}
+                </div>
               </div>
-              <p className="text-xs text-[#72cdf4]/90 font-medium flex items-center gap-2">
-                <span>{currentUserName} ({roleLabels[currentRole]?.title || currentRole})</span>
-                {currentClinic?.ownerName && (
-                  <span className="bg-[#003858] text-[#ffe552] px-2 py-0.5 rounded text-[10px] font-bold border border-[#72cdf4]/30">
-                    مالک کلینیک: {currentClinic.ownerName} ({currentClinic.ownerRole === 'dentist' ? 'دندان‌پزشک' : 'مدیر کلینیک'})
-                  </span>
-                )}
-              </p>
             </div>
           </div>
 
-          {/* System Status Indicators (Online/Offline, Owner Insurance Module, Insurance Contracted Status) */}
-          <div className="flex flex-wrap items-center gap-2 text-xs">
+          {/* Zone 2: System Status & Workflow Indicators (Cleanly Grouped Toolbar) */}
+          <div className="flex flex-wrap items-center justify-center gap-1.5 p-1 bg-[#004266]/70 border border-[#72cdf4]/30 rounded-2xl shadow-inner text-xs">
             
             {/* Online / Offline Connection Status Toggle */}
             <button
               type="button"
               onClick={onToggleConnectionStatus}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all text-xs font-bold cursor-pointer shadow-xs ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all text-xs font-bold cursor-pointer shadow-xs whitespace-nowrap ${
                 connectionStatus === 'online'
-                  ? 'bg-[#004266] text-[#fffffa] border-[#72cdf4]/40 hover:bg-[#003858]'
+                  ? 'bg-[#005581] text-[#fffffa] border-emerald-400/40 hover:bg-[#003858]'
                   : connectionStatus === 'syncing'
                   ? 'bg-[#ffe552] text-[#005581] border-[#ffd200] animate-pulse'
                   : 'bg-amber-900/60 text-amber-200 border-amber-600/50 hover:bg-amber-900/80'
               }`}
-              title="برای تغییر وضعیت اتصال آنلاین / آفلاین کلیک کنید"
+              title="تغییر وضعیت اتصال سیستم (آنلاین / آفلاین)"
             >
               {connectionStatus === 'online' && (
                 <>
@@ -145,7 +152,7 @@ export const Header: React.FC<HeaderProps> = ({
               {connectionStatus === 'syncing' && (
                 <>
                   <RefreshCw className="w-3.5 h-3.5 text-[#005581] animate-spin" />
-                  <span>در حال همگام‌سازی...</span>
+                  <span>همگام‌سازی...</span>
                 </>
               )}
               {connectionStatus === 'offline' && (
@@ -156,62 +163,63 @@ export const Header: React.FC<HeaderProps> = ({
               )}
             </button>
 
-            {/* Contracted Insurance Status Toggle (Prototype convenience) */}
+            {/* Contracted Insurance Status Toggle */}
             {insuranceModuleActive && onToggleInsuranceContracted && (
               <button
                 type="button"
                 onClick={onToggleInsuranceContracted}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all text-xs font-semibold cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all text-xs font-bold cursor-pointer whitespace-nowrap ${
                   isInsuranceContracted
-                    ? 'bg-[#004266] text-[#fffffa] border-[#72cdf4]/40 hover:bg-[#003858]'
-                    : 'bg-[#ffd200] text-[#005581] border-[#ffe552] font-extrabold'
+                    ? 'bg-[#005581] text-sky-100 border-[#72cdf4]/40 hover:bg-[#003858]'
+                    : 'bg-[#ffd200] text-[#005581] border-[#ffe552]'
                 }`}
                 title="تغییر وضعیت طرف قرارداد بیمه دنتورا"
               >
                 <FileCheck className="w-3.5 h-3.5 text-[#ffd200]" />
                 <span>
-                  قرارداد بیمه: <strong>{isInsuranceContracted ? 'طرف قرارداد' : 'غیر طرف قرارداد (آزاد + فاکتور رسمی)'}</strong>
+                  قرارداد بیمه: <strong className={isInsuranceContracted ? 'text-[#ffe552]' : 'text-[#005581]'}>{isInsuranceContracted ? 'طرف قرارداد' : 'آزاد (فاکتور)'}</strong>
                 </span>
               </button>
             )}
 
-            {/* Accountant Role Presence Toggle Button (Workflow algorithm requirement - shown for staff roles only) */}
+            {/* Accountant Role Presence Toggle Button */}
             {currentRole !== 'patient' && onToggleHasAccountantRole && (
               <button
                 type="button"
                 onClick={onToggleHasAccountantRole}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all text-xs font-semibold cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all text-xs font-bold cursor-pointer whitespace-nowrap ${
                   hasAccountantRole
-                    ? 'bg-[#004266] text-[#fffffa] border-[#72cdf4]/40 hover:bg-[#003858]'
-                    : 'bg-amber-400 text-slate-900 border-amber-300 font-extrabold shadow-sm'
+                    ? 'bg-[#005581] text-sky-100 border-[#72cdf4]/40 hover:bg-[#003858]'
+                    : 'bg-amber-400 text-slate-900 border-amber-300 shadow-xs'
                 }`}
-                title="تغییر الگوریتم گردش‌کار بیمه: تفکیک وظایف منشی/حسابدار یا تمرکز در پنل منشی"
+                title="تغییر الگوریتم گردش‌کار: تفکیک وظایف حسابدار یا تمرکز در پذیرش"
               >
                 <Users className="w-3.5 h-3.5 text-[#ffd200]" />
                 <span>
-                  نقش حسابدار: <strong>{hasAccountantRole ? 'تعریف‌شده (تفکیک وظایف منشی/حسابدار)' : 'فاقد حسابدار (تمرکز کلی در منشی)'}</strong>
+                  حسابدار: <strong className={hasAccountantRole ? 'text-[#ffe552]' : 'text-slate-950'}>{hasAccountantRole ? 'تفکیک‌شده' : 'ادغام در منشی'}</strong>
                 </span>
               </button>
             )}
 
-            {/* Hardware Bridge Indicator (ONLY for Dentist role) */}
+            {/* Hardware Bridge Indicator (Dentist role) */}
             {currentRole === 'dentist' && (
-              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#004266] border border-[#72cdf4]/30 text-[#fffffa] shadow-xs" title="پل سخت‌افزاری دریافت مستقیم تصاویر رادیوگرافی RVG/OPG">
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#005581] border border-[#72cdf4]/30 text-[#fffffa] shadow-xs whitespace-nowrap" title="پل سخت‌افزاری دریافت مستقیم تصاویر رادیوگرافی RVG/OPG">
                 <span className="w-2 h-2 rounded-full bg-[#ffe552] animate-pulse"></span>
                 <Cpu className="w-3.5 h-3.5 text-[#ffe552]" />
-                <span>پل RVG/OPG: <strong className="text-[#ffe552] font-semibold">آنلاین</strong></span>
+                <span>پل RVG: <strong className="text-[#ffe552] font-bold">متصل</strong></span>
               </div>
             )}
           </div>
 
-          {/* Branch & Controls */}
-          <div className="flex items-center gap-2">
+          {/* Zone 3: Navigation, Clinic/Branch Switchers, Roles & Controls */}
+          <div className="flex flex-wrap items-center justify-center lg:justify-end gap-2 w-full lg:w-auto">
+            
             {/* Owner Settings Quick Access Button */}
             {isOwner && (
               <button
                 type="button"
                 onClick={() => onRoleChange('owner')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-extrabold text-xs transition border cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-black text-xs transition border cursor-pointer whitespace-nowrap ${
                   currentRole === 'owner'
                     ? 'bg-[#ffd200] text-[#005581] border-[#ffe552] ring-2 ring-[#ffd200]/50 shadow-md'
                     : 'bg-[#004266] text-[#ffd200] border-[#72cdf4]/40 hover:bg-[#003858]'
@@ -219,16 +227,16 @@ export const Header: React.FC<HeaderProps> = ({
                 title="تنظیمات مالک کلینیک (بیمه‌ها، نقش‌ها و ماژول‌ها)"
               >
                 <Crown className="w-3.5 h-3.5 text-[#ffd200]" />
-                <span>تنظیمات مالک</span>
+                <span>پنل مالک</span>
               </button>
             )}
 
             {/* Clinic Dropdown Switcher */}
             {clinics.length > 0 && onClinicSelect && (
               <div className="relative group">
-                <div className="flex items-center gap-1.5 bg-[#004266] border border-[#72cdf4]/40 text-[#fffffa] px-3.5 py-1.5 rounded-xl text-xs font-medium cursor-pointer hover:bg-[#003858] transition shadow-xs">
+                <div className="flex items-center gap-1.5 bg-[#004266] border border-[#72cdf4]/40 text-[#fffffa] px-3 py-1.5 rounded-xl text-xs font-bold cursor-pointer hover:bg-[#003858] transition shadow-xs whitespace-nowrap">
                   <Building className="w-3.5 h-3.5 text-[#ffd200]" />
-                  <span className="max-w-[130px] truncate">{currentClinic?.name || 'انتخاب کلینیک'}</span>
+                  <span className="max-w-[110px] truncate">{currentClinic?.name || 'انتخاب کلینیک'}</span>
                   <ChevronDown className="w-3.5 h-3.5 text-[#72cdf4]" />
                 </div>
                 <div className="absolute left-0 md:right-0 mt-1.5 w-64 bg-[#004266] border border-[#72cdf4]/40 rounded-2xl shadow-xl py-1.5 hidden group-hover:block z-50">
@@ -256,9 +264,9 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Branch Dropdown */}
             <div className="relative group">
-              <div className="flex items-center gap-1.5 bg-[#004266] border border-[#72cdf4]/40 text-[#fffffa] px-3.5 py-1.5 rounded-xl text-xs font-medium cursor-pointer hover:bg-[#003858] transition shadow-xs">
+              <div className="flex items-center gap-1.5 bg-[#004266] border border-[#72cdf4]/40 text-[#fffffa] px-3 py-1.5 rounded-xl text-xs font-bold cursor-pointer hover:bg-[#003858] transition shadow-xs whitespace-nowrap">
                 <Building2 className="w-3.5 h-3.5 text-[#ffe552]" />
-                <span className="max-w-[120px] truncate">{currentBranch.name}</span>
+                <span className="max-w-[110px] truncate">{currentBranch.name}</span>
                 <ChevronDown className="w-3.5 h-3.5 text-[#72cdf4]" />
               </div>
               <div className="absolute left-0 md:right-0 mt-1.5 w-52 bg-[#004266] border border-[#72cdf4]/40 rounded-2xl shadow-xl py-1.5 hidden group-hover:block z-50">
@@ -280,7 +288,7 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Role Switcher (RBAC testing menu) */}
             <div className="relative group">
-              <div className="flex items-center gap-2 bg-[#ffd200] text-[#005581] px-3.5 py-1.5 rounded-xl text-xs font-bold cursor-pointer shadow-md hover:bg-[#ffe552] transition ring-1 ring-white/30">
+              <div className="flex items-center gap-1.5 bg-[#ffd200] text-[#005581] px-3.5 py-1.5 rounded-xl text-xs font-black cursor-pointer shadow-md hover:bg-[#ffe552] transition ring-1 ring-white/30 whitespace-nowrap">
                 <UserCheck className="w-4 h-4" />
                 <span>پورتال: {roleLabels[currentRole]?.title || currentRole}</span>
                 <ChevronDown className="w-3.5 h-3.5 text-[#005581]" />
@@ -314,8 +322,8 @@ export const Header: React.FC<HeaderProps> = ({
             {onLogout && (
               <button
                 onClick={onLogout}
-                className="p-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 hover:text-white transition cursor-pointer"
-                title="خروج از حساب کاربر"
+                className="p-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 hover:text-white transition cursor-pointer shrink-0"
+                title="خروج از حساب کاربری"
               >
                 <LogOut className="w-4 h-4" />
               </button>

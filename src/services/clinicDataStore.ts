@@ -6,6 +6,8 @@ import {
   InstallmentPlan,
   Claim,
   LabOrder,
+  DentalLab,
+  LabStaffAccount,
   PatientQuestion,
   PatientInsuranceDispute,
   WaitlistEntry,
@@ -26,6 +28,7 @@ import {
   mockInstallments,
   mockClaims,
   mockLabOrders,
+  mockDentalLabs,
   mockAuditLogs,
   mockWaitlist,
   mockUsers,
@@ -544,4 +547,222 @@ export function addLabOrderToClinicStore(
   saveClinicData(clinic.id, data);
   return true;
 }
+
+const LABS_STORAGE_KEY = 'dentora_registered_labs';
+const ACTIVE_LAB_SESSION_KEY = 'dentora_active_lab_session';
+const ACTIVE_LAB_STAFF_KEY = 'dentora_active_lab_staff';
+
+export function getStoredLabs(): DentalLab[] {
+  try {
+    const raw = localStorage.getItem(LABS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.error('Error loading stored labs:', e);
+  }
+  return mockDentalLabs;
+}
+
+export function saveStoredLabs(labs: DentalLab[]): void {
+  try {
+    localStorage.setItem(LABS_STORAGE_KEY, JSON.stringify(labs));
+  } catch (e) {
+    console.error('Error saving stored labs:', e);
+  }
+}
+
+export function registerLabWithAccount(
+  labData: Omit<DentalLab, 'id' | 'createdAt' | 'active' | 'staffAccounts' | 'creatorStaffId'>,
+  creatorAccount: {
+    fullName: string;
+    username: string;
+    password?: string;
+    mobile: string;
+  }
+): { lab: DentalLab; staff: LabStaffAccount } {
+  const currentLabs = getStoredLabs();
+  const labId = `lab-${Date.now()}`;
+  const staffId = `staff-${Date.now()}`;
+  const createdAt = new Date().toLocaleDateString('fa-IR');
+
+  const creatorStaff: LabStaffAccount = {
+    id: staffId,
+    labId,
+    fullName: creatorAccount.fullName || labData.managerName,
+    username: creatorAccount.username.trim().toLowerCase(),
+    password: creatorAccount.password || '123456',
+    role: 'owner',
+    mobile: creatorAccount.mobile || labData.phone,
+    isCreator: true,
+    createdAt,
+  };
+
+  const newLab: DentalLab = {
+    ...labData,
+    id: labId,
+    active: true,
+    createdAt,
+    creatorStaffId: staffId,
+    staffAccounts: [creatorStaff],
+  };
+
+  const updated = [newLab, ...currentLabs];
+  saveStoredLabs(updated);
+  setActiveLabSession(newLab);
+  setActiveLabStaffSession(creatorStaff);
+
+  return { lab: newLab, staff: creatorStaff };
+}
+
+export function addStaffToLab(
+  labId: string,
+  staffData: {
+    fullName: string;
+    username: string;
+    password?: string;
+    role: 'technician' | 'staff';
+    mobile: string;
+  }
+): LabStaffAccount | null {
+  const currentLabs = getStoredLabs();
+  const labIndex = currentLabs.findIndex((l) => l.id === labId);
+  if (labIndex === -1) return null;
+
+  const targetLab = currentLabs[labIndex];
+  const newStaffId = `staff-${Date.now()}`;
+  const newStaff: LabStaffAccount = {
+    id: newStaffId,
+    labId,
+    fullName: staffData.fullName,
+    username: staffData.username.trim().toLowerCase(),
+    password: staffData.password || '123456',
+    role: staffData.role,
+    mobile: staffData.mobile,
+    isCreator: false,
+    createdAt: new Date().toLocaleDateString('fa-IR'),
+  };
+
+  const updatedAccounts = [...(targetLab.staffAccounts || []), newStaff];
+  const updatedLab: DentalLab = {
+    ...targetLab,
+    staffAccounts: updatedAccounts,
+  };
+
+  currentLabs[labIndex] = updatedLab;
+  saveStoredLabs(currentLabs);
+
+  const activeLab = getActiveLabSession();
+  if (activeLab && activeLab.id === labId) {
+    setActiveLabSession(updatedLab);
+  }
+
+  return newStaff;
+}
+
+export function authenticateLabStaff(
+  usernameOrMobile: string,
+  password?: string
+): { lab: DentalLab; staff: LabStaffAccount } | null {
+  const labs = getStoredLabs();
+  const search = usernameOrMobile.trim().toLowerCase();
+
+  for (const lab of labs) {
+    if (lab.staffAccounts && lab.staffAccounts.length > 0) {
+      for (const staff of lab.staffAccounts) {
+        const matchUser =
+          staff.username.toLowerCase() === search ||
+          staff.mobile === search ||
+          staff.fullName.toLowerCase().includes(search);
+
+        if (matchUser) {
+          if (!password || !staff.password || staff.password === password) {
+            setActiveLabSession(lab);
+            setActiveLabStaffSession(staff);
+            return { lab, staff };
+          }
+        }
+      }
+    } else {
+      // Fallback if lab has no staff accounts yet (mock lab fallback)
+      if (
+        lab.phone === search ||
+        lab.mobile === search ||
+        lab.managerName.toLowerCase().includes(search) ||
+        lab.name.toLowerCase().includes(search)
+      ) {
+        const defaultStaff: LabStaffAccount = {
+          id: `staff-${lab.id}-default`,
+          labId: lab.id,
+          fullName: lab.managerName,
+          username: lab.id,
+          password: '123',
+          role: 'owner',
+          mobile: lab.phone,
+          isCreator: true,
+          createdAt: lab.createdAt,
+        };
+        setActiveLabSession(lab);
+        setActiveLabStaffSession(defaultStaff);
+        return { lab, staff: defaultStaff };
+      }
+    }
+  }
+
+  return null;
+}
+
+export function getActiveLabSession(): DentalLab | null {
+  try {
+    const raw = localStorage.getItem(ACTIVE_LAB_SESSION_KEY);
+    if (raw) {
+      return JSON.parse(raw);
+    }
+  } catch (e) {
+    console.error('Error loading active lab session:', e);
+  }
+  return null;
+}
+
+export function setActiveLabSession(lab: DentalLab): void {
+  try {
+    localStorage.setItem(ACTIVE_LAB_SESSION_KEY, JSON.stringify(lab));
+  } catch (e) {
+    console.error('Error saving active lab session:', e);
+  }
+}
+
+export function clearActiveLabSession(): void {
+  try {
+    localStorage.removeItem(ACTIVE_LAB_SESSION_KEY);
+    localStorage.removeItem(ACTIVE_LAB_STAFF_KEY);
+  } catch (e) {
+    console.error('Error clearing active lab session:', e);
+  }
+}
+
+export function getActiveLabStaffSession(): LabStaffAccount | null {
+  try {
+    const raw = localStorage.getItem(ACTIVE_LAB_STAFF_KEY);
+    if (raw) {
+      return JSON.parse(raw);
+    }
+  } catch (e) {
+    console.error('Error loading active lab staff:', e);
+  }
+  return null;
+}
+
+export function setActiveLabStaffSession(staff: LabStaffAccount): void {
+  try {
+    localStorage.setItem(ACTIVE_LAB_STAFF_KEY, JSON.stringify(staff));
+  } catch (e) {
+    console.error('Error saving active lab staff:', e);
+  }
+}
+
+
 

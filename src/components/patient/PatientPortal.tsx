@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Patient, Appointment, Invoice, InstallmentPlan, ToothDetail, Claim, UserProfile, PatientQuestion, PatientInsuranceDispute, SavedBankCard } from '../../types';
+import { Patient, Appointment, Invoice, InstallmentPlan, ToothDetail, Claim, UserProfile, PatientQuestion, PatientInsuranceDispute, SavedBankCard, ClinicRegistration } from '../../types';
 import { OnlineBookingModal } from '../booking/OnlineBookingModal';
 import { SimulatedPaymentGatewayModal } from '../booking/SimulatedPaymentGatewayModal';
 import { OdontogramChart } from './OdontogramChart';
@@ -55,6 +55,7 @@ interface PatientPortalProps {
   insuranceModuleActive?: boolean;
   isInsuranceContracted?: boolean;
   users?: UserProfile[];
+  currentClinic?: ClinicRegistration;
   questions?: PatientQuestion[];
   onAskQuestion?: (data: {
     patientId: string;
@@ -118,6 +119,7 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
   insuranceModuleActive = true,
   isInsuranceContracted = true,
   users = [],
+  currentClinic,
   questions = [],
   onAskQuestion,
   insuranceDisputes = [],
@@ -141,14 +143,37 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
   const [teethAgeGroup, setTeethAgeGroup] = useState<'adult' | 'pediatric'>('adult');
   const [selectedToothFdi, setSelectedToothFdi] = useState<number | null>(11);
 
-  // Doctors in Clinic (From users state)
-  const clinicDentists = (users || []).filter((u) => u.role === 'dentist');
-  const availableDentists = clinicDentists.length > 0
-    ? clinicDentists
-    : [
-        { id: 'u-dentist1', name: 'دکتر کاویانی (جراح و متخصص ترمیمی)' },
-        { id: 'u-dentist2', name: 'دکتر شریفی (متخصص عصب‌کشی و اطفال)' },
-      ];
+  // Doctors in Clinic (Dynamically derived from clinic owner and users)
+  const availableDentists = React.useMemo(() => {
+    const list: { id: string; name: string; specialty?: string }[] = [];
+    if (currentClinic?.ownerName && (currentClinic.ownerRole === 'dentist' || currentClinic.ownerRole === 'owner')) {
+      const formattedOwner = currentClinic.ownerName.startsWith('دکتر') ? currentClinic.ownerName : `دکتر ${currentClinic.ownerName}`;
+      list.push({
+        id: `u-owner-${currentClinic.id || 'dentist'}`,
+        name: formattedOwner,
+        specialty: 'مؤسس کلینیک و دندان‌پزشک معالج',
+      });
+    }
+    (users || []).forEach((u) => {
+      if (u.role === 'dentist') {
+        const already = list.some((x) => x.id === u.id || x.name.trim() === u.name.trim());
+        if (!already) {
+          list.push({
+            id: u.id,
+            name: u.name.startsWith('دکتر') ? u.name : `دکتر ${u.name}`,
+            specialty: u.specialty || 'دندان‌پزشک معالج کلینیک',
+          });
+        }
+      }
+    });
+    if (list.length === 0) {
+      list.push(
+        { id: 'u-dentist1', name: 'دکتر کاویانی', specialty: 'جراح و دندان‌پزشک معالج' },
+        { id: 'u-dentist2', name: 'دکتر شریفی', specialty: 'متخصص ترمیم و زیبایی' }
+      );
+    }
+    return list;
+  }, [users, currentClinic]);
 
   // Online Booking Modal / Flow State
   const [showBookingModal, setShowBookingModal] = useState(false);
@@ -179,6 +204,7 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
 
   // Online Payment Modal & Loading Delay State
   const [isConnectingPayment, setIsConnectingPayment] = useState(false);
+  const [isVisitFeeGatewayOpen, setIsVisitFeeGatewayOpen] = useState(false);
   const [payingTarget, setPayingTarget] = useState<{
     type: 'invoice' | 'installment' | 'qa_package';
     id: string;
@@ -420,6 +446,11 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
   };
 
   const handleConfirmVisitPayment = () => {
+    setIsVisitFeeGatewayOpen(true);
+  };
+
+  const handleVisitFeePaymentSuccess = () => {
+    setIsVisitFeeGatewayOpen(false);
     setBookingStep('checkin_form');
   };
 
@@ -2823,6 +2854,17 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
           description={`تسویه آنلاین ${payingTarget.title}`}
         />
       )}
+
+      {/* ========================================================== */}
+      {/* ONLINE PAYMENT MODAL FOR FIRST VISIT FEE (ONLINE BOOKING)   */}
+      {/* ========================================================== */}
+      <SimulatedPaymentGatewayModal
+        isOpen={isVisitFeeGatewayOpen}
+        onClose={() => setIsVisitFeeGatewayOpen(false)}
+        onSuccess={handleVisitFeePaymentSuccess}
+        amount={50000}
+        description={`پرداخت ویزیت اولیه آنلاین - ${currentClinic?.name || 'کلینیک دنتورا'}`}
+      />
 
       {/* ========================================================== */}
       {/* PAYMENT CONNECTION LOADING DELAY MODAL                     */}

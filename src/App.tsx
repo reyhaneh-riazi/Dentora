@@ -829,9 +829,91 @@ export default function App() {
   };
 
   const handleNextPatient = () => {
-    const activeIdx = patients.findIndex((p) => p.id === activePatientId);
-    const nextIdx = (activeIdx + 1) % patients.length;
-    setActivePatientId(patients[nextIdx].id);
+    const currentActive = patients.find((p) => p.id === activePatientId) || patients[0];
+    
+    // Check if there are other distinct patients already loaded in clinic patients
+    const otherClinicPatients = patients.filter(
+      (p) => p.id !== activePatientId && p.fullName !== currentActive?.fullName
+    );
+
+    if (otherClinicPatients.length > 0) {
+      // Advance to the next distinct clinic patient
+      const nextPat = otherClinicPatients[0];
+      setActivePatientId(nextPat.id);
+
+      // Ensure an active unit appointment exists for this patient
+      const existingApt = appointments.find((a) => a.patientId === nextPat.id);
+      if (!existingApt) {
+        const newApt: Appointment = {
+          id: `apt-${Date.now()}`,
+          patientId: nextPat.id,
+          patientName: nextPat.fullName,
+          patientPhone: nextPat.phone,
+          nationalId: nextPat.nationalId,
+          dentistId: 'u-dentist1',
+          dentistName: currentUserName.includes('دکتر') ? currentUserName : 'دکتر کاویانی',
+          branchId: activeBranchId,
+          date: '1405-05-13',
+          timeSlot: '11:30 - 12:15',
+          reason: nextPat.clinicalNotes?.[0]?.slice(0, 40) || 'معاینه و ادامه درمان تخصصی',
+          status: 'in_unit',
+          isFirstVisit: false,
+          visitFeePaid: true,
+          checkInFormCompleted: true,
+          connectedToUnit: true,
+          receptionNoteToDoctor: `بیمار ${nextPat.fullName} فراخوان شد و روی یونیت قرار گرفت.`,
+          createdAt: 'امروز',
+        };
+        setAppointments((prev) => [newApt, ...prev]);
+      } else {
+        setAppointments((prev) =>
+          prev.map((a) => (a.id === existingApt.id ? { ...a, status: 'in_unit', connectedToUnit: true } : a))
+        );
+      }
+    } else {
+      // Clinic has only 1 patient! Use the default system patients pool (mockPatients)
+      // Pick a default patient who is NOT the current active patient and not already added by name or nationalId
+      const candidate =
+        mockPatients.find(
+          (dp) =>
+            dp.fullName !== currentActive?.fullName &&
+            !patients.some((p) => p.nationalId === dp.nationalId || p.fullName === dp.fullName)
+        ) ||
+        mockPatients.find((dp) => dp.fullName !== currentActive?.fullName) ||
+        mockPatients[0];
+
+      if (candidate) {
+        const freshPatient: Patient = {
+          ...candidate,
+          id: `p-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        };
+
+        const newApt: Appointment = {
+          id: `apt-${Date.now()}`,
+          patientId: freshPatient.id,
+          patientName: freshPatient.fullName,
+          patientPhone: freshPatient.phone,
+          nationalId: freshPatient.nationalId,
+          dentistId: 'u-dentist1',
+          dentistName: currentUserName.includes('دکتر') ? currentUserName : 'دکتر کاویانی',
+          branchId: activeBranchId,
+          date: '1405-05-13',
+          timeSlot: '12:00 - 12:45',
+          reason: 'معاینه و ادامه درمان تخصصی',
+          status: 'in_unit',
+          isFirstVisit: false,
+          visitFeePaid: true,
+          checkInFormCompleted: true,
+          connectedToUnit: true,
+          receptionNoteToDoctor: `بیمار جدید از صف سیستم (${freshPatient.fullName}) متصل شد.`,
+          createdAt: 'امروز',
+        };
+
+        setPatients((prev) => [...prev, freshPatient]);
+        setAppointments((prev) => [newApt, ...prev]);
+        setActivePatientId(freshPatient.id);
+      }
+    }
   };
 
   const handleUpdatePatient = (patientId: string, updatedFields: Partial<Patient>) => {
@@ -854,17 +936,20 @@ export default function App() {
             updatedImages = [imageRecord, ...existingImages];
           }
 
-          const summaryLine = `ثبت تصویر و علائم بالینی (${imageRecord.title}): ${imageRecord.summaryText || imageRecord.doctorNotes || 'بررسی رادیولوژی'}`;
-          const newMedHistory = Array.from(new Set([...(p.medicalHistory || []), summaryLine]));
+          // Clinical notes get radiographic summary, while medicalHistory remains clean for systemic diseases
           const newClinicalNotes = [
             ...(p.clinicalNotes || []),
-            `[${todayFa} ${imageRecord.doctorName || 'دندان‌پزشک'}] ${imageRecord.doctorNotes || imageRecord.summaryText || imageRecord.title}`,
+            `[${todayFa} ${imageRecord.doctorName || 'دندان‌پزشک'}] ثبت گرافی دندان ${imageRecord.toothFdi || 16}: ${imageRecord.summaryText || imageRecord.doctorNotes || imageRecord.title}`,
           ];
+
+          const cleanMedHistory = (p.medicalHistory || []).filter(
+            (item) => !item.startsWith('ثبت تصویر') && !item.includes('[هوش مصنوعی]') && !item.includes('RVG') && !item.includes('OPG')
+          );
 
           return {
             ...p,
             patientImages: updatedImages,
-            medicalHistory: newMedHistory,
+            medicalHistory: cleanMedHistory,
             clinicalNotes: newClinicalNotes,
           };
         }
@@ -890,14 +975,20 @@ export default function App() {
     const patientObj = patients.find((p) => p.id === data.patientId) || activePatient;
     const docName = currentUserName.includes('دکتر') ? currentUserName : 'دکتر کاویانی';
 
-    // 1. Update Patient object immediately (syncs teethMap, treatmentHistory, clinicalNotes, prescriptions, medicalHistory)
+    // 1. Update Patient object (syncs teethMap, treatmentHistory, clinicalNotes, prescriptions)
     const fdi = data.toothFdi || 16;
-    const historyEntry = `درمان توسط ${docName} (${todayFa}): ${data.treatmentPlan} - دندان ${fdi}`;
+    const cleanProcedureName = data.treatmentPlan
+      ? data.treatmentPlan.split('\n')[0].replace(/^[0-9.-]+\s*/, '').trim()
+      : 'درمان تخصصی دندان‌پزشکی';
 
     setPatients((prev) =>
       prev.map((p) => {
         if (p.id === patientObj.id || p.nationalId === patientObj.nationalId) {
-          const newMedHistory = Array.from(new Set([...(p.medicalHistory || []), historyEntry]));
+          // Keep medicalHistory strictly for systemic medical conditions (e.g. فشار خون، دیابت و ...)
+          const cleanMedHistory = (p.medicalHistory || []).filter(
+            (item) => !item.startsWith('ثبت تصویر') && !item.includes('[هوش مصنوعی]') && !item.includes('RVG') && !item.includes('OPG') && !item.startsWith('درمان توسط')
+          );
+
           const newClinicalNotes = [
             ...(p.clinicalNotes || []),
             `[${todayFa} ${docName}] دندان ${fdi}: ${data.clinicalNotes || data.treatmentPlan}`,
@@ -933,7 +1024,7 @@ export default function App() {
                 {
                   id: `th-${Date.now()}`,
                   date: todayFa,
-                  procedureName: data.treatmentPlan.split('\n')[0] || 'درمان تخصصی دندان‌پزشکی',
+                  procedureName: cleanProcedureName,
                   dentistName: docName,
                   cost: data.totalCost || 0,
                   status: 'completed' as const,
@@ -944,7 +1035,7 @@ export default function App() {
 
           return {
             ...p,
-            medicalHistory: newMedHistory,
+            medicalHistory: cleanMedHistory,
             clinicalNotes: newClinicalNotes,
             prescriptions: newPrescriptions,
             teethMap: updatedTeethMap,
@@ -1055,13 +1146,18 @@ export default function App() {
       prev.map((s) => (s.id === submissionId ? { ...s, status: 'approved' as const } : s))
     );
 
-    // B. Append to Patient Medical History & Tooth Map (Both Dentist & Secretary Views)
-    const historyEntry = `درمان توسط ${sub.dentistName} (${todayFa}): ${sub.treatmentSummary} - دندان ${sub.toothFdi || 16}`;
+    // B. Append to Patient Tooth Map & Clinical Notes (Both Dentist & Secretary Views)
+    const cleanProcedure = sub.treatmentSummary
+      ? sub.treatmentSummary.split('\n')[0].replace(/^[0-9.-]+\s*/, '').trim()
+      : 'درمان تخصصی دندان‌پزشکی';
 
     setPatients((prev) =>
       prev.map((p) => {
         if (p.id === patientObj.id || p.nationalId === patientObj.nationalId) {
-          const newMedHistory = Array.from(new Set([...(p.medicalHistory || []), historyEntry]));
+          const cleanMedHistory = (p.medicalHistory || []).filter(
+            (item) => !item.startsWith('ثبت تصویر') && !item.includes('[هوش مصنوعی]') && !item.includes('RVG') && !item.includes('OPG') && !item.startsWith('درمان توسط')
+          );
+
           const newClinicalNotes = [
             ...(p.clinicalNotes || []),
             `[${todayFa} ${sub.dentistName}] ${sub.clinicalNotes || sub.treatmentSummary}`,
@@ -1102,7 +1198,7 @@ export default function App() {
                 {
                   id: `th-${Date.now()}`,
                   date: todayFa,
-                  procedureName: sub.treatmentSummary.split('\n')[0] || 'ترمیم تخصصی دندان',
+                  procedureName: cleanProcedure,
                   dentistName: sub.dentistName,
                   cost: sub.totalCost || 0,
                   status: 'completed' as const,
@@ -1113,7 +1209,7 @@ export default function App() {
 
           return {
             ...p,
-            medicalHistory: newMedHistory,
+            medicalHistory: cleanMedHistory,
             clinicalNotes: newClinicalNotes,
             prescriptions: newPrescriptions,
             teethMap: updatedTeethMap,
@@ -1453,16 +1549,14 @@ export default function App() {
   if (viewMode === 'lab_portal') {
     const allLabOrders = getAllClinicsLabOrders();
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-6 lg:p-8 font-sans antialiased dir-rtl">
-        <div className="max-w-7xl mx-auto">
-          <LabPortalView
-            labOrders={allLabOrders.length > 0 ? allLabOrders : labOrders}
-            clinics={clinics}
-            onUpdateOrderStatus={handleUpdateLabOrderStatus}
-            onAddLabOrder={handleAddLabOrder}
-            onBackToLanding={() => setViewMode('dentora_landing')}
-          />
-        </div>
+      <div className="min-h-screen bg-[#fffffa] text-[#0b2535] font-sans antialiased dir-rtl">
+        <LabPortalView
+          labOrders={allLabOrders.length > 0 ? allLabOrders : labOrders}
+          clinics={clinics}
+          onUpdateOrderStatus={handleUpdateLabOrderStatus}
+          onAddLabOrder={handleAddLabOrder}
+          onBackToLanding={() => setViewMode('dentora_landing')}
+        />
       </div>
     );
   }
@@ -1472,6 +1566,7 @@ export default function App() {
     return (
       <ClinicPortalLanding
         clinic={currentClinic}
+        users={users}
         onStaffLogin={handleStaffLogin}
         onPatientLogin={handlePatientLogin}
         onInsurerLogin={handleInsurerLogin}
@@ -1566,6 +1661,8 @@ export default function App() {
             onReplyQuestion={handleReplyQuestion}
             insuranceDisputes={insuranceDisputes}
             onReplyDispute={handleReplyInsuranceDispute}
+            users={users}
+            currentClinic={currentClinic}
           />
         )}
 
@@ -1817,11 +1914,19 @@ export default function App() {
             claims={claims}
             insuranceModuleActive={insuranceModuleActive}
             isInsuranceContracted={isInsuranceContracted}
+            users={users}
+            currentClinic={currentClinic}
             questions={patientQuestions}
             onAskQuestion={handleAskQuestion}
             insuranceDisputes={insuranceDisputes}
             onSubmitDispute={handleSubmitInsuranceDispute}
             onBookOnline={(dId, slot, dt, reason, isFirstVisit, checkInFormCompleted) => {
+              const matchedDoctor = users.find((u) => u.id === dId);
+              const docName =
+                matchedDoctor?.name ||
+                (dId === 'u-owner-dentist' || dId.startsWith('u-owner')
+                  ? (currentClinic.ownerName.startsWith('دکتر') ? currentClinic.ownerName : `دکتر ${currentClinic.ownerName}`)
+                  : (dId === 'u-dentist2' ? 'دکتر شریفی' : 'دکتر کاویانی'));
               const newApt: Appointment = {
                 id: `apt-${Date.now()}`,
                 patientId: activePatient.id,
@@ -1829,7 +1934,7 @@ export default function App() {
                 patientPhone: activePatient.phone,
                 nationalId: activePatient.nationalId,
                 dentistId: dId,
-                dentistName: dId === 'u-dentist2' ? 'دکتر شریفی' : 'دکتر کاویانی',
+                dentistName: docName,
                 branchId: 'br-1',
                 date: dt,
                 timeSlot: slot,

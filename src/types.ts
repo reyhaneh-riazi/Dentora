@@ -462,14 +462,46 @@ export interface GreenLaneStatus {
   averageSettlementHours: number;
 }
 
+export interface LabStaffAccount {
+  id: string;
+  labId: string;
+  fullName: string;
+  username: string;
+  password?: string;
+  role: 'owner' | 'technician' | 'staff';
+  mobile: string;
+  isCreator: boolean;
+  createdAt: string;
+}
+
+export interface DentalLab {
+  id: string;
+  name: string;
+  managerName: string;
+  licenseNumber: string;
+  phone: string;
+  mobile: string;
+  address: string;
+  specialties: string[];
+  averageTurnaroundDays: number;
+  email?: string;
+  active: boolean;
+  createdAt: string;
+  creatorStaffId?: string;
+  staffAccounts?: LabStaffAccount[];
+}
+
 export interface LabOrder {
   id: string;
   orderNumber: string;
   patientId: string;
   patientName: string;
   dentistName: string;
+  dentistSpecialty?: string;
+  dentistPhone?: string;
   toothFdi: number;
   labName: string;
+  labId?: string;
   clinicId?: string;
   clinicName?: string;
   itemType: 'روکش زيرکونيا' | 'سرامیک PFM' | 'نایت گارد' | 'اباتمنت ایمپلنت' | 'پروتز پارسیل' | 'روکش زيرکونيا کامل' | 'لمینت Emax' | 'پروتز کامل' | 'اینله / آنله' | 'بلیچینگ تری' | string;

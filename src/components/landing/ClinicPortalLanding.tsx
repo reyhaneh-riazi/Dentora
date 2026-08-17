@@ -23,6 +23,10 @@ import { ClinicRegistration, UserRole, UserProfile, Patient } from '../../types'
 import { OnlineBookingModal } from '../booking/OnlineBookingModal';
 import { toPersianDigits } from '../../utils/persianDigits';
 import {
+  SUGGESTED_BASE_INSURANCES,
+  SUGGESTED_SUPPLEMENTARY_INSURANCES,
+} from '../../data/insuranceConstants';
+import {
   isValidNationalId,
   isValidMobile,
   isValidEmail,
@@ -33,6 +37,7 @@ import {
 
 interface ClinicPortalLandingProps {
   clinic: ClinicRegistration;
+  users?: UserProfile[];
   onStaffLogin: (
     role: UserRole,
     mobileOrNationalId: string,
@@ -47,6 +52,7 @@ interface ClinicPortalLandingProps {
 
 export const ClinicPortalLanding: React.FC<ClinicPortalLandingProps> = ({
   clinic,
+  users = [],
   onStaffLogin,
   onPatientLogin,
   onInsurerLogin,
@@ -117,7 +123,9 @@ export const ClinicPortalLanding: React.FC<ClinicPortalLandingProps> = ({
   const [patientNationalId, setPatientNationalId] = useState('');
   const [patientBirthDate, setPatientBirthDate] = useState('۱۳۷۰/۰۱/۰۱');
   const [patientPrimaryInsurance, setPatientPrimaryInsurance] = useState('بیمه تامین اجتماعی');
+  const [customPatientPrimaryInsurance, setCustomPatientPrimaryInsurance] = useState('');
   const [patientSupplInsurance, setPatientSupplInsurance] = useState('');
+  const [customPatientSupplInsurance, setCustomPatientSupplInsurance] = useState('');
   const [patientPassword, setPatientPassword] = useState('');
   const [isLegalGuardian, setIsLegalGuardian] = useState(false);
   const [guardianName, setGuardianName] = useState('');
@@ -248,6 +256,15 @@ export const ClinicPortalLanding: React.FC<ClinicPortalLandingProps> = ({
           return;
         }
 
+        const finalPrimary =
+          patientPrimaryInsurance === '__other__'
+            ? customPatientPrimaryInsurance.trim() || 'سایر بیمه‌های پایه'
+            : patientPrimaryInsurance;
+        const finalSuppl =
+          patientSupplInsurance === '__other__'
+            ? customPatientSupplInsurance.trim() || 'سایر بیمه‌های تکمیلی'
+            : patientSupplInsurance;
+
         onPatientLogin(cleanCNatId, true, {
           patientName: cleanCName,
           patientPhone: cleanGMobile,
@@ -257,8 +274,13 @@ export const ClinicPortalLanding: React.FC<ClinicPortalLandingProps> = ({
           guardianName: cleanGName,
           guardianNationalId: cleanGNatId,
           guardianPhone: cleanGMobile,
-          primaryInsurance: patientPrimaryInsurance,
-          supplInsurance: patientSupplInsurance,
+          primaryInsurance: finalPrimary,
+          supplInsurance:
+            finalSuppl &&
+            !finalSuppl.includes('فاقد بیمه') &&
+            !finalSuppl.includes('بدون بیمه')
+              ? finalSuppl
+              : undefined,
           password: patientPassword,
         });
       } else {
@@ -279,13 +301,27 @@ export const ClinicPortalLanding: React.FC<ClinicPortalLandingProps> = ({
           return;
         }
 
+        const finalPrimary =
+          patientPrimaryInsurance === '__other__'
+            ? customPatientPrimaryInsurance.trim() || 'سایر بیمه‌های پایه'
+            : patientPrimaryInsurance;
+        const finalSuppl =
+          patientSupplInsurance === '__other__'
+            ? customPatientSupplInsurance.trim() || 'سایر بیمه‌های تکمیلی'
+            : patientSupplInsurance;
+
         onPatientLogin(cleanNatId, false, {
           patientName: cleanName,
           patientPhone: cleanMobile,
           patientNationalId: cleanNatId,
           birthDate: patientBirthDate,
-          primaryInsurance: patientPrimaryInsurance,
-          supplInsurance: patientSupplInsurance,
+          primaryInsurance: finalPrimary,
+          supplInsurance:
+            finalSuppl &&
+            !finalSuppl.includes('فاقد بیمه') &&
+            !finalSuppl.includes('بدون بیمه')
+              ? finalSuppl
+              : undefined,
           password: patientPassword,
         });
       }
@@ -948,7 +984,7 @@ export const ClinicPortalLanding: React.FC<ClinicPortalLandingProps> = ({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div>
                       <label className="block text-xs font-bold text-slate-700 mb-1">تاریخ تولد</label>
                       <input
@@ -964,25 +1000,51 @@ export const ClinicPortalLanding: React.FC<ClinicPortalLandingProps> = ({
                       <select
                         value={patientPrimaryInsurance}
                         onChange={(e) => setPatientPrimaryInsurance(e.target.value)}
-                        className="w-full px-3.5 py-2 rounded-xl border-2 border-slate-200 focus:border-[#005581] text-xs font-bold outline-none"
+                        className="w-full px-3 py-2 rounded-xl border-2 border-slate-200 focus:border-[#005581] text-xs font-bold outline-none text-slate-800"
                       >
-                        <option value="بیمه تامین اجتماعی">تامین اجتماعی</option>
-                        <option value="بیمه خدمات درمانی (سلامت)">سلامت ایرانیان</option>
-                        <option value="بیمه نیروهای مسلح">نیروهای مسلح</option>
-                        <option value="فاقد بیمه پایه (آزاد)">فاقد بیمه (آزاد)</option>
+                        {SUGGESTED_BASE_INSURANCES.map((item) => (
+                          <option key={item.value} value={item.value}>
+                            {item.label}
+                          </option>
+                        ))}
                       </select>
+                      {patientPrimaryInsurance === '__other__' && (
+                        <input
+                          type="text"
+                          placeholder="نام بیمه پایه خود را بنویسید..."
+                          value={customPatientPrimaryInsurance}
+                          onChange={(e) => setCustomPatientPrimaryInsurance(e.target.value)}
+                          className="mt-1.5 w-full px-3 py-1.5 rounded-xl border-2 border-[#72cdf4] text-xs font-bold outline-none"
+                          required
+                        />
+                      )}
                     </div>
                   </div>
 
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">بیمه تکمیلی (اختیاری)</label>
-                    <input
-                      type="text"
-                      placeholder="مثال: بیمه دانا، ایران، سامان یا خالی"
+                    <select
                       value={patientSupplInsurance}
                       onChange={(e) => setPatientSupplInsurance(e.target.value)}
-                      className="w-full px-3.5 py-2 rounded-xl border-2 border-slate-200 focus:border-[#005581] text-sm outline-none"
-                    />
+                      className="w-full px-3 py-2 rounded-xl border-2 border-slate-200 focus:border-[#005581] text-xs font-bold outline-none text-slate-800"
+                    >
+                      <option value="">فاقد بیمه تکمیلی (آزاد)</option>
+                      {SUGGESTED_SUPPLEMENTARY_INSURANCES.map((item) => (
+                        <option key={item.value} value={item.value}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </select>
+                    {patientSupplInsurance === '__other__' && (
+                      <input
+                        type="text"
+                        placeholder="نام بیمه تکمیلی خود را بنویسید..."
+                        value={customPatientSupplInsurance}
+                        onChange={(e) => setCustomPatientSupplInsurance(e.target.value)}
+                        className="mt-1.5 w-full px-3 py-1.5 rounded-xl border-2 border-[#72cdf4] text-xs font-bold outline-none"
+                        required
+                      />
+                    )}
                   </div>
 
                   <div>
@@ -1041,6 +1103,8 @@ export const ClinicPortalLanding: React.FC<ClinicPortalLandingProps> = ({
         isOpen={showOnlineBooking}
         onClose={() => setShowOnlineBooking(false)}
         clinicName={clinic.name}
+        clinic={clinic}
+        users={users}
         isLoggedInPatient={false}
         onExistingPatientRedirect={() => {
           setShowOnlineBooking(false);

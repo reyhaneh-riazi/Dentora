@@ -23,6 +23,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Filter,
+  Activity,
 } from 'lucide-react';
 
 interface PatientRecordsViewProps {
@@ -250,7 +251,7 @@ export const PatientRecordsView: React.FC<PatientRecordsViewProps> = ({
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
                           isSelected ? 'bg-[#ffd200] text-[#005581]' : 'bg-emerald-100 text-emerald-800'
                         }`}>
-                          {patient.age} ساله · {patient.gender}
+                          تولد: {patient.birthDate || `${1405 - patient.age}/۰۴/۱۵`} · {patient.gender}
                         </span>
                       </div>
 
@@ -298,7 +299,7 @@ export const PatientRecordsView: React.FC<PatientRecordsViewProps> = ({
                     <div className="text-xs text-slate-500 mt-0.5 flex flex-wrap gap-3">
                       <span>کد ملی: <strong className="font-mono text-slate-800 dark:text-slate-200">{selectedPatient.nationalId}</strong></span>
                       <span>تلفن: <strong className="font-mono text-slate-800 dark:text-slate-200">{selectedPatient.phone}</strong></span>
-                      <span>سن / جنسیت: <strong>{selectedPatient.age} ساله ({selectedPatient.gender})</strong></span>
+                      <span>تاریخ تولد: <strong className="font-mono text-slate-800 dark:text-slate-200">{selectedPatient.birthDate || `${1405 - selectedPatient.age}/۰۴/۱۵`}</strong> ({selectedPatient.gender})</span>
                     </div>
                   </div>
                 </div>
@@ -425,6 +426,60 @@ export const PatientRecordsView: React.FC<PatientRecordsViewProps> = ({
                     <Plus className="w-3.5 h-3.5 text-[#ffd200]" />
                     <span>ثبت سابقه درمانی جدید</span>
                   </button>
+                </div>
+
+                {/* Medical Conditions & Allergies Card */}
+                <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/30 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h5 className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                      <Activity className="w-4 h-4 text-rose-500" />
+                      <span>بیماری‌های زمینه‌ای و پرونده سلامت عمومی:</span>
+                    </h5>
+                    {selectedPatient.allergies && selectedPatient.allergies.length > 0 ? (
+                      <span className="text-[11px] font-bold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/50 px-2 py-0.5 rounded-lg border border-rose-200 dark:border-rose-900/50 flex items-center gap-1">
+                        <ShieldAlert className="w-3.5 h-3.5" />
+                        حساسیت دارویی: {selectedPatient.allergies.join('، ')}
+                      </span>
+                    ) : (
+                      <span className="text-[11px] text-slate-400 font-medium">فاقد حساسیت دارویی</span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(() => {
+                      const cleanHistory = (selectedPatient.medicalHistory || []).filter(
+                        (item) => !item.startsWith('ثبت تصویر') && !item.includes('[هوش مصنوعی]') && !item.includes('RVG') && !item.includes('OPG') && !item.startsWith('درمان توسط')
+                      );
+
+                      if (cleanHistory.length === 0) {
+                        return (
+                          <span className="text-xs text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                            سلامت عمومی کامل / فاقد بیماری زمینه‌ای ثبت‌شده
+                          </span>
+                        );
+                      }
+
+                      return cleanHistory.map((mh, idx) => (
+                        <span
+                          key={idx}
+                          className={`px-2.5 py-1 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 shadow-2xs ${
+                            mh.includes('فشار') || mh.includes('قلب') || mh.includes('سکته')
+                              ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                              : mh.includes('دیابت') || mh.includes('قند')
+                              ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                              : mh.includes('بارداری')
+                              ? 'bg-purple-50 dark:bg-purple-950/40 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
+                              : mh.includes('آسم') || mh.includes('تنفسی')
+                              ? 'bg-sky-50 dark:bg-sky-950/40 text-sky-800 dark:text-sky-300 border border-sky-200 dark:border-sky-800'
+                              : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+                          }`}
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
+                          {mh}
+                        </span>
+                      ));
+                    })()}
+                  </div>
                 </div>
 
                 {/* Clinical Notes & Doctor Dictations */}

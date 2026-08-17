@@ -18,15 +18,21 @@ import {
   Lock,
 } from 'lucide-react';
 import { SimulatedPaymentGatewayModal } from './SimulatedPaymentGatewayModal';
-import { UserProfile, SavedBankCard } from '../../types';
+import { UserProfile, SavedBankCard, ClinicRegistration } from '../../types';
+import {
+  SUGGESTED_BASE_INSURANCES,
+  SUGGESTED_SUPPLEMENTARY_INSURANCES,
+} from '../../data/insuranceConstants';
 
 interface OnlineBookingModalProps {
   isOpen: boolean;
   onClose: () => void;
   clinicName: string;
+  clinic?: ClinicRegistration;
+  users?: UserProfile[];
+  dentists?: UserProfile[];
   isLoggedInPatient?: boolean;
   loggedInPatientName?: string;
-  dentists?: UserProfile[];
   savedCards?: SavedBankCard[];
   onSaveNewCard?: (card: SavedBankCard) => void;
   onExistingPatientRedirect?: () => void;
@@ -56,21 +62,67 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
   isOpen,
   onClose,
   clinicName,
+  clinic,
+  users = [],
+  dentists = [],
   isLoggedInPatient = false,
   loggedInPatientName = 'بیمار محترم',
-  dentists = [],
   savedCards = [],
   onSaveNewCard,
   onExistingPatientRedirect,
   onCompleteBooking,
 }) => {
-  // Available Dentists list from Clinic / Users
-  const defaultDentists = React.useMemo(() => [
-    { id: 'u-dentist1', name: 'دکتر کاویانی (جراح و دندانپزشک)', role: 'dentist' as const, nationalId: '0068899001', phone: '09123334455', branchIds: ['br-1'], specialty: 'درمان ریشه و جراحی' },
-    { id: 'u-dentist2', name: 'دکتر شریفی (متخصص ترمیم و زیبایی)', role: 'dentist' as const, nationalId: '0055566778', phone: '09124445566', branchIds: ['br-1'], specialty: 'ترمیم، زیبایی و ایمپلنت' },
-  ], []);
+  // Dynamically derive dentists list from clinic owner and registered users
+  const availableDentists = React.useMemo(() => {
+    if (dentists && dentists.length > 0) {
+      return dentists;
+    }
+    const list: UserProfile[] = [];
 
-  const availableDentists = dentists && dentists.length > 0 ? dentists : defaultDentists;
+    // 1. Include clinic owner if owner is a dentist or clinic founder
+    if (clinic?.ownerName && (clinic.ownerRole === 'dentist' || clinic.ownerRole === 'owner')) {
+      const formattedOwnerName = clinic.ownerName.startsWith('دکتر') ? clinic.ownerName : `دکتر ${clinic.ownerName}`;
+      list.push({
+        id: `u-owner-${clinic.id || 'dentist'}`,
+        name: formattedOwnerName,
+        role: 'dentist',
+        specialty: 'مؤسس کلینیک و دندان‌پزشک معالج',
+        nationalId: clinic.nationalCode || '0012345678',
+        phone: clinic.ownerMobile || '09121112233',
+        branchIds: ['br-1'],
+      });
+    }
+
+    // 2. Include all dentists defined by owner/admin in users or registered directly
+    (users || []).forEach((u) => {
+      if (u.role === 'dentist') {
+        const isDuplicate = list.some(
+          (existing) => existing.id === u.id || existing.name.trim() === u.name.trim()
+        );
+        if (!isDuplicate) {
+          list.push({
+            id: u.id,
+            name: u.name.startsWith('دکتر') ? u.name : `دکتر ${u.name}`,
+            role: 'dentist',
+            specialty: u.specialty || 'دندان‌پزشک معالج کلینیک',
+            nationalId: u.nationalId || '',
+            phone: u.phone || '',
+            branchIds: u.branchIds || ['br-1'],
+          });
+        }
+      }
+    });
+
+    // 3. Fallback default if no dentists configured yet
+    if (list.length === 0) {
+      list.push(
+        { id: 'u-dentist1', name: 'دکتر کاویانی', role: 'dentist', nationalId: '0068899001', phone: '09123334455', branchIds: ['br-1'], specialty: 'جراح و دندان‌پزشک معالج' },
+        { id: 'u-dentist2', name: 'دکتر شریفی', role: 'dentist', nationalId: '0055566778', phone: '09124445566', branchIds: ['br-1'], specialty: 'متخصص ترمیم و زیبایی' }
+      );
+    }
+
+    return list;
+  }, [dentists, users, clinic]);
 
   // Step State
   // 'doctor_reason' | 'calendar_select' | 'auth_account' | 'visit_fee' | 'checkin_form' | 'confirmed'
@@ -78,7 +130,7 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
 
   // Booking Parameters
   const [dentistId, setDentistId] = useState(availableDentists[0]?.id || 'u-dentist1');
-  const [dentistName, setDentistName] = useState(availableDentists[0]?.name || 'دکتر کاویانی (جراح و دندانپزشک)');
+  const [dentistName, setDentistName] = useState(availableDentists[0]?.name || 'دکتر کاویانی');
   const [visitReason, setVisitReason] = useState('');
 
   // Keep dentist selection synced if list updates
@@ -118,7 +170,9 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
   const [checkInMedications, setCheckInMedications] = useState('');
   const [checkInEmergencyPhone, setCheckInEmergencyPhone] = useState('');
   const [primaryInsurance, setPrimaryInsurance] = useState('');
+  const [customPrimaryInsurance, setCustomPrimaryInsurance] = useState('');
   const [supplInsurance, setSupplInsurance] = useState('');
+  const [customSupplInsurance, setCustomSupplInsurance] = useState('');
 
   // Simulated Payment Gateway Dialog State
   const [isPaymentGatewayOpen, setIsPaymentGatewayOpen] = useState(false);
@@ -246,6 +300,16 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
     const chosenDoctor = availableDentists.find((d) => d.id === dentistId);
     const finalDoctorName = chosenDoctor ? chosenDoctor.name : dentistName;
 
+    const finalPrimary =
+      primaryInsurance === '__other__'
+        ? customPrimaryInsurance.trim() || 'سایر بیمه‌های پایه'
+        : primaryInsurance || 'فاقد بیمه پایه (آزاد)';
+
+    const finalSuppl =
+      supplInsurance === '__other__'
+        ? customSupplInsurance.trim() || 'سایر بیمه‌های تکمیلی'
+        : supplInsurance;
+
     alert(`نوبت شما با موفقیت ثبت شد!\nپزشک: ${finalDoctorName}\nکد رهگیری و مشخصات نوبت به شماره همراه شما پیامک گردید.`);
     onCompleteBooking({
       dentistId,
@@ -259,8 +323,13 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
       birthDate: patientBirthDate || undefined,
       isFirstVisit,
       checkInCompleted: !skipCheckIn,
-      primaryInsurance: primaryInsurance || 'فاقد بیمه پایه (آزاد)',
-      supplInsurance: supplInsurance && supplInsurance !== 'بدون بیمه تکمیلی' ? supplInsurance : undefined,
+      primaryInsurance: finalPrimary,
+      supplInsurance:
+        finalSuppl &&
+        !finalSuppl.includes('بدون بیمه') &&
+        !finalSuppl.includes('فاقد بیمه')
+          ? finalSuppl
+          : undefined,
       allergies: checkInAllergies,
       medicalHistory: checkInConditions,
       notes: checkInOtherNotes,
@@ -348,13 +417,19 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
                         const selectedDoc = availableDentists.find((d) => d.id === e.target.value);
                         if (selectedDoc) setDentistName(selectedDoc.name);
                       }}
-                      className="w-full px-4 py-3 rounded-2xl border-2 border-slate-200 focus:border-[#005581] font-bold text-sm outline-none bg-slate-50 focus:bg-white cursor-pointer"
+                      className="w-full px-4 py-3 rounded-2xl border-2 border-slate-200 focus:border-[#005581] font-bold text-sm outline-none bg-slate-50 focus:bg-white cursor-pointer text-slate-800"
                     >
-                      {availableDentists.map((doc) => (
-                        <option key={doc.id} value={doc.id}>
-                          {doc.name} {doc.specialty ? `(${doc.specialty})` : ''}
-                        </option>
-                      ))}
+                      {availableDentists.map((doc) => {
+                        const displayLabel =
+                          doc.specialty && !doc.name.includes(doc.specialty)
+                            ? `${doc.name} (${doc.specialty})`
+                            : doc.name;
+                        return (
+                          <option key={doc.id} value={doc.id}>
+                            {displayLabel}
+                          </option>
+                        );
+                      })}
                     </select>
                   </div>
 
@@ -368,6 +443,33 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
                       placeholder="مثلاً معاینه دوره‌ای، عصب‌کشی دندان ۶، جرم‌گیری، پرکردن یا روکش"
                       className="w-full px-4 py-3 rounded-2xl border-2 border-slate-200 focus:border-[#005581] text-xs font-bold outline-none bg-slate-50 focus:bg-white transition"
                     />
+
+                    {/* Quick reason suggestions chips */}
+                    <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                      <span className="text-[11px] text-slate-500 font-bold">پیشنهادهای متداول:</span>
+                      {[
+                        'عصب‌کشی و درمان ریشه (RCT)',
+                        'ترمیم و پرکردن کامپوزیت',
+                        'جرم‌گیری و بروساژ لثه',
+                        'قالب‌گیری و روکش زیرکونیا',
+                        'جراحی دندان عقل و کشیدن',
+                        'مشاوره و کاشت ایمپلنت',
+                        'معاینه کلی و چکاپ دوره‌ای',
+                      ].map((item) => (
+                        <button
+                          key={item}
+                          type="button"
+                          onClick={() => setVisitReason(item)}
+                          className={`text-[11px] px-2.5 py-1 rounded-lg border font-bold transition cursor-pointer ${
+                            visitReason === item
+                              ? 'bg-[#005581] text-white border-[#005581]'
+                              : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
+                          }`}
+                        >
+                          {item}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
                   <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-200 text-blue-900 space-y-1">
@@ -886,14 +988,25 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
                       <select
                         value={primaryInsurance}
                         onChange={(e) => setPrimaryInsurance(e.target.value)}
-                        className="w-full p-2.5 rounded-xl border border-slate-300 bg-white font-bold text-xs outline-none cursor-pointer"
+                        className="w-full p-2.5 rounded-xl border border-slate-300 bg-white font-bold text-xs outline-none cursor-pointer text-slate-800"
                       >
                         <option value="">-- انتخاب کنید --</option>
-                        <option value="بیمه تامین اجتماعی">بیمه تامین اجتماعی</option>
-                        <option value="بیمه سلامت ایران">بیمه سلامت ایران</option>
-                        <option value="بیمه نیروهای مسلح">بیمه نیروهای مسلح</option>
-                        <option value="فاقد بیمه پایه">فاقد بیمه پایه (آزاد)</option>
+                        {SUGGESTED_BASE_INSURANCES.map((item) => (
+                          <option key={item.value} value={item.value}>
+                            {item.label}
+                          </option>
+                        ))}
                       </select>
+                      {primaryInsurance === '__other__' && (
+                        <input
+                          type="text"
+                          placeholder="نام بیمه پایه خود را بنویسید..."
+                          value={customPrimaryInsurance}
+                          onChange={(e) => setCustomPrimaryInsurance(e.target.value)}
+                          className="mt-2 w-full px-3 py-2 rounded-xl border border-[#72cdf4] bg-white text-slate-800 font-bold text-xs outline-none"
+                          required
+                        />
+                      )}
                     </div>
 
                     <div>
@@ -903,17 +1016,25 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
                       <select
                         value={supplInsurance}
                         onChange={(e) => setSupplInsurance(e.target.value)}
-                        className="w-full p-2.5 rounded-xl border border-slate-300 bg-white font-bold text-xs outline-none cursor-pointer"
+                        className="w-full p-2.5 rounded-xl border border-slate-300 bg-white font-bold text-xs outline-none cursor-pointer text-slate-800"
                       >
                         <option value="">-- انتخاب کنید --</option>
-                        <option value="بیمه دانا">بیمه دانا</option>
-                        <option value="بیمه ایران">بیمه ایران</option>
-                        <option value="بیمه سامان">بیمه سامان</option>
-                        <option value="بیمه البرز">بیمه البرز</option>
-                        <option value="بیمه آتیه‌سازان حافظ">بیمه آتیه‌سازان حافظ</option>
-                        <option value="بیمه آسیا">بیمه آسیا</option>
-                        <option value="بدون بیمه تکمیلی">بدون بیمه تکمیلی</option>
+                        {SUGGESTED_SUPPLEMENTARY_INSURANCES.map((item) => (
+                          <option key={item.value} value={item.value}>
+                            {item.label}
+                          </option>
+                        ))}
                       </select>
+                      {supplInsurance === '__other__' && (
+                        <input
+                          type="text"
+                          placeholder="نام بیمه تکمیلی خود را بنویسید..."
+                          value={customSupplInsurance}
+                          onChange={(e) => setCustomSupplInsurance(e.target.value)}
+                          className="mt-2 w-full px-3 py-2 rounded-xl border border-[#72cdf4] bg-white text-slate-800 font-bold text-xs outline-none"
+                          required
+                        />
+                      )}
                     </div>
                   </div>
                 </div>

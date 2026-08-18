@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Claim, Patient, DoctorSubmission, GreenLaneStatus } from '../../types';
 import {
   FileCheck,
@@ -30,7 +30,21 @@ import {
   Activity,
   Trash2,
   Image as ImageIcon,
+  Download,
+  Paperclip,
+  ZoomIn,
+  ExternalLink,
 } from 'lucide-react';
+
+export const cleanInsuranceName = (provider?: string) => {
+  if (!provider) return 'بیمه دانا (طرح استاندارد)';
+  return provider
+    .replace(/طرح\s*نقره‌ای/g, 'طرح استاندارد')
+    .replace(/طرح\s*نقره\b/g, 'طرح استاندارد')
+    .replace(/نقره‌ای/g, 'استاندارد')
+    .replace(/نقره/g, 'استاندارد')
+    .trim();
+};
 
 interface InsuranceDocsWorkspaceProps {
   claims: Claim[];
@@ -65,7 +79,7 @@ export const InsuranceDocsWorkspace: React.FC<InsuranceDocsWorkspaceProps> = ({
 }) => {
   // Sub tab selection
   const [receptionInsuranceSubTab, setReceptionInsuranceSubTab] = useState<'scrubber' | 'financial_board'>('scrubber');
-  const [activeFinancialSubTab, setActiveFinancialSubTab] = useState<'multi_payer' | 'kanban' | 'deductions' | 'appeal_form'>('kanban');
+  const [activeFinancialSubTab, setActiveFinancialSubTab] = useState<'kanban' | 'deductions' | 'appeal_form'>('kanban');
 
   const [selectedClaimForDocReview, setSelectedClaimForDocReview] = useState<Claim | null>(claims[0] || null);
   const [editingNarrativeClaimId, setEditingNarrativeClaimId] = useState<string | null>(null);
@@ -79,7 +93,43 @@ export const InsuranceDocsWorkspace: React.FC<InsuranceDocsWorkspaceProps> = ({
     uploaded: boolean;
     required?: boolean;
     notes?: string;
+    modalKind?: 'xray' | 'fdi_narrative' | 'eligibility' | 'pre_auth_cert';
   } | null>(null);
+
+  // Uploaded pre-auth certificates state (per claimId)
+  const [uploadedCertificates, setUploadedCertificates] = useState<Record<string, {
+    fileName: string;
+    fileUrl: string;
+    fileSize: string;
+    uploadTime: string;
+    preAuthCode: string;
+  }>>({
+    'clm-804': {
+      fileName: 'تاییدیه_بیمه_دانا_CLM2026.pdf',
+      fileUrl: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=1000&q=80',
+      fileSize: '۲۴۰ کیلوبایت',
+      uploadTime: 'امروز ۱۰:۱۵',
+      preAuthCode: 'AUTH-DAN-99120-804',
+    },
+  });
+
+  // Uploaded extra radiographs state (per claimId)
+  const [uploadedExtraRadiographs, setUploadedExtraRadiographs] = useState<Record<string, Array<{
+    id: string;
+    title: string;
+    type: 'rvg' | 'opg' | 'cbct' | 'intraoral';
+    imageUrl: string;
+    date: string;
+    doctorNotes?: string;
+    source: string;
+  }>>>({});
+
+  // Selected Xray preview index in modal
+  const [selectedXrayIndex, setSelectedXrayIndex] = useState<number>(0);
+
+  // Hidden File Input Refs
+  const certFileInputRef = useRef<HTMLInputElement>(null);
+  const xrayFileInputRef = useRef<HTMLInputElement>(null);
 
   // Kanban Detail / Action Modal state
   const [activeKanbanModalType, setActiveKanbanModalType] = useState<'draft_compliance' | 'submitted_detail' | 'settled_receipt' | null>(null);
@@ -134,6 +184,145 @@ export const InsuranceDocsWorkspace: React.FC<InsuranceDocsWorkspaceProps> = ({
   const calculatedBaseShare = Math.round((waterfallCost * baseCoveragePercent) / 100);
   const calculatedSupplShare = Math.round((waterfallCost * supplCoveragePercent) / 100);
   const calculatedPatientShare = Math.max(0, waterfallCost - calculatedBaseShare - calculatedSupplShare);
+
+  // Active patient matched to selectedClaimForDocReview
+  const activePatient = useMemo(() => {
+    if (!selectedClaimForDocReview) return null;
+    return (
+      patients.find(
+        (p) =>
+          p.id === selectedClaimForDocReview.patientId ||
+          p.nationalId === selectedClaimForDocReview.nationalId ||
+          p.nationalId === selectedClaimForDocReview.patientNationalId ||
+          p.fullName === selectedClaimForDocReview.patientName
+      ) || null
+    );
+  }, [patients, selectedClaimForDocReview]);
+
+  // Radiographs attached to active patient / treatment desk
+  const activeRadiographs = useMemo(() => {
+    if (!selectedClaimForDocReview) return [];
+    const claimId = selectedClaimForDocReview.id;
+    const extraUploaded = uploadedExtraRadiographs[claimId] || [];
+
+    // From patient records (doctor's desk)
+    const patientImgs = (activePatient?.patientImages || []).map((img) => ({
+      id: img.id,
+      title: img.title,
+      type: img.type,
+      imageUrl: img.imageUrl,
+      date: img.date,
+      doctorName: img.doctorName || selectedClaimForDocReview.dentistName || 'دکتر معالج',
+      doctorNotes: img.doctorNotes || img.summaryText || 'تایید معاینه بالینی و سلامت نسوج پری‌آپیکال',
+      annotations: img.annotations || [],
+      toothFdi: img.toothFdi || selectedClaimForDocReview.toothFdi || 16,
+      source: 'ثبت‌شده در میز درمان دندان‌پزشک',
+    }));
+
+    const combined = [
+      ...patientImgs,
+      ...extraUploaded.map((x) => ({
+        ...x,
+        annotations: [],
+        toothFdi: selectedClaimForDocReview.toothFdi || 16,
+        source: 'آپلود منشی / پذیرش کلینیک',
+      })),
+    ];
+
+    if (combined.length === 0) {
+      return [
+        {
+          id: 'rvg-default',
+          title: `گرافی دیجیتال RVG دندان ${selectedClaimForDocReview.toothFdi || 16}`,
+          type: 'rvg' as const,
+          imageUrl: 'https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?auto=format&fit=crop&w=1400&q=85',
+          date: selectedClaimForDocReview.dateOfService || '۱۴۰۵/۰۵/۲۰',
+          doctorName: selectedClaimForDocReview.dentistName || 'دکتر معالج',
+          doctorNotes: `تایید سلامت پالپ و نسوج دندان ${selectedClaimForDocReview.toothFdi || 16} جهت درمان ${selectedClaimForDocReview.treatmentName || 'ترمیم/عصب‌کشی'}`,
+          annotations: [
+            {
+              id: 'ann-1',
+              text: 'کانتور لثه و استخوان مارجینال نرمال',
+              toothFdi: selectedClaimForDocReview.toothFdi || 16,
+              x: 48,
+              y: 38,
+              width: 14,
+              height: 16,
+              type: 'box' as const,
+              author: 'doctor' as const,
+              severity: 'normal' as const,
+            },
+          ],
+          toothFdi: selectedClaimForDocReview.toothFdi || 16,
+          source: 'ثبت‌شده در میز درمان دندان‌پزشک',
+        },
+      ];
+    }
+
+    return combined;
+  }, [selectedClaimForDocReview, activePatient, uploadedExtraRadiographs]);
+
+  // Upload handler for Insurance Certificate
+  const handleUploadCertificate = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedClaimForDocReview) return;
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      const claimId = selectedClaimForDocReview.id;
+      const nowFa = new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+      const sizeKb = Math.round(file.size / 1024) + ' کیلوبایت';
+      const preAuthCode = 'AUTH-' + Math.floor(100000 + Math.random() * 900000);
+
+      setUploadedCertificates((prev) => ({
+        ...prev,
+        [claimId]: {
+          fileName: file.name,
+          fileUrl: dataUrl || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=1000&q=80',
+          fileSize: sizeKb,
+          uploadTime: `${nowFa} امروز`,
+          preAuthCode,
+        },
+      }));
+
+      showToast(`گواهی تاییدیه بیمه (${file.name}) با موفقیت به پرونده پیوست شد.`);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  // Upload handler for extra X-rays / RVGs
+  const handleUploadRadiograph = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedClaimForDocReview) return;
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      const claimId = selectedClaimForDocReview.id;
+      const todayFa = new Date().toLocaleDateString('fa-IR');
+
+      const newXray = {
+        id: `xray-up-${Date.now()}`,
+        title: `گرافی ارسالی پذیرش: ${file.name}`,
+        type: 'rvg' as const,
+        imageUrl: dataUrl || 'https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?auto=format&fit=crop&w=1400&q=85',
+        date: todayFa,
+        doctorNotes: 'گرافی ارسالی از بخش پذیرش / مرکز تصویربرداری ضمیمه پرونده شد.',
+        source: 'آپلود منشی / پذیرش کلینیک',
+      };
+
+      setUploadedExtraRadiographs((prev) => ({
+        ...prev,
+        [claimId]: [...(prev[claimId] || []), newXray],
+      }));
+
+      showToast(`تصویر رادیوگرافی (${file.name}) با موفقیت به پرونده بالینی پیوست گردید.`);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
 
   // If insurance module is inactive
   if (!insuranceModuleActive) {
@@ -428,24 +617,17 @@ export const InsuranceDocsWorkspace: React.FC<InsuranceDocsWorkspaceProps> = ({
                       </span>
                     </div>
                     <p className="text-[11px] text-slate-500 mt-0.5">
-                      سازمان بیمه‌گر: <strong>{selectedClaimForDocReview.insuranceCompany || selectedClaimForDocReview.insuranceProvider}</strong> | دندان شماره (FDI): <strong>{selectedClaimForDocReview.toothFdi || 16}</strong>
+                      سازمان بیمه‌گر: <strong>{cleanInsuranceName(selectedClaimForDocReview.insuranceCompany || selectedClaimForDocReview.insuranceProvider)}</strong> | دندان شماره (FDI): <strong>{selectedClaimForDocReview.toothFdi || 16}</strong>
                     </p>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {selectedClaimForDocReview.greenLaneEligible && (
-                    <span className="px-2.5 py-1 rounded-xl bg-emerald-100 text-emerald-800 text-xs font-bold flex items-center gap-1 border border-emerald-300">
-                      <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                      <span>مسیر سبز هوشمند دنتورا</span>
-                    </span>
-                  )}
-
                   {/* ACTION BUTTON BASED ON ACCOUNTANT ROLE & STATUS */}
-                  {selectedClaimForDocReview.status === 'queued' ? (
+                  {selectedClaimForDocReview.status === 'queued' || selectedClaimForDocReview.referredToAccountant ? (
                     <span className="px-4 py-2 rounded-xl bg-blue-100 dark:bg-blue-950/60 text-[#005581] dark:text-[#72cdf4] font-black text-xs flex items-center gap-1.5 border border-blue-300">
                       <CheckCircle2 className="w-4 h-4 text-[#005581]" />
-                      <span>ارسال‌شده به حسابدار ✓</span>
+                      <span>ارسال به حسابدار ✓</span>
                     </span>
                   ) : selectedClaimForDocReview.status === 'submitted' ? (
                     <span className="px-4 py-2 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 font-black text-xs flex items-center gap-1.5 border border-emerald-300">
@@ -473,6 +655,22 @@ export const InsuranceDocsWorkspace: React.FC<InsuranceDocsWorkspaceProps> = ({
                   )}
                 </div>
               </div>
+
+              {/* Hidden File Inputs for real file attachments */}
+              <input
+                type="file"
+                ref={certFileInputRef}
+                onChange={handleUploadCertificate}
+                accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                className="hidden"
+              />
+              <input
+                type="file"
+                ref={xrayFileInputRef}
+                onChange={handleUploadRadiograph}
+                accept="image/*"
+                className="hidden"
+              />
 
               {/* Clinical Narrative Editor */}
               <div className="bg-white dark:bg-slate-900 rounded-xl p-3.5 border border-sky-200 dark:border-slate-800 space-y-2">
@@ -514,7 +712,7 @@ export const InsuranceDocsWorkspace: React.FC<InsuranceDocsWorkspaceProps> = ({
                             prev ? { ...prev, narrativeText: narrativeEditText } : prev
                           );
                           setEditingNarrativeClaimId(null);
-                          alert('شرح بالینی بیمار با موفقیت به‌روزرسانی شد.');
+                          showToast('شرح بالینی بیمار با موفقیت به‌روزرسانی شد.');
                         }}
                         className="px-2.5 py-1 rounded-lg bg-emerald-600 text-white font-bold text-[11px] hover:bg-emerald-700 transition flex items-center gap-1 cursor-pointer"
                       >
@@ -547,43 +745,211 @@ export const InsuranceDocsWorkspace: React.FC<InsuranceDocsWorkspaceProps> = ({
                 )}
               </div>
 
-              {/* Evidence Checklist Grid */}
+              {/* Evidence Checklist Grid - Connected to Treatment Desk & Real Uploads */}
               <div className="space-y-2">
-                <span className="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                  <CheckSquare className="w-4 h-4 text-emerald-600" />
-                  <span>چک‌لیست مدارک، گرافی‌ها و مستندات الزامی پرونده بیمه:</span>
-                </span>
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                    <CheckSquare className="w-4 h-4 text-emerald-600" />
+                    <span>چک‌لیست مدارک، گرافی‌ها و مستندات الزامی پرونده بیمه:</span>
+                  </span>
+                  <span className="text-[11px] text-[#005581] dark:text-[#72cdf4] font-bold">
+                    متصل به سامانه پرونده بالینی و میز درمان
+                  </span>
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
-                  {[
-                    { id: '1', title: 'گرافی RVG قبل و بعد از درمان', type: 'رادیوگرافی دیجیتال', status: 'تایید و پیوست شد', ok: true },
-                    { id: '2', title: 'تطابق کد FDI دندان با شرح پزشک', type: 'اعتبارسنجی بالینی', status: 'منطبق با درمان', ok: true },
-                    { id: '3', title: 'احراز هویت و استعلام استحقاق درمان', type: 'استعلام آنلاین', status: 'استعلام فعال', ok: true },
-                    { id: '4', title: 'گواهی تاییدیه پیش‌پرداخت بیمه‌گر', type: 'مجوز بیمه', status: isInsuranceContracted ? 'صدور آنلاین WORM' : 'گواهی درمان فاکتور', ok: true },
-                  ].map((ev) => (
-                    <div
-                      key={ev.id}
-                      onClick={() =>
-                        setSelectedDocForDetailModal({
-                          title: ev.title,
-                          type: ev.type,
-                          uploaded: ev.ok,
-                          required: true,
-                          notes: `مستند پیوست‌شده برای بیمار ${selectedClaimForDocReview.patientName} بررسی شد.`,
-                        })
-                      }
-                      className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-[#005581] cursor-pointer transition shadow-2xs space-y-1.5 group"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-slate-400 font-medium">{ev.type}</span>
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  {/* CARD 1: RVG Radiographs from Dentist Workspace */}
+                  <div
+                    onClick={() => {
+                      setSelectedXrayIndex(0);
+                      setSelectedDocForDetailModal({
+                        title: 'گرافی‌های RVG و تصاویر رادیولوژی میز درمان',
+                        type: 'رادیوگرافی دیجیتال میز بالینی',
+                        uploaded: true,
+                        required: true,
+                        modalKind: 'xray',
+                        notes: `تصاویر و گرافی‌های ثبت‌شده در میز کار دندان‌پزشک برای دندان ${selectedClaimForDocReview.toothFdi || 16} بیمار ${selectedClaimForDocReview.patientName}`,
+                      });
+                    }}
+                    className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-[#005581] cursor-pointer transition shadow-2xs space-y-2 group"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
+                        <ImageIcon className="w-3.5 h-3.5 text-[#005581]" />
+                        رادیوگرافی دیجیتال
+                      </span>
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div className="w-10 h-10 rounded-lg overflow-hidden border border-slate-300 dark:border-slate-700 shrink-0 bg-slate-900 flex items-center justify-center">
+                        {activeRadiographs[0]?.imageUrl ? (
+                          <img
+                            src={activeRadiographs[0].imageUrl}
+                            alt="RVG"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          />
+                        ) : (
+                          <ImageIcon className="w-5 h-5 text-slate-400" />
+                        )}
                       </div>
-                      <h4 className="font-bold text-xs text-slate-800 dark:text-slate-200 truncate">{ev.title}</h4>
-                      <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800 text-[10px] text-emerald-700 dark:text-emerald-400 font-bold">
-                        <span>{ev.status}</span>
-                        <Eye className="w-3.5 h-3.5 text-[#005581] group-hover:scale-110 transition-transform" />
+                      <div className="min-w-0">
+                        <h4 className="font-bold text-xs text-slate-800 dark:text-slate-200 truncate">
+                          گرافی RVG قبل و بعد از درمان
+                        </h4>
+                        <span className="text-[10px] text-slate-500 block truncate">
+                          {activeRadiographs.length} گرافی ثبت‌شده بالینی
+                        </span>
                       </div>
                     </div>
-                  ))}
+
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800 text-[10px] text-emerald-700 dark:text-emerald-400 font-bold">
+                      <span>تایید و پیوست شد</span>
+                      <Eye className="w-3.5 h-3.5 text-[#005581] group-hover:scale-110 transition-transform" />
+                    </div>
+                  </div>
+
+                  {/* CARD 2: Clinical Narrative & FDI Match */}
+                  <div
+                    onClick={() => {
+                      setSelectedDocForDetailModal({
+                        title: 'تطابق کد FDI دندان با شرح و تشخیص پزشک',
+                        type: 'اعتبارسنجی بالینی و تعرفه‌ای',
+                        uploaded: true,
+                        required: true,
+                        modalKind: 'fdi_narrative',
+                        notes: `بررسی تطابق شرح پزشک معالج (${selectedClaimForDocReview.dentistName || 'دندان‌پزشک'}) با شماره دندان ${selectedClaimForDocReview.toothFdi || 16}`,
+                      });
+                    }}
+                    className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-[#005581] cursor-pointer transition shadow-2xs space-y-2 group"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
+                        <FileCheck className="w-3.5 h-3.5 text-blue-600" />
+                        اعتبارسنجی بالینی
+                      </span>
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    </div>
+
+                    <div className="space-y-0.5">
+                      <h4 className="font-bold text-xs text-slate-800 dark:text-slate-200 truncate">
+                        تطابق کد FDI با شرح پزشک
+                      </h4>
+                      <p className="text-[10px] text-slate-500 truncate">
+                        دندان {selectedClaimForDocReview.toothFdi || 16} | {selectedClaimForDocReview.treatmentName || 'درمان دندان‌پزشکی'}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800 text-[10px] text-emerald-700 dark:text-emerald-400 font-bold">
+                      <span>منطبق با شرح درمان</span>
+                      <Eye className="w-3.5 h-3.5 text-[#005581] group-hover:scale-110 transition-transform" />
+                    </div>
+                  </div>
+
+                  {/* CARD 3: Online Identity & Eligibility Verification */}
+                  <div
+                    onClick={() => {
+                      setSelectedDocForDetailModal({
+                        title: 'احراز هویت برخط و استعلام استحقاق درمان',
+                        type: 'استعلام آنلاین شاهکار و بیمه‌گر',
+                        uploaded: true,
+                        required: true,
+                        modalKind: 'eligibility',
+                        notes: `استعلام آنلاین وضعیت بیمه تکمیلی برای کد ملی ${selectedClaimForDocReview.nationalId || '0034567890'} با موفقیت تایید شد.`,
+                      });
+                    }}
+                    className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-[#005581] cursor-pointer transition shadow-2xs space-y-2 group"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                        استعلام آنلاین
+                      </span>
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    </div>
+
+                    <div className="space-y-0.5">
+                      <h4 className="font-bold text-xs text-slate-800 dark:text-slate-200 truncate">
+                        احراز هویت و استحقاق درمان
+                      </h4>
+                      <p className="text-[10px] text-slate-500 font-mono truncate">
+                        کد ملی: {selectedClaimForDocReview.nationalId || '0034567890'} (شاهکار فعال)
+                      </p>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800 text-[10px] text-emerald-700 dark:text-emerald-400 font-bold">
+                      <span>استعلام فعال و معتبر</span>
+                      <Eye className="w-3.5 h-3.5 text-[#005581] group-hover:scale-110 transition-transform" />
+                    </div>
+                  </div>
+
+                  {/* CARD 4: Insurance Approval Certificate (Real Upload / View) */}
+                  <div
+                    onClick={() => {
+                      const hasUploaded = !!uploadedCertificates[selectedClaimForDocReview.id];
+                      setSelectedDocForDetailModal({
+                        title: 'گواهی تاییدیه پیش‌پرداخت بیمه‌گر',
+                        type: 'مجوز و تاییدیه بیمه',
+                        uploaded: hasUploaded,
+                        required: true,
+                        modalKind: 'pre_auth_cert',
+                        notes: hasUploaded
+                          ? `فایل تاییدیه ${uploadedCertificates[selectedClaimForDocReview.id].fileName} ضمیمه پرونده است.`
+                          : 'امکان بارگذاری و آپلود مستقیم فایل گواهی تاییدیه بیمه',
+                      });
+                    }}
+                    className={`p-3 rounded-xl border transition shadow-2xs space-y-2 group cursor-pointer ${
+                      uploadedCertificates[selectedClaimForDocReview.id]
+                        ? 'bg-white dark:bg-slate-900 border-emerald-300 dark:border-emerald-800 hover:border-emerald-500'
+                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-[#005581]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
+                        <Paperclip className="w-3.5 h-3.5 text-amber-600" />
+                        مجوز بیمه
+                      </span>
+                      {uploadedCertificates[selectedClaimForDocReview.id] ? (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      ) : (
+                        <span className="text-[10px] font-bold text-amber-600 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded">
+                          نیازمند آپلود
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="space-y-0.5">
+                      <h4 className="font-bold text-xs text-slate-800 dark:text-slate-200 truncate">
+                        گواهی تاییدیه پیش‌پرداخت
+                      </h4>
+                      <p className="text-[10px] text-slate-500 truncate">
+                        {uploadedCertificates[selectedClaimForDocReview.id]
+                          ? uploadedCertificates[selectedClaimForDocReview.id].fileName
+                          : isInsuranceContracted
+                          ? 'صدور آنلاین تاییدیه / آپلود فایل'
+                          : 'گواهی درمان فاکتور'}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800 text-[10px] font-bold">
+                      {uploadedCertificates[selectedClaimForDocReview.id] ? (
+                        <span className="text-emerald-700 dark:text-emerald-400">تاییدیه پیوست شد ✓</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            certFileInputRef.current?.click();
+                          }}
+                          className="text-[#005581] hover:underline flex items-center gap-1"
+                        >
+                          <Upload className="w-3 h-3" />
+                          <span>آپلود تاییدیه</span>
+                        </button>
+                      )}
+                      <Eye className="w-3.5 h-3.5 text-[#005581] group-hover:scale-110 transition-transform" />
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -659,30 +1025,30 @@ export const InsuranceDocsWorkspace: React.FC<InsuranceDocsWorkspaceProps> = ({
                           </span>
                         </td>
                         <td className="p-3">
-                          {claim.status === 'draft' || claim.status === 'pending_reception' ? (
-                            <span className="px-2.5 py-1 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300 font-bold text-[10px] inline-flex items-center gap-1 border border-amber-300 dark:border-amber-800">
-                              <Clock className="w-3 h-3 text-amber-600" />
-                              در انتظار بررسی و ارسال
-                            </span>
-                          ) : claim.status === 'queued' ? (
+                          {claim.status === 'queued' || claim.referredToAccountant ? (
                             <span className="px-2.5 py-1 rounded-full bg-blue-100 dark:bg-blue-950/60 text-[#005581] dark:text-[#72cdf4] font-bold text-[10px] inline-flex items-center gap-1 border border-blue-300 dark:border-blue-700">
                               <CheckCircle2 className="w-3 h-3 text-[#005581]" />
-                              ارسال‌شده به حسابداری
+                              ارسال‌شده به حسابدار
                             </span>
                           ) : claim.status === 'submitted' ? (
                             <span className="px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 font-bold text-[10px] inline-flex items-center gap-1 border border-emerald-300 dark:border-emerald-700">
                               <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                               ارسال‌شده به سازمان بیمه‌گر
                             </span>
-                          ) : claim.status === 'settled' || claim.status === 'paid' ? (
+                          ) : claim.status === 'settled' || claim.status === 'paid' || claim.status === 'approved' || claim.status === 'partially_approved' || claim.status === 'approved_by_insurer' || claim.status === 'accepted' ? (
                             <span className="px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-200 font-bold text-[10px] inline-flex items-center gap-1 border border-emerald-300">
                               <Check className="w-3 h-3 text-emerald-600" />
-                              تسویه‌شده
+                              {claim.status === 'partially_approved' ? 'تایید جزئی (تسویه‌شده)' : 'تسویه‌شده'}
+                            </span>
+                          ) : claim.status === 'rejected' || claim.status === 'rejected_by_insurer' || claim.status === 'partially_rejected' || claim.status === 'appealed' ? (
+                            <span className="px-2.5 py-1 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-900 dark:text-rose-200 font-bold text-[10px] inline-flex items-center gap-1 border border-rose-300">
+                              <AlertCircle className="w-3 h-3 text-rose-600" />
+                              {claim.status === 'partially_rejected' ? 'رد جزئی (کسورات)' : claim.status === 'appealed' ? 'اعتراض ثبت‌شده' : 'برگشت‌خورده / رد'}
                             </span>
                           ) : (
-                            <span className="px-2.5 py-1 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-900 dark:text-rose-300 font-bold text-[10px] inline-flex items-center gap-1 border border-rose-300">
-                              <AlertTriangle className="w-3 h-3 text-rose-600" />
-                              دارای کسورات / اعتراض
+                            <span className="px-2.5 py-1 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300 font-bold text-[10px] inline-flex items-center gap-1 border border-amber-300 dark:border-amber-800">
+                              <Clock className="w-3 h-3 text-amber-600" />
+                              در حال بررسی
                             </span>
                           )}
                         </td>
@@ -701,27 +1067,29 @@ export const InsuranceDocsWorkspace: React.FC<InsuranceDocsWorkspaceProps> = ({
                             </button>
 
                             {/* ACTION BUTTON BASED ON ACCOUNTANT ROLE & STATUS */}
-                            {claim.status === 'queued' ? (
-                              <span className="px-2 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-[#005581] dark:text-[#72cdf4] font-bold text-[10px] inline-flex items-center gap-1 border border-blue-200 dark:border-blue-800">
-                                <Check className="w-3 h-3 text-[#005581]" />
-                                ارسال‌شده به حسابدار
+                            {claim.status === 'queued' || claim.referredToAccountant ? (
+                              <span className="px-2.5 py-1 rounded-lg bg-blue-100 dark:bg-blue-950/60 text-[#005581] dark:text-[#72cdf4] font-bold text-[11px] inline-flex items-center gap-1 border border-blue-300 dark:border-blue-700 shadow-2xs">
+                                <Check className="w-3.5 h-3.5 text-[#005581]" />
+                                <span>ارسال به حسابدار</span>
                               </span>
                             ) : claim.status === 'submitted' ? (
                               <span className="px-2 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 font-bold text-[10px] inline-flex items-center gap-1 border border-emerald-200 dark:border-emerald-800">
                                 <Check className="w-3 h-3 text-emerald-600" />
-                                ارسال‌شده به بیمه
+                                <span>ارسال‌شده به بیمه</span>
                               </span>
                             ) : hasAccountantRole ? (
                               <button
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
+                                  setSelectedClaimForDocReview(claim);
                                   handleReferClaimToAccountant(claim.id);
                                 }}
-                                className="px-2.5 py-1 rounded-lg bg-sky-100 hover:bg-sky-200 text-[#005581] font-bold text-[11px] cursor-pointer transition flex items-center gap-1"
+                                className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/50 text-amber-900 dark:text-amber-200 font-bold text-[11px] cursor-pointer transition flex items-center gap-1 border border-amber-300 dark:border-amber-700 shadow-2xs"
+                                title="کلیک جهت بررسی و ارسال به کارتابل حسابدار"
                               >
-                                <Check className="w-3 h-3 text-[#005581]" />
-                                <span>ارسال به حسابدار</span>
+                                <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                                <span>در حال بررسی</span>
                               </button>
                             ) : (
                               <button
@@ -761,7 +1129,7 @@ export const InsuranceDocsWorkspace: React.FC<InsuranceDocsWorkspaceProps> = ({
                 <span>امور مالی و کسورات بیمه</span>
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                تفکیک چندسهمی، بورد کانبان ادعاها، مغایرت کسورات و ثبت اعتراض رسمی
+                بورد کانبان ادعاها، مغایرت کسورات و ثبت اعتراض رسمی
               </p>
             </div>
 
@@ -773,19 +1141,8 @@ export const InsuranceDocsWorkspace: React.FC<InsuranceDocsWorkspaceProps> = ({
             )}
           </div>
 
-          {/* 4 Sub-Tabs Switcher */}
+          {/* Sub-Tabs Switcher */}
           <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
-            <button
-              onClick={() => setActiveFinancialSubTab('multi_payer')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
-                activeFinancialSubTab === 'multi_payer'
-                  ? 'bg-[#005581] text-white shadow-2xs'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'
-              }`}
-            >
-              ۱. فاکتورهای چندسهمی
-            </button>
-
             <button
               onClick={() => setActiveFinancialSubTab('kanban')}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
@@ -794,7 +1151,7 @@ export const InsuranceDocsWorkspace: React.FC<InsuranceDocsWorkspaceProps> = ({
                   : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'
               }`}
             >
-              ۲. کانبان پیگیری ادعاها
+              ۱. کانبان پیگیری ادعاها
             </button>
 
             <button
@@ -805,7 +1162,7 @@ export const InsuranceDocsWorkspace: React.FC<InsuranceDocsWorkspaceProps> = ({
                   : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'
               }`}
             >
-              ۳. مغایرت کسورات بیمه
+              ۲. مغایرت کسورات بیمه
             </button>
 
             <button
@@ -816,85 +1173,11 @@ export const InsuranceDocsWorkspace: React.FC<InsuranceDocsWorkspaceProps> = ({
                   : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'
               }`}
             >
-              ۴. ثبت اعتراض رسمی (همراه با تصویر و آیین‌نامه)
+              ۳. ثبت اعتراض رسمی (همراه با تصویر و آیین‌نامه)
             </button>
           </div>
 
-          {/* SUB-TAB 1: MULTI-PAYER WATERFALL INVOICE CALCULATOR */}
-          {activeFinancialSubTab === 'multi_payer' && (
-            <div className="space-y-4">
-              <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100">
-                محاسبه‌گر و تفکیک سه ضلعی فاکتور (بیمه پایه ← بیمه تکمیلی ← پرداختی بیمار)
-              </h3>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-4 bg-slate-50 dark:bg-slate-800/40 p-4 rounded-xl border border-slate-200 dark:border-slate-700 text-xs">
-                  <div>
-                    <label className="block font-bold text-slate-800 dark:text-slate-200 mb-1">هزینه کل درمان (تومان):</label>
-                    <input
-                      type="number"
-                      value={waterfallCost}
-                      onChange={(e) => setWaterfallCost(Number(e.target.value))}
-                      className="w-full px-3 py-2 border rounded-xl font-mono text-sm font-bold bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-slate-800 dark:text-slate-200 mb-1">
-                      پوشش بیمه پایه: {baseCoveragePercent}٪
-                    </label>
-                    <input
-                      type="range"
-                      min="0"
-                      max="50"
-                      value={baseCoveragePercent}
-                      onChange={(e) => setBaseCoveragePercent(Number(e.target.value))}
-                      className="w-full"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-slate-800 dark:text-slate-200 mb-1">
-                      پوشش بیمه تکمیلی: {supplCoveragePercent}٪
-                    </label>
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={supplCoveragePercent}
-                      onChange={(e) => setSupplCoveragePercent(Number(e.target.value))}
-                      className="w-full"
-                    />
-                  </div>
-                </div>
-
-                {/* Result Waterfall Display */}
-                <div className="p-4 rounded-xl bg-slate-900 text-white font-mono text-xs space-y-2.5">
-                  <h4 className="font-bold text-cyan-400 border-b border-slate-800 pb-2">
-                    تفکیک مالی سه ضلعی:
-                  </h4>
-                  <div className="flex justify-between border-b border-slate-800 py-1">
-                    <span>۱. تعرفه درمانی:</span>
-                    <span className="font-bold">{waterfallCost.toLocaleString()} تومان</span>
-                  </div>
-                  <div className="flex justify-between border-b border-slate-800 py-1 text-slate-300">
-                    <span>۲. سهم بیمه پایه ({baseCoveragePercent}٪):</span>
-                    <span className="text-emerald-400 font-bold">- {calculatedBaseShare.toLocaleString()} تومان</span>
-                  </div>
-                  <div className="flex justify-between border-b border-slate-800 py-1 text-slate-300">
-                    <span>۳. سهم بیمه تکمیلی ({supplCoveragePercent}٪):</span>
-                    <span className="text-cyan-400 font-bold">- {calculatedSupplShare.toLocaleString()} تومان</span>
-                  </div>
-                  <div className="flex justify-between bg-emerald-950/60 p-3 rounded-xl border border-emerald-500/40 mt-2">
-                    <span className="font-bold text-emerald-300 font-sans">سهم نقدی بیمار:</span>
-                    <span className="font-black text-emerald-400 text-base">{calculatedPatientShare.toLocaleString()} تومان</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* SUB-TAB 2: CLAIMS KANBAN BOARD */}
+          {/* SUB-TAB 1: CLAIMS KANBAN BOARD */}
           {activeFinancialSubTab === 'kanban' && (
             <div className="space-y-4">
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
@@ -917,9 +1200,9 @@ export const InsuranceDocsWorkspace: React.FC<InsuranceDocsWorkspaceProps> = ({
                 ].map((col) => {
                   const colClaims = claims.filter((c) => {
                     if (col.key === 'draft') return c.status === 'draft' || c.status === 'queued' || c.status === 'pending_reception';
-                    if (col.key === 'submitted') return c.status === 'submitted' || c.status === 'approved_by_insurer' || c.status === 'express_review' || c.status === 'standard_review' || c.status === 'deep_review' || c.status === 'needs_fix' || c.status === 'needs_evidence';
-                    if (col.key === 'rejected') return c.status === 'rejected' || c.status === 'rejected_by_insurer' || c.status === 'partially_approved' || c.status === 'appealed';
-                    if (col.key === 'settled') return c.status === 'settled' || c.status === 'paid' || c.status === 'accepted' || c.status === 'approved';
+                    if (col.key === 'submitted') return c.status === 'submitted' || c.status === 'express_review' || c.status === 'standard_review' || c.status === 'deep_review' || c.status === 'needs_fix' || c.status === 'needs_evidence';
+                    if (col.key === 'rejected') return c.status === 'rejected' || c.status === 'rejected_by_insurer' || c.status === 'partially_rejected' || c.status === 'appealed';
+                    if (col.key === 'settled') return c.status === 'settled' || c.status === 'paid' || c.status === 'accepted' || c.status === 'approved' || c.status === 'partially_approved' || c.status === 'approved_by_insurer';
                     return false;
                   });
 
@@ -1247,7 +1530,7 @@ export const InsuranceDocsWorkspace: React.FC<InsuranceDocsWorkspaceProps> = ({
                     بررسی ادعای ثبت‌شده منشی و تطبیق خودکار مالی
                   </h3>
                   <p className="text-xs text-sky-200 mt-0.5 font-mono">
-                    کد ادعا: {activeKanbanModalClaim.claimNumber || 'CLM-2026-9904'} · سازمان بیمه‌گر: {activeKanbanModalClaim.insuranceCompany || activeKanbanModalClaim.insuranceProvider || 'بیمه دانا (طرح نقره‌ای)'}
+                    کد ادعا: {activeKanbanModalClaim.claimNumber || 'CLM-2026-9904'} · سازمان بیمه‌گر: {activeKanbanModalClaim.insuranceCompany || activeKanbanModalClaim.insuranceProvider || 'بیمه دانا (طرح استاندارد)'}
                   </p>
                 </div>
               </div>
@@ -1286,7 +1569,7 @@ export const InsuranceDocsWorkspace: React.FC<InsuranceDocsWorkspaceProps> = ({
                     </div>
                     <div className="flex justify-between">
                       <span className="text-slate-500">سازمان بیمه‌گر:</span>
-                      <span className="font-bold text-[#005581] dark:text-sky-300">{activeKanbanModalClaim.insuranceCompany || activeKanbanModalClaim.insuranceProvider || 'بیمه دانا (طرح نقره‌ای)'}</span>
+                      <span className="font-bold text-[#005581] dark:text-sky-300">{activeKanbanModalClaim.insuranceCompany || activeKanbanModalClaim.insuranceProvider || 'بیمه دانا (طرح استاندارد)'}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-slate-500">احراز هویت پذیرش:</span>
@@ -1904,7 +2187,7 @@ export const InsuranceDocsWorkspace: React.FC<InsuranceDocsWorkspaceProps> = ({
                     <option value="بیمه سامان (طرح طلایی)">بیمه سامان (طرح طلایی)</option>
                     <option value="بیمه تامین اجتماعی">بیمه تامین اجتماعی</option>
                     <option value="بیمه ایران">بیمه ایران</option>
-                    <option value="بیمه دانا (طرح نقره‌ای)">بیمه دانا (طرح نقره‌ای)</option>
+                    <option value="بیمه دانا (طرح استاندارد)">بیمه دانا (طرح استاندارد)</option>
                     <option value="بیمه نیروهای مسلح">بیمه نیروهای مسلح</option>
                   </select>
                 </div>
@@ -1943,48 +2226,269 @@ export const InsuranceDocsWorkspace: React.FC<InsuranceDocsWorkspaceProps> = ({
         </div>
       )}
 
-      {/* Modal: Document / Evidence Details */}
-      {selectedDocForDetailModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full border border-slate-200 dark:border-slate-800 p-5 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
-              <h3 className="font-extrabold text-slate-900 dark:text-slate-100 text-sm flex items-center gap-2">
-                <Eye className="w-4 h-4 text-[#005581]" />
-                <span>پیش‌نمایش سند بالینی</span>
-              </h3>
+      {/* Modal: Document / Evidence Details & Real X-Ray / Pre-Auth Viewer */}
+      {selectedDocForDetailModal && selectedClaimForDocReview && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-2xl w-full border border-slate-200 dark:border-slate-800 p-5 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-sky-100 dark:bg-sky-950 text-[#005581] flex items-center justify-center font-bold">
+                  {selectedDocForDetailModal.modalKind === 'xray' ? (
+                    <ImageIcon className="w-4 h-4" />
+                  ) : selectedDocForDetailModal.modalKind === 'pre_auth_cert' ? (
+                    <Paperclip className="w-4 h-4" />
+                  ) : selectedDocForDetailModal.modalKind === 'fdi_narrative' ? (
+                    <FileCheck className="w-4 h-4" />
+                  ) : (
+                    <ShieldCheck className="w-4 h-4" />
+                  )}
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-slate-900 dark:text-slate-100 text-sm">
+                    {selectedDocForDetailModal.title}
+                  </h3>
+                  <span className="text-[11px] text-slate-500">
+                    پرونده: {selectedClaimForDocReview.patientName} | کد ادعا: {selectedClaimForDocReview.claimNumber || selectedClaimForDocReview.id}
+                  </span>
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={() => setSelectedDocForDetailModal(null)}
-                className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 cursor-pointer"
+                className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 cursor-pointer transition"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-3 text-xs">
-              <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl space-y-1">
-                <span className="font-bold text-slate-800 dark:text-slate-200 block">
-                  عنوان سند: {selectedDocForDetailModal.title}
-                </span>
-                <span className="text-[11px] text-slate-500 block">
-                  نوع پیوست: {selectedDocForDetailModal.type}
-                </span>
+            {/* Modal Body Based on modalKind */}
+            {selectedDocForDetailModal.modalKind === 'xray' ? (
+              /* REAL RADIOGRAPH VIEWER FROM TREATMENT DESK */
+              <div className="space-y-4">
+                <div className="p-3 bg-sky-50/70 dark:bg-sky-950/30 rounded-xl border border-sky-200 dark:border-sky-800/60 flex items-center justify-between text-xs">
+                  <div>
+                    <span className="font-bold text-[#005581] dark:text-sky-300 block">
+                      منبع تصویر: {activeRadiographs[selectedXrayIndex]?.source || 'ثبت‌شده در میز درمان دندان‌پزشک'}
+                    </span>
+                    <span className="text-[11px] text-slate-600 dark:text-slate-400">
+                      پزشک معالج: {activeRadiographs[selectedXrayIndex]?.doctorName || selectedClaimForDocReview.dentistName || 'دکتر معالج'} | تاریخ ثبت: {activeRadiographs[selectedXrayIndex]?.date || selectedClaimForDocReview.dateOfService || '۱۴۰۵/۰۵/۲۰'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => xrayFileInputRef.current?.click()}
+                    className="px-3 py-1.5 rounded-lg bg-[#005581] hover:bg-[#004266] text-white font-bold text-[11px] transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  >
+                    <Upload className="w-3.5 h-3.5 text-[#ffd200]" />
+                    <span>آپلود گرافی جدید</span>
+                  </button>
+                </div>
+
+                {/* Main High-Res Image Display */}
+                <div className="relative rounded-2xl overflow-hidden bg-black border border-slate-800 aspect-4/3 flex items-center justify-center group">
+                  <img
+                    src={activeRadiographs[selectedXrayIndex]?.imageUrl || 'https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?auto=format&fit=crop&w=1400&q=85'}
+                    alt="Radiograph Preview"
+                    className="w-full h-full object-contain max-h-[380px]"
+                  />
+                  <div className="absolute top-3 right-3 bg-black/70 backdrop-blur-xs text-white px-2.5 py-1 rounded-lg text-[10px] font-mono border border-white/20">
+                    FDI دندان: {activeRadiographs[selectedXrayIndex]?.toothFdi || selectedClaimForDocReview.toothFdi || 16} | نوع: {activeRadiographs[selectedXrayIndex]?.type?.toUpperCase() || 'RVG'}
+                  </div>
+                  <div className="absolute bottom-3 left-3 right-3 bg-black/80 backdrop-blur-xs text-white p-2.5 rounded-xl text-xs border border-white/10 space-y-1">
+                    <p className="font-bold text-slate-200">
+                      {activeRadiographs[selectedXrayIndex]?.title || 'گرافی پری‌آپیکال دیجیتال'}
+                    </p>
+                    <p className="text-[11px] text-slate-400">
+                      یادداشت پزشک: {activeRadiographs[selectedXrayIndex]?.doctorNotes || 'تایید وضعیت انطباق کانال ریشه و سلامت استخوان آلوئول'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Multiple Image Thumbnails if available */}
+                {activeRadiographs.length > 1 && (
+                  <div className="space-y-1.5">
+                    <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                      سایر گرافی‌های متصل به پرونده این بیمار:
+                    </span>
+                    <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                      {activeRadiographs.map((img, idx) => (
+                        <div
+                          key={img.id || idx}
+                          onClick={() => setSelectedXrayIndex(idx)}
+                          className={`w-20 h-16 rounded-xl overflow-hidden border-2 cursor-pointer transition shrink-0 bg-black ${
+                            selectedXrayIndex === idx
+                              ? 'border-[#005581] shadow-md ring-2 ring-sky-300'
+                              : 'border-slate-300 dark:border-slate-700 opacity-70 hover:opacity-100'
+                          }`}
+                        >
+                          <img src={img.imageUrl} alt={img.title} className="w-full h-full object-cover" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 rounded-xl border border-emerald-200 dark:border-emerald-800 text-[11px] text-emerald-800 dark:text-emerald-300 font-bold flex items-center gap-2">
+                  <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>تصویر رادیوگرافی با استانداردهای DICOM/RVG و مهر الکترونیک دندان‌پزشک تایید شده است.</span>
+                </div>
               </div>
+            ) : selectedDocForDetailModal.modalKind === 'pre_auth_cert' ? (
+              /* REAL PRE-AUTH CERTIFICATE VIEWER / UPLOADER */
+              <div className="space-y-4">
+                {uploadedCertificates[selectedClaimForDocReview.id] ? (
+                  /* Uploaded Certificate Details */
+                  <div className="space-y-3">
+                    <div className="p-4 bg-emerald-50/80 dark:bg-emerald-950/30 rounded-2xl border border-emerald-200 dark:border-emerald-800 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                          <span className="font-black text-xs text-emerald-900 dark:text-emerald-200">
+                            گواهی تاییدیه بیمه‌گر ضمیمه شده است
+                          </span>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-md bg-emerald-200 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 font-mono text-[11px] font-bold">
+                          {uploadedCertificates[selectedClaimForDocReview.id].preAuthCode}
+                        </span>
+                      </div>
 
-              <div className="p-4 bg-slate-900 text-white rounded-xl text-center font-mono text-xs">
-                [تصویر گرافی دیجیتال RVG پری‌اپیکال با کد رمزنگاری SHA-256 و تاییدیه بالینی WORM]
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="bg-white/80 dark:bg-slate-900/60 p-2.5 rounded-xl border border-emerald-100 dark:border-slate-800">
+                          <span className="text-[10px] text-slate-500 block">نام فایل پیوست:</span>
+                          <span className="font-bold text-slate-800 dark:text-slate-200 truncate block">
+                            {uploadedCertificates[selectedClaimForDocReview.id].fileName}
+                          </span>
+                        </div>
+                        <div className="bg-white/80 dark:bg-slate-900/60 p-2.5 rounded-xl border border-emerald-100 dark:border-slate-800">
+                          <span className="text-[10px] text-slate-500 block">حجم و زمان آپلود:</span>
+                          <span className="font-bold text-slate-800 dark:text-slate-200 block">
+                            {uploadedCertificates[selectedClaimForDocReview.id].fileSize} ({uploadedCertificates[selectedClaimForDocReview.id].uploadTime})
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl overflow-hidden border border-emerald-200 dark:border-slate-700 bg-slate-950 p-2 flex items-center justify-center max-h-56">
+                        <img
+                          src={uploadedCertificates[selectedClaimForDocReview.id].fileUrl}
+                          alt="Certificate preview"
+                          className="max-h-52 object-contain rounded-lg shadow"
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1">
+                        <button
+                          type="button"
+                          onClick={() => certFileInputRef.current?.click()}
+                          className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs transition cursor-pointer flex items-center gap-1"
+                        >
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>تغییر فایل تاییدیه</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setUploadedCertificates((prev) => {
+                              const copy = { ...prev };
+                              delete copy[selectedClaimForDocReview.id];
+                              return copy;
+                            });
+                            showToast('پیوست گواهی تاییدیه بیمه حذف گردید.');
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs transition cursor-pointer flex items-center gap-1"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>حذف پیوست</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  /* Upload Dropzone Area */
+                  <div className="space-y-3">
+                    <div
+                      onClick={() => certFileInputRef.current?.click()}
+                      className="p-8 rounded-2xl border-2 border-dashed border-sky-300 dark:border-sky-800 hover:border-[#005581] bg-sky-50/40 dark:bg-sky-950/20 text-center space-y-3 cursor-pointer transition group"
+                    >
+                      <div className="w-12 h-12 rounded-2xl bg-[#005581] text-white flex items-center justify-center mx-auto shadow-md group-hover:scale-105 transition-transform">
+                        <Upload className="w-6 h-6 text-[#ffd200]" />
+                      </div>
+                      <div>
+                        <h4 className="font-extrabold text-sm text-slate-800 dark:text-slate-200">
+                          برای آپلود گواهی تاییدیه پیش‌پرداخت کلیک کنید
+                        </h4>
+                        <p className="text-xs text-slate-500 mt-1">
+                          پشتیبانی از فرمت‌های تصویری و PDF (PNG, JPG, PDF حداکثر ۱۰ مگابایت)
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        className="px-4 py-2 rounded-xl bg-[#005581] text-white font-bold text-xs shadow-xs"
+                      >
+                        انتخاب فایل از رایانه
+                      </button>
+                    </div>
+
+                    <div className="p-3 bg-amber-50 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-800 text-[11px] text-amber-800 dark:text-amber-300 font-medium">
+                      در قراردادهای فعال با بیمه‌گر، در صورت صدور معرفی‌نامه یا مجوز درمان، بارگذاری فایل تاییدیه موجب تسریع رسیدگی و کاهش کسورات احتمالی می‌گردد.
+                    </div>
+                  </div>
+                )}
               </div>
+            ) : selectedDocForDetailModal.modalKind === 'fdi_narrative' ? (
+              /* FDI & CLINICAL VALIDATION */
+              <div className="space-y-3 text-xs">
+                <div className="p-3.5 bg-slate-50 dark:bg-slate-800 rounded-xl space-y-2 border border-slate-200 dark:border-slate-700">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-800 dark:text-slate-200">
+                      دندان هدف: شماره FDI {selectedClaimForDocReview.toothFdi || 16}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-800 font-bold text-[10px]">
+                      تطابق ۱۰۰٪
+                    </span>
+                  </div>
+                  <p className="text-slate-600 dark:text-slate-400 leading-relaxed text-[11px]">
+                    {selectedClaimForDocReview.narrativeText ||
+                      `شرح بالینی ثبت‌شده توسط ${selectedClaimForDocReview.dentistName || 'دندان‌پزشک معالج'}: معاینه و انجام درمان ${selectedClaimForDocReview.treatmentName || 'عصب‌کشی و پرکردن'} با رعایت تعرفه استاندارد.`}
+                  </p>
+                </div>
+                <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 rounded-xl text-[11px] text-emerald-800 dark:text-emerald-300 font-bold flex items-center gap-2">
+                  <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>کد خدمات درمانی، شماره دندان و شرح بالینی با قوانین سامانه‌های بیمه‌گر منطبق است.</span>
+                </div>
+              </div>
+            ) : (
+              /* ELIGIBILITY & SHAHKAR */
+              <div className="space-y-3 text-xs">
+                <div className="p-3.5 bg-slate-50 dark:bg-slate-800 rounded-xl space-y-2 border border-slate-200 dark:border-slate-700">
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <span className="text-[10px] text-slate-400 block">نام بیمار و کد ملی:</span>
+                      <span className="font-bold text-slate-800 dark:text-slate-200 block">
+                        {selectedClaimForDocReview.patientName} ({selectedClaimForDocReview.nationalId || '0034567890'})
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block">سازمان بیمه‌گر:</span>
+                      <span className="font-bold text-[#005581] block">
+                        {cleanInsuranceName(selectedClaimForDocReview.insuranceCompany || selectedClaimForDocReview.insuranceProvider)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 rounded-xl text-[11px] text-emerald-800 dark:text-emerald-300 font-bold flex items-center gap-2">
+                  <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>استعلام برخط استحقاق درمان و تطابق شماره همراه با کد ملی (شاهکار) معتبر است.</span>
+                </div>
+              </div>
+            )}
 
-              <p className="text-[11px] text-emerald-600 font-bold flex items-center gap-1">
-                <Check className="w-4 h-4" /> مدرک با موفقیت احراز اصالت شد و در پرونده بیمه بیمار ثبت گردید.
-              </p>
-            </div>
-
-            <div className="flex justify-end pt-2">
+            {/* Modal Footer */}
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
               <button
                 type="button"
                 onClick={() => setSelectedDocForDetailModal(null)}
-                className="px-4 py-2 rounded-xl bg-[#005581] text-white font-bold text-xs"
+                className="px-4 py-2 rounded-xl bg-[#005581] hover:bg-[#004266] text-white font-bold text-xs transition cursor-pointer"
               >
                 بستن پنجره
               </button>

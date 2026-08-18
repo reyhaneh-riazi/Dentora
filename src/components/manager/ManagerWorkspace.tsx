@@ -194,9 +194,9 @@ export const ManagerWorkspace: React.FC<ManagerWorkspaceProps> = ({
 
   // Mock Breakdown for Insurance Total Receivables Modal
   const insuranceBreakdownList = [
-    { id: 'ins-1', company: 'بیمه درمان تکمیلی دانا', count: 12, amount: 112000000, avgDays: '۲ روز (۴۸ ساعت)', status: 'مسیر سبز - واریز مستقیم' },
+    { id: 'ins-1', company: 'بیمه درمان تکمیلی دانا', count: 12, amount: 112000000, avgDays: '۲ روز (۴۸ ساعت)', status: 'رسیدگی سریع - واریز مستقیم' },
     { id: 'ins-2', company: 'بیمه ایران', count: 8, amount: 86500000, avgDays: '۲.۵ روز (۵۵ ساعت)', status: 'در حال تسویه' },
-    { id: 'ins-3', company: 'بیمه البرز', count: 5, amount: 50000000, avgDays: '۱.۵ روز (۳۶ ساعت)', status: 'مسیر سبز - واریز مستقیم' },
+    { id: 'ins-3', company: 'بیمه البرز', count: 5, amount: 50000000, avgDays: '۱.۵ روز (۳۶ ساعت)', status: 'رسیدگی سریع - واریز مستقیم' },
   ];
 
   // Mock Returned Insurance Claims Modal
@@ -227,7 +227,7 @@ export const ManagerWorkspace: React.FC<ManagerWorkspaceProps> = ({
       ['۲', 'ورودی نقد صندوق', 'نقدینگی', '۱۲۴۰۰۰۰۰۰', '۱۴۰۵/۰۵/۱۳', 'منطبق'],
       ['۳', 'پایانه ۱ کارتخوان POS (ناپ)', 'بانک ملی', '۲۰۴۰۰۰۰۰۰', '۱۴۰۵/۰۵/۱۳', 'تسویه‌شده'],
       ['۴', 'پایانه ۲ کارتخوان POS (رویا)', 'بانک سامان', '۱۳۰۰۰۰۰۰۰', '۱۴۰۵/۰۵/۱۳', 'تسویه‌شده'],
-      ['۵', 'مطالبات بیمه‌ای کلینیک', 'بیمه‌گر تکمیلی', '۲۴۸۵۰۰۰۰۰۰', '۱۴۰۵/۰۵/۱۳', 'در مسیر سبز ۴۹:۳۰ ساعت'],
+      ['۵', 'مطالبات بیمه‌ای کلینیک', 'بیمه‌گر تکمیلی', '۲۴۸۵۰۰۰۰۰۰', '۱۴۰۵/۰۵/۱۳', 'در رسیدگی سریع ۴۹:۳۰ ساعت'],
     ];
 
     const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');

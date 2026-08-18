@@ -60,6 +60,9 @@ import {
   Info,
   Crown,
   X,
+  Loader2,
+  ShieldCheck,
+  CheckCheck,
 } from 'lucide-react';
 
 interface DentistWorkspaceProps {
@@ -79,6 +82,7 @@ interface DentistWorkspaceProps {
     prescription: string[];
     clinicalNotes: string;
     toothFdi?: number;
+    teethFdiList?: number[];
     nextVisitDate?: string;
   }) => void;
   onAddDoctorReminder?: (reminder: {
@@ -277,8 +281,10 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
     setProposedPrescription(profile.prescription);
     setClinicalNotes(profile.clinicalNotes);
     setInsuranceNarrative(profile.insuranceNarrative);
-    setNextVisitDate(profile.nextVisitSuggestion);
+    setNextVisitDate('');
     setTreatmentCostTotal(profile.estimatedCost);
+    setEPrescriptionSent(false);
+    setIsSendingEPrescription(false);
     setCopilotChatHistory([
       {
         id: `c-1-${Date.now()}`,
@@ -320,10 +326,16 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
   ]);
   const [isLoadingCopilot, setIsLoadingCopilot] = useState(false);
 
-  // Step 4: Clinical Note & Next Visit Date
+  // Step 4 & 5: Clinical Note & Next Visit Date (Optional & Empty by default)
   const [clinicalNotes, setClinicalNotes] = useState(initialProfile.clinicalNotes);
-  const [nextVisitDate, setNextVisitDate] = useState(initialProfile.nextVisitSuggestion);
+  const [nextVisitDate, setNextVisitDate] = useState('');
   const [followupSentToReception, setFollowupSentToReception] = useState(false);
+
+  // Step 5: Electronic Prescription System Transmission State
+  const [isSendingEPrescription, setIsSendingEPrescription] = useState(false);
+  const [ePrescriptionSent, setEPrescriptionSent] = useState(false);
+  const [ePrescriptionTrackingCode, setEPrescriptionTrackingCode] = useState('IR-170075');
+  const [ePrescriptionSentTime, setEPrescriptionSentTime] = useState('');
 
   // Step 5: Contracted Dentist Financial Breakdown
   const [dentistCommissionRate, setDentistCommissionRate] = useState(70); // 70% Dentist, 30% Center
@@ -752,10 +764,21 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
     }, 700);
   };
 
-  // Step 4: Save Next Visit Date & Notify Receptionist
+  // Step 5: Send Electronic Prescription to Insurer System
+  const handleSendEPrescription = () => {
+    setIsSendingEPrescription(true);
+    setTimeout(() => {
+      setIsSendingEPrescription(false);
+      setEPrescriptionSent(true);
+      setEPrescriptionTrackingCode('IR-170075');
+      setEPrescriptionSentTime(new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }));
+    }, 1200);
+  };
+
+  // Step 5: Save Next Visit Date & Notify Receptionist (Optional)
   const handleSaveNextVisit = () => {
-    if (!nextVisitDate) {
-      alert('لطفاً تاریخ پیشنهادی جلسه بعدی را مشخص نمایید.');
+    if (!nextVisitDate.trim()) {
+      alert('فیلد تاریخ مراجعه بعدی خالی است. این بخش اختیاری است و در صورت تمایل می‌توانید تاریخی مانند «۲ هفته آینده» وارد کنید.');
       return;
     }
     setFollowupSentToReception(true);
@@ -768,7 +791,7 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
         suggestedDate: nextVisitDate,
       });
     }
-    alert(`درخواست نوبت بعدی برای تاریخ ${nextVisitDate} با موفقیت در بخش یادآوری‌های منشی ثبت شد.`);
+    alert(`پیام پیگیری زمان مراجعه بعدی (${nextVisitDate}) با موفقیت برای منشی ارسال شد.`);
   };
 
   // Step 7: Final Submit Record to Receptionist Panel
@@ -779,6 +802,19 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
       const baseShare = Math.round(treatmentCostTotal * 0.3); // 30% base insurance share
       const supplShare = (insuranceModuleActive && activePatient.supplementaryInsurance) ? Math.round(treatmentCostTotal * 0.4) : 0; // 40% suppl share
       
+      // Extract all teeth referenced in odontogram, selected tooth, or plan notes
+      const planNumbers = (proposedTreatmentPlan + ' ' + (insuranceNarrative || clinicalNotes))
+        .match(/\b(1[1-8]|2[1-8]|3[1-8]|4[1-8])\b/g)
+        ?.map(Number) || [];
+      const odontogramNumbers = odontogramFindings.map((f) => f.toothNumber);
+      const combinedTreatedTeeth = Array.from(
+        new Set([
+          ...(selectedToothFdi ? [selectedToothFdi] : []),
+          ...odontogramNumbers,
+          ...planNumbers,
+        ])
+      );
+
       onFinishTreatment({
         patientId: activePatient.id,
         patientName: activePatient.fullName,
@@ -788,7 +824,8 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
         supplCovered: supplShare,
         prescription: proposedPrescription,
         clinicalNotes: insuranceNarrative || clinicalNotes,
-        toothFdi: selectedToothFdi || 16,
+        toothFdi: selectedToothFdi || combinedTreatedTeeth[0] || 16,
+        teethFdiList: combinedTreatedTeeth.length > 0 ? combinedTreatedTeeth : [selectedToothFdi || 16],
         nextVisitDate: nextVisitDate || undefined,
       });
     }
@@ -1777,7 +1814,80 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
                   </div>
                 </div>
 
-                {/* Clinical Note & Next Visit Date */}
+                {/* Electronic Prescription System Submission Card */}
+                <div className="p-4 rounded-xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/60 space-y-3 text-xs">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="w-5 h-5 text-emerald-600" />
+                      <div>
+                        <h4 className="font-bold text-slate-900 dark:text-slate-100 text-xs">
+                          سامانه نسخه الکترونیک (بیمه سلامت / تامین اجتماعی)
+                        </h4>
+                        <p className="text-[11px] text-slate-500">
+                          ارسال مستقیم و آنی اقلام نسخه به درگاه الکترونیک سازمان‌های بیمه‌گر
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px] font-mono text-slate-600 dark:text-slate-300">
+                      <span>کد ملی: <strong className="text-slate-900 dark:text-slate-100">{activePatient.nationalId || '۰۰۱۲۳۴۵۶۷۸'}</strong></span>
+                      <span className="text-slate-300">|</span>
+                      <span>بیمه پایه: <strong className="text-slate-900 dark:text-slate-100">{activePatient.baseInsurance?.companyName || 'تأمین اجتماعی'}</strong></span>
+                    </div>
+                  </div>
+
+                  {!ePrescriptionSent ? (
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2 border-t border-emerald-100 dark:border-emerald-900/50">
+                      <span className="text-slate-600 dark:text-slate-400 text-xs">
+                        اقلام نسخه دارویی آماده تایید و ارسال به سامانه نسخه الکترونیک است.
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleSendEPrescription}
+                        disabled={isSendingEPrescription}
+                        className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow transition cursor-pointer disabled:opacity-70 whitespace-nowrap"
+                      >
+                        {isSendingEPrescription ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin text-white" />
+                            <span>در حال ارسال به سامانه نسخه الکترونیک...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Send className="w-4 h-4 text-emerald-200" />
+                            <span>ارسال به سامانه نسخه الکترونیک</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="p-3.5 rounded-xl bg-emerald-100/80 dark:bg-emerald-950/60 border-2 border-emerald-500 text-emerald-950 dark:text-emerald-100 space-y-2">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="text-sm font-black text-emerald-900 dark:text-emerald-200 flex items-center gap-2">
+                          <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                          <span>✓ ارسال شد — کد پیگیری: {ePrescriptionTrackingCode}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-mono font-bold bg-white/80 dark:bg-slate-900/80 px-2.5 py-1 rounded-md text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
+                            زمان ثبت: {ePrescriptionSentTime || 'هم‌اکنون'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={handleSendEPrescription}
+                            disabled={isSendingEPrescription}
+                            className="text-[10px] text-emerald-800 dark:text-emerald-300 underline font-bold cursor-pointer"
+                          >
+                            {isSendingEPrescription ? 'در حال ارسال...' : 'ارسال مجدد / ویرایش'}
+                          </button>
+                        </div>
+                      </div>
+                      <p className="text-xs text-emerald-800 dark:text-emerald-300 leading-relaxed font-medium">
+                        نسخه دارویی در درگاه یکپارچه خدمات الکترونیک سلامت کشور ثبت قطعی شد. بیمار می‌تواند با ارائه کد ملی و کد رهگیری به تمامی داروخانه‌ها مراجعه نماید.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Clinical Note & Next Visit Date (Optional) */}
                 <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3 text-xs">
                   <h4 className="font-bold text-slate-900 dark:text-slate-100">یادداشت بالینی و ثبت زمان مراجعه بعدی:</h4>
                   <textarea
@@ -1788,20 +1898,26 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
                     className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs"
                   ></textarea>
 
-                  <div className="flex flex-col sm:flex-row items-center gap-2">
-                    <input
-                      type="text"
-                      value={nextVisitDate}
-                      onChange={(e) => setNextVisitDate(e.target.value)}
-                      placeholder="زمان تقریبی مراجعه بعدی (اختیاری)..."
-                      className="flex-1 p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs"
-                    />
-                    <button
-                      onClick={handleSaveNextVisit}
-                      className="px-4 py-2.5 bg-[#005581] hover:bg-[#004266] text-white font-bold text-xs rounded-xl shadow cursor-pointer whitespace-nowrap"
-                    >
-                      ثبت زمان و ارسال پیام پیگیری به منشی
-                    </button>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">
+                      <span className="font-bold">زمان مراجعه بعدی و پیام به منشی (اختیاری):</span>
+                      <span className="text-[11px] text-slate-400">در صورت عدم نیاز، می‌توانید این فیلد را خالی بگذارید</span>
+                    </div>
+                    <div className="flex flex-col sm:flex-row items-center gap-2">
+                      <input
+                        type="text"
+                        value={nextVisitDate}
+                        onChange={(e) => setNextVisitDate(e.target.value)}
+                        placeholder="زمان تقریبی مراجعه بعدی (اختیاری - در صورت تمایل وارد کنید)..."
+                        className="flex-1 p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs"
+                      />
+                      <button
+                        onClick={handleSaveNextVisit}
+                        className="px-4 py-2.5 bg-[#005581] hover:bg-[#004266] text-white font-bold text-xs rounded-xl shadow cursor-pointer whitespace-nowrap"
+                      >
+                        ثبت زمان و ارسال پیام پیگیری به منشی
+                      </button>
+                    </div>
                   </div>
 
                   {followupSentToReception && (

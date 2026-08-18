@@ -333,7 +333,7 @@ export const InsuranceBridgeView: React.FC = () => {
                   <div className="mt-2.5 flex items-center justify-between pt-2 border-t border-slate-100 text-[10px]">
                     <span className="text-slate-500">مسیر ارزیابی:</span>
                     <span className="text-[#005581] font-bold">
-                      {claim.reviewRoute === 'express' || claim.greenLaneEligible ? '⚡ مسیر سبز Express' : '🔍 بررسی استاندارد'}
+                      {claim.reviewRoute === 'express' || claim.greenLaneEligible ? '⚡ رسیدگی سریع Express' : '🔍 بررسی استاندارد'}
                     </span>
                   </div>
                 </div>

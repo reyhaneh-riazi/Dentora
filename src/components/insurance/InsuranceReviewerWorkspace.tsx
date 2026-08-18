@@ -71,13 +71,16 @@ interface InsuranceReviewerWorkspaceProps {
     decision: 'approved' | 'rejected' | 'partially_approved',
     reason?: string
   ) => void;
+  currentUserName?: string;
 }
 
 export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProps> = ({
   claims: propClaims,
   setClaims: propSetClaims,
   onReviewDecision,
+  currentUserName,
 }) => {
+  const activeReviewerName = currentUserName?.trim() || 'زهرا صادقی (بازبین ارشد ادعا)';
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('queues');
   const [claims, setLocalClaims] = useState<Claim[]>(propClaims && propClaims.length > 0 ? propClaims : mockClaims);
   
@@ -130,19 +133,21 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
   const [editingActionProposed, setEditingActionProposed] = useState<'deduct_excess' | 'deduct_full' | 'refer_to_medical' | 'conditional_approval'>('deduct_excess');
   const [claimDiscrepanciesMap, setClaimDiscrepanciesMap] = useState<{ [claimId: string]: any[] }>({});
   const [discrepancySuccessToast, setDiscrepancySuccessToast] = useState<string>('');
+  const [diagnosisSigningPin, setDiagnosisSigningPin] = useState<string>('');
+  const [diagnosisPinError, setDiagnosisPinError] = useState<string>('');
 
-  // Medical Handover Decision State (Section 3)
-  const [medicalHandoverDecision, setMedicalHandoverDecision] = useState<'approved' | 'partially_approved'>('partially_approved');
+  // Medical Handover Decision State (Section 3 - تأیید و تأیید جزئی)
+  const [medicalHandoverDecision, setMedicalHandoverDecision] = useState<'approved' | 'partially_approved'>('approved');
   const [handoverNote, setHandoverNote] = useState<string>('');
   const [itemSpecificNotes, setItemSpecificNotes] = useState<{ [key: string]: string }>({
     'ci-101': 'کیفیت تصویر RVG پری‌اپیکال بررسی شود. طول پرشدگی کانال‌ها نیازمند صحه‌گذاری پزشک است.',
   });
   const [handoverSuccessMsg, setHandoverSuccessMsg] = useState<string>('');
 
-  // Decision & Deduction state (Defaulting to approved / settled)
-  const [overallDecision, setOverallDecision] = useState<'approved' | 'partially_approved' | 'rejected'>('approved');
+  // Decision & Deduction state (Section 4 - صرفاً رد جزئی و رد کامل ادعا)
+  const [overallDecision, setOverallDecision] = useState<'partially_rejected' | 'rejected'>('partially_rejected');
   const [decisionNotes, setDecisionNotes] = useState<string>(
-    'کلیه مدارک بالینی، تصاویر رادیوگرافی و تعرفه درمانی انطباق کامل داشته و مورد تایید سازمان بیمه‌گر قرار گرفت.'
+    'بخشی از مدارک یا خدمات دارای نقص یا عدم انطباق با اندیکاسیون بالینی بوده و جهت ثبت اعتراض یا اصلاح عودت داده شد.'
   );
 
   // Deduction state per item
@@ -206,8 +211,13 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
 
     const finalScore = Math.min(100, Math.max(claim.riskScore, calculatedScore));
     let calculatedQueue: ReviewRoute = 'express';
-    if (finalScore >= 70) calculatedQueue = 'deep_review';
-    else if (finalScore >= 40) calculatedQueue = 'standard';
+    if (finalScore > 55) {
+      calculatedQueue = 'deep_review';
+    } else if (finalScore > 20) {
+      calculatedQueue = 'standard';
+    } else {
+      calculatedQueue = 'express';
+    }
 
     return { finalScore, factors, calculatedQueue };
   };
@@ -323,11 +333,34 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
     setSelectedDiscrepancy(item);
     setEditingDiagnosisText(item.reviewerDiagnosis || '');
     setEditingActionProposed(item.actionProposed || 'deduct_excess');
+    setDiagnosisSigningPin('');
+    setDiagnosisPinError('');
   };
 
   // Save Discrepancy Diagnosis & Update Claim and Handover States
   const handleSaveDiscrepancyDiagnosis = () => {
     if (!selectedDiscrepancy || !selectedClaim) return;
+
+    const { calculatedQueue, finalScore } = getRiskBreakdown(selectedClaim);
+    const isAiOverridden = editingActionProposed !== selectedDiscrepancy.actionProposed;
+
+    // RULE 1: If Deep Review (>55%), Digital signature / PIN is MANDATORY for diagnosis
+    if (calculatedQueue === 'deep_review' || finalScore > 55) {
+      if (!diagnosisSigningPin || diagnosisSigningPin.trim().length < 4) {
+        setDiagnosisPinError('برای ثبت تشخیص در پرونده‌های بررسی دقیق (> ۵۵٪)، ورود پین امنیتی امضای دیجیتال الزامی است.');
+        return;
+      }
+    }
+
+    // RULE 2: If Fast Review (0-20%), No signature required UNLESS changing AI opinion
+    if ((calculatedQueue === 'express' || finalScore <= 20) && isAiOverridden) {
+      if (!diagnosisSigningPin || diagnosisSigningPin.trim().length < 4) {
+        setDiagnosisPinError('به دلیل تغییر نظر هوش مصنوعی در بررسی سریع، ورود پین امضای دیجیتال الزامی است.');
+        return;
+      }
+    }
+
+    setDiagnosisPinError('');
 
     const currentDiscrepancies = getDiscrepanciesForClaim(selectedClaim);
     const updatedDiscrepancies = currentDiscrepancies.map((disc: any) =>
@@ -336,6 +369,7 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
             ...disc,
             reviewerDiagnosis: editingDiagnosisText,
             actionProposed: editingActionProposed,
+            signedWithCertificate: (calculatedQueue === 'deep_review' || isAiOverridden) ? 'CERT-984021-IR' : undefined,
           }
         : disc
     );
@@ -366,12 +400,14 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
     const newAuditLog: AuditLogItem = {
       id: `AUD-${Math.floor(100000 + Math.random() * 900000)}`,
       timestamp: new Date().toLocaleDateString('fa-IR') + ' ' + new Date().toLocaleTimeString('fa-IR'),
-      userName: 'مریم عباسی (بازبین ارشد ادعا)',
+      userName: activeReviewerName,
       userRole: 'ClaimReviewer',
       action: 'REVIEWER_DIAGNOSIS_RECORDED',
       entityType: 'Claim',
       entityId: selectedClaim.claimNumber,
-      details: `ثبت تشخیص کارشناسی بازبین برای «${selectedDiscrepancy.title}»: ${editingDiagnosisText} (اقدام پیشنهادی: ${editingActionProposed === 'deduct_excess' ? 'کسر مازاد تعرفه' : editingActionProposed === 'refer_to_medical' ? 'ارجاع به پزشک معتمد' : editingActionProposed === 'deduct_full' ? 'کسر کامل' : 'تأیید مشروط'})`,
+      details: `ثبت تشخیص کارشناسی بازبین برای «${selectedDiscrepancy.title}»: ${editingDiagnosisText} (اقدام: ${editingActionProposed === 'deduct_excess' ? 'کسر مازاد تعرفه' : editingActionProposed === 'refer_to_medical' ? 'ارجاع به پزشک معتمد' : editingActionProposed === 'deduct_full' ? 'کسر کامل' : 'تأیید مشروط'}) ${
+        calculatedQueue === 'deep_review' ? '• امضا شده با توکن دیجیتال امنیتی WORM' : isAiOverridden ? '• امضای دیجیتال تغییر نظر AI' : '• ثبت خودکار بدون نیاز به امضا'
+      }`,
       wormVerifiedHash: '0x' + Math.random().toString(16).substring(2, 10),
       ruleVersion: 'v2.1-2026',
       aiModelVersion: 'Dentura-AI-v3.4',
@@ -379,7 +415,13 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
     setAuditLogs((prev) => [newAuditLog, ...prev]);
 
     setSelectedDiscrepancy(null);
-    setDiscrepancySuccessToast('تشخیص کارشناسی شما برای این مورد با موفقیت ثبت شد و در خلاصه‌سازی پرونده و کارتابل ارجاع به پزشک قرار گرفت.');
+    setDiscrepancySuccessToast(
+      calculatedQueue === 'deep_review'
+        ? '✓ تشخیص کارشناسی با امضای دیجیتال معتبر ثبت و در پرونده اعمال شد.'
+        : isAiOverridden
+        ? '✓ تغییر نظر هوش مصنوعی با موفقیت امضا و در پرونده ثبت شد.'
+        : '✓ تشخیص کارشناسی ثبت و در پرونده اعمال شد.'
+    );
     setTimeout(() => setDiscrepancySuccessToast(''), 3500);
   };
 
@@ -395,19 +437,32 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
 
   // Submit Final Decision (Triggers Modal if deep review, or directly executes)
   const handleInitiateFinalDecision = () => {
-    if (selectedClaim.reviewRoute === 'deep_review' || selectedClaim.riskScore >= 40) {
+    const { calculatedQueue, finalScore } = getRiskBreakdown(selectedClaim);
+    if (calculatedQueue === 'deep_review' || finalScore > 55) {
       setShowSignatureModal(true);
+    } else if (calculatedQueue === 'express' || finalScore <= 20) {
+      // If reviewer altered decision from AI recommendation, require signature
+      if (overallDecision === 'rejected' || overallDecision === 'partially_approved') {
+        setShowSignatureModal(true);
+      } else {
+        executeFinalDecision();
+      }
     } else {
       executeFinalDecision();
     }
   };
 
-  // Execute Final Decision with System-Generated Hash & Mark Read-Only
+  // Execute Final Decision with System-Generated Hash & Mark Read-Only & Auto-Advance to Next Claim (Section 4: Rejection only -> Column 3)
   const executeFinalDecision = () => {
     const generatedHash = '0x' + Math.random().toString(16).substring(2, 10) + '99a21e84';
     const amountInTomans = getClaimAmountInTomans(selectedClaim);
-    const mappedStatus = overallDecision === 'approved' ? 'settled' : 'rejected';
-    const deductionTotal = overallDecision === 'approved' ? 0 : (overallDecision === 'partially_approved' ? Math.round(amountInTomans * 0.25) : amountInTomans);
+    // Section 4 is strictly for Rejections (Partial or Full) -> Always Column 3 Rejected
+    const mappedStatus = 'rejected';
+    const deductionTotal = overallDecision === 'partially_rejected' ? Math.round(amountInTomans * 0.5) : amountInTomans;
+    const approvedTotal = Math.max(0, amountInTomans - deductionTotal);
+
+    const currentClaimId = selectedClaim.id;
+    const currentPatientName = selectedClaim.patientName;
 
     const updatedDecision = {
       decidedAt: new Date().toLocaleDateString('fa-IR') + ' ' + new Date().toLocaleTimeString('fa-IR').slice(0, 5),
@@ -417,41 +472,120 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
       digitalSignatureHash: generatedHash,
     };
 
-    setSignedClaimsMap((prev) => ({ ...prev, [selectedClaim.id]: true }));
+    const newSignedMap = { ...signedClaimsMap, [currentClaimId]: true };
+    setSignedClaimsMap(newSignedMap);
 
-    setClaims((prev) =>
-      prev.map((c) =>
-        c.id === selectedClaim.id
-          ? {
-              ...c,
-              status: mappedStatus as 'settled' | 'rejected',
-              claimedAmount: amountInTomans,
-              totalAmount: amountInTomans,
-              totalClaimedAmount: amountInTomans,
-              baseApprovedAmount: overallDecision === 'approved' ? (c.baseApprovedAmount || Math.round(amountInTomans * 0.3)) : 0,
-              supplApprovedAmount: overallDecision === 'approved' ? (c.supplApprovedAmount || Math.round(amountInTomans * 0.7)) : 0,
-              deductionAmount: deductionTotal,
-              deductionReason: overallDecision === 'approved' ? undefined : decisionNotes,
-              totalApprovedAmount: overallDecision === 'approved' ? amountInTomans : 0,
-              reviewDecision: updatedDecision,
-            }
-          : c
-      )
+    const updatedCurrentClaim: Claim = {
+      ...selectedClaim,
+      status: mappedStatus as 'rejected',
+      claimedAmount: amountInTomans,
+      totalAmount: amountInTomans,
+      totalClaimedAmount: amountInTomans,
+      baseApprovedAmount: 0,
+      supplApprovedAmount: 0,
+      deductionAmount: deductionTotal,
+      deductionReason: decisionNotes,
+      rejectionReason: decisionNotes,
+      totalApprovedAmount: approvedTotal,
+      reviewDecision: updatedDecision,
+    };
+
+    // Calculate updated claims array with the current claim modified
+    const currentUpdatedClaims = claims.map((c) =>
+      c.id === currentClaimId ? updatedCurrentClaim : c
     );
 
+    // Helper to check if a claim is still unfinalized/pending
+    const isUnprocessed = (c: Claim) =>
+      !newSignedMap[c.id] &&
+      c.id !== currentClaimId &&
+      c.status !== 'settled' &&
+      c.status !== 'rejected' &&
+      c.status !== 'rejected_by_insurer' &&
+      c.status !== 'approved' &&
+      c.status !== 'approved_by_insurer';
+
+    // 1. Look in active claims list for an unfinalized claim with a DIFFERENT patient name
+    let nextCandidate = currentUpdatedClaims.find(
+      (c) => isUnprocessed(c) && c.patientName !== currentPatientName
+    );
+
+    // 2. If none with different name, search for any unfinalized claim in list
+    if (!nextCandidate) {
+      nextCandidate = currentUpdatedClaims.find((c) => isUnprocessed(c));
+    }
+
+    let finalClaimsList = currentUpdatedClaims;
+    let nextActiveClaim: Claim;
+
+    if (nextCandidate && nextCandidate.patientName !== currentPatientName) {
+      nextActiveClaim = nextCandidate;
+    } else {
+      // 3. Fallback to mock claims: Find a default claim whose patientName is DIFFERENT from currentPatientName and not in newSignedMap
+      const defaultMock =
+        mockClaims.find(
+          (m) =>
+            m.patientName !== currentPatientName &&
+            m.id !== currentClaimId &&
+            !newSignedMap[m.id]
+        ) ||
+        mockClaims.find(
+          (m) => m.patientName !== currentPatientName && m.id !== currentClaimId
+        ) ||
+        mockClaims.find((m) => m.patientName !== currentPatientName) ||
+        mockClaims.find((m) => m.id !== currentClaimId) ||
+        mockClaims[0];
+
+      // Prepare fresh clone so it has submitted status and unique identifier
+      const clonedDefault: Claim = {
+        ...defaultMock,
+        id: currentUpdatedClaims.some((c) => c.id === defaultMock.id)
+          ? `clm-queue-${Date.now()}-${defaultMock.id}`
+          : defaultMock.id,
+        status: 'submitted',
+        receptionApproved: true,
+        accountantApproved: true,
+      };
+
+      finalClaimsList = [
+        ...currentUpdatedClaims.filter((c) => c.id !== clonedDefault.id),
+        clonedDefault,
+      ];
+      nextActiveClaim = clonedDefault;
+    }
+
+    setClaims(finalClaimsList);
+    setSelectedClaimId(nextActiveClaim.id);
+
+    // Auto-adjust queue filter to include next claim if needed
+    const nextQueue = getRiskBreakdown(nextActiveClaim).calculatedQueue;
+    if (selectedQueue !== 'all' && selectedQueue !== nextQueue) {
+      setSelectedQueue(nextQueue);
+    }
+
+    // Reset reviewer decision controls for the newly activated claim (Section 4 default to partial rejection)
+    setOverallDecision('partially_rejected');
+    setDecisionNotes(
+      'بخشی از مدارک یا خدمات دارای نقص یا عدم انطباق با اندیکاسیون بالینی بوده و جهت ثبت اعتراض یا اصلاح عودت داده شد.'
+    );
+    setSelectedDiscrepancy(null);
+    setEditingDiagnosisText('');
+    setDiagnosisSigningPin('');
+    setDiagnosisPinError('');
+
     if (onReviewDecision) {
-      onReviewDecision(selectedClaim.id, overallDecision, decisionNotes);
+      onReviewDecision(currentClaimId, overallDecision, deductionTotal, decisionNotes);
     }
 
     const newAuditLog: AuditLogItem = {
       id: `AUD-${Math.floor(100000 + Math.random() * 900000)}`,
       timestamp: new Date().toLocaleDateString('fa-IR') + ' ' + new Date().toLocaleTimeString('fa-IR'),
-      userName: 'مریم عباسی (بازبین ارشد بیمه)',
+      userName: activeReviewerName,
       userRole: 'ClaimReviewer',
-      action: overallDecision === 'approved' ? 'CLAIM_FULL_APPROVAL' : overallDecision === 'partially_approved' ? 'CLAIM_DEDUCTION_APPLIED' : 'CLAIM_REJECTED',
+      action: overallDecision === 'partially_rejected' ? 'CLAIM_PARTIAL_REJECTION' : 'CLAIM_REJECTED',
       entityType: 'Claim',
       entityId: selectedClaim.claimNumber,
-      details: `ثبت رای ${overallDecision === 'approved' ? 'تأیید کامل (انتقال به ستون ۴ بورد کانبان - تسویه‌شده)' : overallDecision === 'partially_approved' ? 'تأیید جزئی با کسورات (انتقال به ستون ۳ بورد کانبان - برگشت‌خورده)' : 'رد کامل ادعا (انتقال به ستون ۳ بورد کانبان)'}. امضای دیجیتال معتبر ثبت گردید.`,
+      details: `ثبت رای ${overallDecision === 'partially_rejected' ? 'رد جزئی / اعمال کسورات' : 'رد کامل ادعا'}. امضای دیجیتال معتبر ثبت گردید. پرونده بعدی (${nextActiveClaim.patientName}) فعال شد.`,
       wormVerifiedHash: generatedHash,
       ruleVersion: 'v2.1-2026',
       aiModelVersion: 'Dentura-AI-v3.4',
@@ -459,77 +593,181 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
     setAuditLogs((prev) => [newAuditLog, ...prev]);
 
     setShowSignatureModal(false);
-    setFinalDecisionSuccessMsg(`رای پرونده ${selectedClaim.claimNumber} با موفقیت ثبت شد و وضعیت ادعا در بورد کانبان منشی و حسابدار به ستون ${overallDecision === 'approved' ? '۴ (تسویه‌شده)' : '۳ (برگشت‌خورده / کسورات)'} منتقل گردید.`);
+    setFinalDecisionSuccessMsg(
+      `رأی پرونده ${selectedClaim.claimNumber} (${selectedClaim.patientName}) با نظر «${
+        overallDecision === 'partially_rejected' ? 'رد جزئی / اعمال کسورات' : 'رد کامل ادعا'
+      }» با موفقیت ثبت شد. پرونده بعدی (${nextActiveClaim.patientName} - ${toFa(nextActiveClaim.claimNumber)}) فعال شد.`
+    );
 
     setTimeout(() => {
       setFinalDecisionSuccessMsg('');
       setActiveTab('queues');
-    }, 2500);
+    }, 2200);
   };
 
-  // Handle Handover to Medical Reviewer & Automatic Redirect to Section 1
+  // Handle Handover to Medical Reviewer (Section 3: Approval & Partial Approval -> Stays in Column 2 until Medical Reviewer votes)
   const handleSendToMedicalReviewer = () => {
     if (!selectedClaim) return;
-    setClaims((prev) =>
-      prev.map((c) =>
-        c.id === selectedClaim.id
-          ? {
-              ...c,
-              medicalReviewerName: 'دکتر حمید سجادی (پزشک معتمد)',
-              aiFlags: [
-                ...(c.aiFlags || []),
-                {
-                  code: 'MEDICAL_HANDOVER',
-                  description: `پرونده با نظر ${medicalHandoverDecision === 'approved' ? 'تأیید اولیه' : 'تأیید جزئی'} و تایید اسناد به پزشک معتمد ارجاع گردید.`,
-                  severity: 'medium',
-                },
-              ],
-            }
-          : c
-      )
+    const currentClaimId = selectedClaim.id;
+    const currentPatientName = selectedClaim.patientName;
+
+    const actualHandoverNote =
+      handoverNote.trim() ||
+      (medicalHandoverDecision === 'approved'
+        ? 'مدارک و کلیشه‌های ارسالی مورد تأیید اولیه است و جهت بررسی رادیولوژی و بالینی به پزشک معتمد ارجاع گردید.'
+        : 'مدارک دارای کسورات جزئی بوده و جهت تعیین تکلیف نهایی رادیولوژی به پزشک معتمد ارجاع گردید.');
+
+    const updatedClaim: Claim = {
+      ...selectedClaim,
+      status: 'submitted', // Stays in Column 2 (ارسال‌شده به بیمه / در انتظار بررسی بازبین پزشکی)
+      claimReviewerName: activeReviewerName,
+      claimReviewerHandoverNote: actualHandoverNote,
+      medicalReviewerName: selectedClaim.medicalReviewerName || 'پزشک معتمد (بازبین پزشکی)',
+      medicalHandover: {
+        reviewerName: activeReviewerName,
+        decision: medicalHandoverDecision,
+        note: actualHandoverNote,
+        date: new Date().toLocaleDateString('fa-IR'),
+      },
+      doctorReviewerDiagnosis: `ارجاع توسط ${activeReviewerName} با نظر ${medicalHandoverDecision === 'approved' ? 'تأیید کامل اولیه' : 'تأیید جزئی اولیه'}: ${actualHandoverNote}`,
+      aiFlags: [
+        ...(selectedClaim.aiFlags || []),
+        {
+          code: 'MEDICAL_HANDOVER',
+          description: `پرونده توسط بازبین ادعا (${activeReviewerName}) با نظر «${medicalHandoverDecision === 'approved' ? 'تأیید کامل اولیه' : 'تأیید جزئی اولیه'}» جهت بررسی و رأی قطعی به پزشک معتمد ارجاع گردید.`,
+          severity: 'medium',
+        },
+      ],
+    };
+
+    const currentUpdatedClaims = claims.map((c) =>
+      c.id === currentClaimId ? updatedClaim : c
     );
+
+    // Find next un-handed-over / unprocessed claim with a different patient name
+    const isUnprocessed = (c: Claim) =>
+      c.id !== currentClaimId &&
+      c.status !== 'settled' &&
+      c.status !== 'rejected' &&
+      c.status !== 'rejected_by_insurer' &&
+      c.status !== 'approved';
+
+    let nextCandidate = currentUpdatedClaims.find(
+      (c) => isUnprocessed(c) && c.patientName !== currentPatientName
+    );
+
+    if (!nextCandidate) {
+      nextCandidate = currentUpdatedClaims.find((c) => isUnprocessed(c));
+    }
+
+    let finalClaimsList = currentUpdatedClaims;
+    let nextActiveClaim: Claim;
+
+    if (nextCandidate && nextCandidate.patientName !== currentPatientName) {
+      nextActiveClaim = nextCandidate;
+    } else {
+      const defaultMock =
+        mockClaims.find(
+          (m) =>
+            m.patientName !== currentPatientName &&
+            m.id !== currentClaimId
+        ) ||
+        mockClaims.find((m) => m.patientName !== currentPatientName) ||
+        mockClaims.find((m) => m.id !== currentClaimId) ||
+        mockClaims[0];
+
+      const clonedDefault: Claim = {
+        ...defaultMock,
+        id: currentUpdatedClaims.some((c) => c.id === defaultMock.id)
+          ? `clm-queue-${Date.now()}-${defaultMock.id}`
+          : defaultMock.id,
+        status: 'submitted',
+        receptionApproved: true,
+        accountantApproved: true,
+      };
+
+      finalClaimsList = [
+        ...currentUpdatedClaims.filter((c) => c.id !== clonedDefault.id),
+        clonedDefault,
+      ];
+      nextActiveClaim = clonedDefault;
+    }
+
+    setClaims(finalClaimsList);
+    setSelectedClaimId(nextActiveClaim.id);
+
+    // Auto-adjust queue filter to include next claim if needed
+    const nextQueue = getRiskBreakdown(nextActiveClaim).calculatedQueue;
+    if (selectedQueue !== 'all' && selectedQueue !== nextQueue) {
+      setSelectedQueue(nextQueue);
+    }
+
+    // Reset Section 3 controls
+    setMedicalHandoverDecision('approved');
+    setHandoverNote('');
 
     const newAuditLog: AuditLogItem = {
       id: `AUD-${Math.floor(100000 + Math.random() * 900000)}`,
       timestamp: new Date().toLocaleDateString('fa-IR') + ' ' + new Date().toLocaleTimeString('fa-IR'),
-      userName: 'مریم عباسی (بازبین ارشد بیمه)',
+      userName: activeReviewerName,
       userRole: 'ClaimReviewer',
       action: 'MEDICAL_HANDOVER_INITIATED',
       entityType: 'Claim',
       entityId: selectedClaim.claimNumber,
-      details: `ارجاع پرونده به میزکار پزشک معتمد با تصمیم ${medicalHandoverDecision === 'approved' ? 'تأیید اولیه' : 'تأیید جزئی'}. توضیحات: ${handoverNote || 'بدون توضیحات اضافی'}`,
+      details: `ارجاع پرونده به میزکار پزشک معتمد با تصمیم «${medicalHandoverDecision === 'approved' ? 'تأیید کامل اولیه' : 'تأیید جزئی اولیه'}». پرونده تا زمان رای بازبین پزشکی در ستون ۲ کانبان باقی می‌ماند. توضیحات: ${actualHandoverNote}`,
       wormVerifiedHash: '0x' + Math.random().toString(16).substring(2, 10),
       ruleVersion: 'v2.1-2026',
       aiModelVersion: 'Dentura-AI-v3.4',
     };
     setAuditLogs((prev) => [newAuditLog, ...prev]);
 
-    setHandoverSuccessMsg(`پرونده ${selectedClaim.claimNumber} با موفقیت به میزکار پزشک معتمد ارجاع شد. انتقال خودکار به صف ادعاها...`);
+    setHandoverSuccessMsg(
+      `پرونده ${selectedClaim.claimNumber} (${selectedClaim.patientName}) با نظر «${
+        medicalHandoverDecision === 'approved' ? 'تأیید کامل' : 'تأیید جزئی'
+      }» توسط ${activeReviewerName} به بازبین پزشکی ارجاع شد و تا زمان رأی پزشک معتمد در ستون ۲ کانبان باقی می‌ماند. پرونده بعدی (${nextActiveClaim.patientName} - ${toFa(nextActiveClaim.claimNumber)}) فعال شد.`
+    );
 
     setTimeout(() => {
       setHandoverSuccessMsg('');
       setActiveTab('queues');
-    }, 1500);
+    }, 2200);
   };
 
   // Handle Appeal Acceptance -> Navigate to Section 3 / Medical Reviewer
   const handleApproveAppeal = (claimId: string, appealId: string) => {
     const targetClaim = claims.find((c) => c.id === claimId);
+    const appealNoteText = `اعتراض کلینیک مورد تأیید اولیه بازبین ادعا (${activeReviewerName}) قرار گرفت و جهت صدور رأی بالینی/رادیولوژی نهایی به کارتابل بازبین پزشکی ارجاع شد.`;
+
     setClaims((prev) =>
       prev.map((c) => {
         if (c.id !== claimId) return c;
         const updatedAppeals = (c.appeals || []).map((a) =>
           a.id === appealId
-            ? { ...a, status: 'accepted' as const, responseNotes: 'اعتراض کلینیک مورد تأیید اولیه بازبین ادعا قرار گرفت و جهت تأیید بالینی/رادیولوژی نهایی به بازبین پزشکی ارجاع شد.' }
+            ? {
+                ...a,
+                status: 'accepted' as const,
+                claimReviewerName: activeReviewerName,
+                reviewedBy: activeReviewerName,
+                claimReviewerNote: appealNoteText,
+                responseNotes: appealNoteText,
+              }
             : a
         );
         return {
           ...c,
           appeals: updatedAppeals,
-          status: 'in_review',
-          medicalReviewerName: 'دکتر حمید سجادی (پزشک معتمد)',
-          reviewerDiagnosis: 'اعتراض کلینیک به کسورات مورد تأیید اولیه بازبین ادعا قرار گرفت و جهت تأیید بالینی و تسویه نهایی به کارتابل بازبین پزشکی ارجاع شد.',
-          reviewerNotes: 'اعتراض کلینیک پذیرفته شد و پرونده جهت ارزیابی نهایی به پزشک معتمد ارسال گردید.',
+          status: 'submitted',
+          claimReviewerName: activeReviewerName,
+          claimReviewerHandoverNote: appealNoteText,
+          medicalReviewerName: c.medicalReviewerName || 'پزشک معتمد (بازبین پزشکی)',
+          medicalHandover: {
+            reviewerName: activeReviewerName,
+            decision: 'approved',
+            note: appealNoteText,
+            date: new Date().toLocaleDateString('fa-IR'),
+          },
+          reviewerDiagnosis: appealNoteText,
+          reviewerNotes: appealNoteText,
         };
       })
     );
@@ -537,12 +775,12 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
     const newAuditLog: AuditLogItem = {
       id: `AUD-${Math.floor(100000 + Math.random() * 900000)}`,
       timestamp: new Date().toLocaleDateString('fa-IR') + ' ' + new Date().toLocaleTimeString('fa-IR'),
-      userName: 'مریم عباسی (بازبین ارشد بیمه)',
+      userName: activeReviewerName,
       userRole: 'ClaimReviewer',
       action: 'APPEAL_APPROVED_ESCALATED_TO_MEDICAL',
       entityType: 'Appeal',
       entityId: appealId,
-      details: `تأیید اعتراض پرونده ${targetClaim?.claimNumber || claimId} توسط بازبین ادعا. ارجاع مستقیم به میزکار بازبین پزشکی (پزشک معتمد) جهت تأیید و صدور تسویه نهایی.`,
+      details: `تأیید اعتراض پرونده ${targetClaim?.claimNumber || claimId} توسط بازبین ادعا (${activeReviewerName}). ارجاع مستقیم به میزکار بازبین پزشکی (پزشک معتمد) جهت تأیید و صدور تسویه نهایی.`,
       wormVerifiedHash: '0x' + Math.random().toString(16).substring(2, 10),
       ruleVersion: 'v2.1-2026',
       aiModelVersion: 'Dentura-AI-v3.4',
@@ -550,7 +788,7 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
     setAuditLogs((prev) => [newAuditLog, ...prev]);
 
     setSelectedClaimId(claimId);
-    setAppealDecisionSuccessMsg('اعتراض کلینیک با موفقیت تأیید شد و به کارتابل بازبین پزشکی (پزشک معتمد) ارجاع گردید تا پس از تأیید نهایی، تسویه در بورد کانبان منشی و حسابدار اعمال شود.');
+    setAppealDecisionSuccessMsg(`اعتراض کلینیک توسط ${activeReviewerName} تأیید شد و به کارتابل بازبین پزشکی ارجاع گردید.`);
 
     setTimeout(() => {
       setAppealDecisionSuccessMsg('');
@@ -573,38 +811,45 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
         if (c.id !== claimId) return c;
         const updatedAppeals = (c.appeals || []).map((a) =>
           a.id === appealId
-            ? { ...a, status: 'rejected' as const, responseNotes: appealRejectionReason }
+            ? {
+                ...a,
+                status: 'rejected' as const,
+                claimReviewerName: activeReviewerName,
+                reviewedBy: activeReviewerName,
+                responseNotes: appealRejectionReason,
+              }
             : a
         );
         return {
           ...c,
           status: 'rejected' as const,
           appeals: updatedAppeals,
+          claimReviewerName: activeReviewerName,
           deductionAmount: amountInTomans,
-          deductionReason: `رد قطعی اعتراض توسط بازبین ادعا: ${appealRejectionReason}`,
+          deductionReason: `رد قطعی اعتراض توسط بازبین ادعا (${activeReviewerName}): ${appealRejectionReason}`,
         };
       })
     );
 
     if (onReviewDecision) {
-      onReviewDecision(claimId, 'rejected', amountInTomans, `رد قطعی اعتراض: ${appealRejectionReason}`);
+      onReviewDecision(claimId, 'rejected', amountInTomans, `رد قطعی اعتراض توسط ${activeReviewerName}: ${appealRejectionReason}`);
     }
 
     const newAuditLog: AuditLogItem = {
       id: `AUD-${Math.floor(100000 + Math.random() * 900000)}`,
       timestamp: new Date().toLocaleDateString('fa-IR') + ' ' + new Date().toLocaleTimeString('fa-IR'),
-      userName: 'مریم عباسی (بازبین ارشد بیمه)',
+      userName: activeReviewerName,
       userRole: 'ClaimReviewer',
       action: 'APPEAL_REJECTED',
       entityType: 'Appeal',
       entityId: appealId,
-      details: `رد قطعی اعتراض پرونده ${targetClaim?.claimNumber || claimId} به علت: ${appealRejectionReason}. وضعیت پرونده در بورد کانبان منشی و حسابدار در ستون برگشت‌خورده تثبیت گردید.`,
+      details: `رد قطعی اعتراض پرونده ${targetClaim?.claimNumber || claimId} توسط ${activeReviewerName} به علت: ${appealRejectionReason}. وضعیت پرونده در بورد کانبان منشی و حسابدار در ستون برگشت‌خورده تثبیت گردید.`,
       wormVerifiedHash: '0x' + Math.random().toString(16).substring(2, 10),
       ruleVersion: 'v2.1-2026',
       aiModelVersion: 'Dentura-AI-v3.4',
     };
     setAuditLogs((prev) => [newAuditLog, ...prev]);
-    setAppealDecisionSuccessMsg(`اعتراض رد شد و نتیجه در بورد کانبان منشی و حسابدار (ستون ۳: برگشت‌خورده) ثبت گردید.`);
+    setAppealDecisionSuccessMsg(`اعتراض توسط ${activeReviewerName} رد شد و نتیجه در بورد کانبان منشی و حسابدار (ستون ۳: برگشت‌خورده) ثبت گردید.`);
     setTimeout(() => setAppealDecisionSuccessMsg(''), 4500);
     setAppealRejectionReason('');
   };
@@ -822,7 +1067,7 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
                   }`}
                 >
                   <Zap className="w-4 h-4 text-[#ffd200]" />
-                  <span>صف سریع (Express) - ریسک کم</span>
+                  <span>بررسی سریع (۰ تا ۲۰٪) - بدون امضا</span>
                   <span className="bg-[#ffe552] text-[#005581] text-[10px] px-2 py-0.5 rounded-full font-black">
                     {toFa(claims.filter((c) => getRiskBreakdown(c).calculatedQueue === 'express').length)}
                   </span>
@@ -837,7 +1082,7 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
                   }`}
                 >
                   <Clock className="w-4 h-4 text-[#ffd200]" />
-                  <span>صف استاندارد (Standard)</span>
+                  <span>بررسی استاندارد (۲۰ تا ۵۵٪)</span>
                   <span className="bg-[#72cdf4]/30 text-[#005581] text-[10px] px-2 py-0.5 rounded-full font-black">
                     {toFa(claims.filter((c) => getRiskBreakdown(c).calculatedQueue === 'standard').length)}
                   </span>
@@ -852,7 +1097,7 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
                   }`}
                 >
                   <ShieldAlert className="w-4 h-4 text-[#ffd200]" />
-                  <span>صف بررسی دقیق (Deep Review) - ریسک بالا</span>
+                  <span>{'بررسی دقیق (> ۵۵٪) - امضای دیجیتال'}</span>
                   <span className="bg-[#ffd200] text-[#005581] text-[10px] px-2 py-0.5 rounded-full font-black">
                     {toFa(claims.filter((c) => getRiskBreakdown(c).calculatedQueue === 'deep_review').length)}
                   </span>
@@ -1063,17 +1308,6 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
                                   ))
                                 )}
                               </div>
-                            </div>
-
-                            {/* Direct Action to Step 4 Decisions */}
-                            <div className="flex justify-end gap-3 pt-2">
-                              <button
-                                onClick={() => setActiveTab('decisions')}
-                                className="bg-[#005581] hover:bg-[#003d5c] text-white font-black text-xs px-6 py-3 rounded-xl transition-all shadow-md flex items-center gap-2 cursor-pointer"
-                              >
-                                <Scale className="w-4 h-4 text-[#ffd200]" />
-                                <span>ثبت فوری رای و تصمیم‌گیری نهایی (گام ۴) ↵</span>
-                              </button>
                             </div>
                           </div>
                         );
@@ -1383,7 +1617,7 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
                       </h2>
                     </div>
                     <p className="text-xs text-[#005581]/80 mt-1 font-medium">
-                      خلاصه مدارک، تایید وجود تمام اسناد و ثبت نکات اختصاصی جهت بررسی کارشناسی بالینی
+                      ثبت نظریه و نکات کارشناسی اولیه جهت ارزیابی بالینی توسط پزشک معتمد
                     </p>
                   </div>
 
@@ -1399,69 +1633,6 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
                   </div>
                 )}
 
-                {/* Document Summary & Checklist Confirmation */}
-                <div className="bg-[#72cdf4]/10 p-4 rounded-xl border border-[#72cdf4] space-y-3">
-                  <h3 className="text-xs font-bold text-[#005581] flex items-center gap-2">
-                    <CheckSquare className="w-4 h-4 text-[#005581]" />
-                    <span>خلاصه مدارک و وضعیت کامل‌بودن پرونده جهت ارجاع پزشکی:</span>
-                  </h3>
-
-                  <div className="space-y-2 text-xs">
-                    <div className="flex items-center justify-between p-2.5 bg-[#fffffa] rounded-lg border border-[#72cdf4]">
-                      <span className="font-bold">شواهد رادیوگرافی (RVG/OPG):</span>
-                      <span className="bg-[#ffe552] text-[#005581] px-2.5 py-0.5 rounded font-black text-[11px]">
-                        موجود (وضوح {toFa('۹۵')}٪)
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between p-2.5 bg-[#fffffa] rounded-lg border border-[#72cdf4]">
-                      <span className="font-bold">اطلاعات دندان‌ها و کدهای FDI:</span>
-                      <span className="bg-[#ffe552] text-[#005581] px-2.5 py-0.5 rounded font-black text-[11px]">
-                        تایید و ثبت‌شده
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between p-2.5 bg-[#fffffa] rounded-lg border border-[#72cdf4]">
-                      <span className="font-bold">نسخه پین‌شده قوانین بیمه‌ای:</span>
-                      <span className="bg-[#72cdf4]/30 text-[#005581] px-2.5 py-0.5 rounded font-bold text-[11px]">
-                        v2.1-2026
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Specific Notes for Each Item/Document */}
-                <div className="space-y-3">
-                  <h3 className="text-xs font-bold text-[#005581]">ثبت نکات و ملاحظات لازم برای هر مدرک/خدمت:</h3>
-                  <div className="space-y-3">
-                    {(selectedClaim.items || []).map((item) => (
-                      <div key={item.id} className="p-3.5 bg-[#fffffa] rounded-xl border border-[#72cdf4] space-y-2">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-bold text-[#005581]">
-                            دندان {toFa(item.toothNumber)} - {item.procedureTitle} ({toFa(item.procedureCode)})
-                          </span>
-                          <span className="text-[10px] bg-[#72cdf4]/20 text-[#005581] px-2 py-0.5 rounded font-bold">
-                            {toFa((item.claimedAmount / 10).toLocaleString('fa-IR'))} تومان
-                          </span>
-                        </div>
-
-                        <input
-                          type="text"
-                          value={itemSpecificNotes[item.id] || ''}
-                          onChange={(e) =>
-                            setItemSpecificNotes({
-                              ...itemSpecificNotes,
-                              [item.id]: e.target.value,
-                            })
-                          }
-                          placeholder="نکته اختصاصی برای پزشک معتمد بنویسید (مثلا کیفیت رادیوگرافی، نیاز به عکس مجدد و...)..."
-                          className="w-full bg-white text-xs text-[#005581] p-2.5 rounded-lg border border-[#72cdf4] font-medium focus:ring-2 focus:ring-[#72cdf4]"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
                 {/* Handover Decision Selector (تأیید کامل / تأیید جزئی) */}
                 <div className="bg-[#72cdf4]/10 p-4 rounded-2xl border border-[#72cdf4] space-y-3">
                   <h3 className="text-xs font-black text-[#005581]">نوع نظریه اولیه بازبین قبل از ارجاع پزشکی:</h3>
@@ -1469,9 +1640,9 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
                     <button
                       type="button"
                       onClick={() => setMedicalHandoverDecision('approved')}
-                      className={`p-3 rounded-xl border-2 font-black text-xs transition-all flex items-center justify-center gap-2 ${
+                      className={`p-3.5 rounded-xl border-2 font-black text-xs transition-all flex items-center justify-center gap-2 cursor-pointer ${
                         medicalHandoverDecision === 'approved'
-                          ? 'bg-[#005581] text-white border-[#005581] shadow-md'
+                          ? 'bg-[#005581] text-white border-[#005581] shadow-md ring-2 ring-[#ffd200]'
                           : 'bg-[#fffffa] text-[#005581] border-[#72cdf4] hover:bg-[#72cdf4]/20'
                       }`}
                     >
@@ -1482,14 +1653,14 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
                     <button
                       type="button"
                       onClick={() => setMedicalHandoverDecision('partially_approved')}
-                      className={`p-3 rounded-xl border-2 font-black text-xs transition-all flex items-center justify-center gap-2 ${
+                      className={`p-3.5 rounded-xl border-2 font-black text-xs transition-all flex items-center justify-center gap-2 cursor-pointer ${
                         medicalHandoverDecision === 'partially_approved'
-                          ? 'bg-[#005581] text-white border-[#005581] shadow-md'
+                          ? 'bg-[#005581] text-white border-[#005581] shadow-md ring-2 ring-[#ffd200]'
                           : 'bg-[#fffffa] text-[#005581] border-[#72cdf4] hover:bg-[#72cdf4]/20'
                       }`}
                     >
                       <Scale className="w-4 h-4 text-[#ffd200]" />
-                      <span>تأیید جزئی (همراه با مشخص نمودن موارد مشکوک)</span>
+                      <span>تأیید جزئی (مشخص نمودن موارد مشکوک)</span>
                     </button>
                   </div>
                 </div>
@@ -1497,12 +1668,12 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
                 {/* Handover Note Text Area */}
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-[#005581]">
-                    توضیحات کلی و ابهامات بالینی بازبین جهت ارسال به پزشک معتمد:
+                    توضیحات و ابهامات بالینی بازبین جهت ارسال به پزشک معتمد:
                   </label>
                   <textarea
                     value={handoverNote}
                     onChange={(e) => setHandoverNote(e.target.value)}
-                    placeholder="توضیحات عمومی خود درباره پرونده جهت بررسی بالینی را یادداشت نمایید..."
+                    placeholder="توضیحات خود درباره پرونده جهت بررسی بالینی را یادداشت نمایید..."
                     className="w-full bg-white text-xs text-[#005581] p-3 rounded-xl border border-[#72cdf4] font-medium h-20 focus:ring-2 focus:ring-[#72cdf4]"
                   />
                 </div>
@@ -1510,10 +1681,10 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
                 <div className="flex justify-end pt-2">
                   <button
                     onClick={handleSendToMedicalReviewer}
-                    className="bg-[#005581] hover:bg-[#003d5c] text-white font-extrabold text-xs px-6 py-3 rounded-xl transition-all shadow-md flex items-center gap-2"
+                    className="bg-[#005581] hover:bg-[#003d5c] text-white font-extrabold text-xs px-6 py-3 rounded-xl transition-all shadow-md flex items-center gap-2 cursor-pointer"
                   >
                     <Send className="w-4 h-4 text-[#ffd200]" />
-                    <span>ارسال رسمی پرونده به پزشک معتمد</span>
+                    <span>ارسال پرونده به پزشک معتمد</span>
                   </button>
                 </div>
               </div>
@@ -1527,7 +1698,7 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#72cdf4]">
                   <div>
                     <h2 className="text-base font-black text-[#005581]">
-                      ثبت نهایی رای و کسورات ادعای شماره {toFa(selectedClaim.claimNumber)}
+                      ثبت نهایی رأی و کسورات ادعای شماره {toFa(selectedClaim.claimNumber)}
                     </h2>
                     <p className="text-xs text-[#005581]/80 mt-1 font-medium">
                       بیمار: {selectedClaim.patientName} | کلینیک: {selectedClaim.clinicName || 'کلینیک دنتورا'} | بیمه‌گر: {selectedClaim.insuranceCompany || selectedClaim.insuranceProvider || 'بیمه ایران'}
@@ -1562,90 +1733,55 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
                 )}
 
                 {/* Claim Overall Financial Summary Bar */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-4 bg-[#72cdf4]/10 rounded-2xl border border-[#72cdf4] text-xs font-bold text-[#005581]">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 bg-[#72cdf4]/10 rounded-2xl border border-[#72cdf4] text-xs font-bold text-[#005581]">
                   <div className="bg-white p-3 rounded-xl border border-[#72cdf4]/60 space-y-1">
-                    <span className="text-[10px] text-[#005581]/70 block font-bold">مبلغ ادعاشده (هماهنگ با کانبان):</span>
+                    <span className="text-[10px] text-[#005581]/70 block font-bold">مبلغ کل ادعاشده پرونده:</span>
                     <span className="text-[#005581] font-black text-sm">
                       {toFa(getClaimAmountInTomans(selectedClaim).toLocaleString('fa-IR'))} تومان
                     </span>
                   </div>
 
                   <div className="bg-white p-3 rounded-xl border border-[#72cdf4]/60 space-y-1">
-                    <span className="text-[10px] text-[#005581]/70 block font-bold">سهم پایه مصوب (۳۰٪):</span>
-                    <span className="text-emerald-700 font-black text-sm">
-                      {toFa(Math.round(getClaimAmountInTomans(selectedClaim) * 0.3).toLocaleString('fa-IR'))} تومان
-                    </span>
-                  </div>
-
-                  <div className="bg-white p-3 rounded-xl border border-[#72cdf4]/60 space-y-1">
-                    <span className="text-[10px] text-[#005581]/70 block font-bold">سهم تکمیلی قابل پرداخت:</span>
-                    <span className="text-[#005581] font-black text-sm">
-                      {toFa(Math.round(getClaimAmountInTomans(selectedClaim) * 0.7).toLocaleString('fa-IR'))} تومان
-                    </span>
-                  </div>
-
-                  <div className="bg-white p-3 rounded-xl border border-[#72cdf4]/60 space-y-1">
                     <span className="text-[10px] text-[#005581]/70 block font-bold">مبلغ کسورات اعمالی:</span>
                     <span className="text-rose-600 font-black text-sm">
-                      {overallDecision === 'approved' ? '۰ تومان' : overallDecision === 'partially_approved' ? `${toFa(Math.round(getClaimAmountInTomans(selectedClaim) * 0.25).toLocaleString('fa-IR'))} تومان` : `${toFa(getClaimAmountInTomans(selectedClaim).toLocaleString('fa-IR'))} تومان (رد کل)`}
+                      {overallDecision === 'partially_rejected'
+                        ? `${toFa(Math.round(getClaimAmountInTomans(selectedClaim) * 0.5).toLocaleString('fa-IR'))} تومان (۵۰٪)`
+                        : `${toFa(getClaimAmountInTomans(selectedClaim).toLocaleString('fa-IR'))} تومان (رد کل)`}
                     </span>
                   </div>
                 </div>
 
-                {/* OVERALL DECISION SELECTION (۳ گزینه رای نهایی با انطباق با کانبان) */}
+                {/* OVERALL DECISION SELECTION (صرفاً گزینه‌های رد جزئی و رد کامل ادعا) */}
                 <div className="bg-[#72cdf4]/10 p-5 rounded-2xl border border-[#72cdf4] space-y-4">
                   <h3 className="text-xs font-black text-[#005581]">
-                    تعیین رای نهایی بازبین بیمه (هدایت خودکار به بورد کانبان منشی و حسابدار):
+                    تعیین رأی بازبین:
                   </h3>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    {/* 1. Full Approval -> Column 4 Settled */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* 1. Partial Rejection */}
                     <button
                       type="button"
                       disabled={signedClaimsMap[selectedClaim.id]}
                       onClick={() => {
-                        setOverallDecision('approved');
-                        setDecisionNotes('کلیه مدارک بالینی، تصاویر رادیوگرافی و تعرفه درمانی انطباق کامل داشته و بدون کسورات تایید گردید.');
+                        setOverallDecision('partially_rejected');
+                        setDecisionNotes('بخشی از مدارک یا خدمات دارای نقص یا عدم انطباق با اندیکاسیون بالینی بوده و جهت ثبت اعتراض یا اصلاح عودت داده شد.');
                       }}
-                      className={`p-4 rounded-2xl border-2 font-black text-xs transition-all flex flex-col items-start gap-1.5 cursor-pointer ${
-                        overallDecision === 'approved'
+                      className={`p-4 rounded-2xl border-2 font-black text-xs transition-all flex flex-col items-start justify-between gap-2 cursor-pointer ${
+                        overallDecision === 'partially_rejected'
                           ? 'bg-[#005581] text-white border-[#005581] shadow-md ring-2 ring-[#ffd200]'
                           : 'bg-[#fffffa] text-[#005581] border-[#72cdf4] hover:bg-[#72cdf4]/20'
                       }`}
                     >
                       <div className="flex items-center gap-2">
-                        <CheckCircle2 className={`w-5 h-5 ${overallDecision === 'approved' ? 'text-[#ffd200]' : 'text-emerald-600'}`} />
-                        <span className="text-sm">تأیید کامل بدون کسورات</span>
+                        <AlertCircle className={`w-5 h-5 ${overallDecision === 'partially_rejected' ? 'text-[#ffd200]' : 'text-amber-600'}`} />
+                        <span className="text-sm font-black">۱. رد جزئی / اعمال کسورات</span>
                       </div>
-                      <span className={`text-[10px] font-bold ${overallDecision === 'approved' ? 'text-[#ffe552]' : 'text-[#005581]/80'}`}>
-                        ← انتقال به ستون ۴ بورد کانبان (تسویه‌شده)
-                      </span>
+                      <p className={`text-[11px] font-medium text-right ${overallDecision === 'partially_rejected' ? 'text-slate-100' : 'text-[#005581]/80'}`}>
+                        اعمال کسورات روی خدمات یا تعرفه مازاد و عودت پرونده به کارتابل کلینیک
+                      </p>
                     </button>
 
-                    {/* 2. Partial Approval -> Column 3 Rejected / Needs Fix */}
-                    <button
-                      type="button"
-                      disabled={signedClaimsMap[selectedClaim.id]}
-                      onClick={() => {
-                        setOverallDecision('partially_approved');
-                        setDecisionNotes('پس از انطباق با تعرفه مصوب و سقف تعهدات، اقلام مربوطه بررسی و کسورات کسر گردید.');
-                      }}
-                      className={`p-4 rounded-2xl border-2 font-black text-xs transition-all flex flex-col items-start gap-1.5 cursor-pointer ${
-                        overallDecision === 'partially_approved'
-                          ? 'bg-[#005581] text-white border-[#005581] shadow-md ring-2 ring-[#ffd200]'
-                          : 'bg-[#fffffa] text-[#005581] border-[#72cdf4] hover:bg-[#72cdf4]/20'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <Scale className={`w-5 h-5 ${overallDecision === 'partially_approved' ? 'text-[#ffd200]' : 'text-amber-600'}`} />
-                        <span className="text-sm">رد جزئی (تأیید با کسورات)</span>
-                      </div>
-                      <span className={`text-[10px] font-bold ${overallDecision === 'partially_approved' ? 'text-[#ffe552]' : 'text-[#005581]/80'}`}>
-                        ← انتقال به ستون ۳ بورد کانبان (برگشت‌خورده)
-                      </span>
-                    </button>
-
-                    {/* 3. Full Rejection -> Column 3 Rejected */}
+                    {/* 2. Full Rejection */}
                     <button
                       type="button"
                       disabled={signedClaimsMap[selectedClaim.id]}
@@ -1653,7 +1789,7 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
                         setOverallDecision('rejected');
                         setDecisionNotes('به علت عدم انطباق با اندیکاسیون درمان و عدم ارائه گرافی تشخیصی معتبر، ادعا به طور کامل رد شد.');
                       }}
-                      className={`p-4 rounded-2xl border-2 font-black text-xs transition-all flex flex-col items-start gap-1.5 cursor-pointer ${
+                      className={`p-4 rounded-2xl border-2 font-black text-xs transition-all flex flex-col items-start justify-between gap-2 cursor-pointer ${
                         overallDecision === 'rejected'
                           ? 'bg-[#005581] text-white border-[#005581] shadow-md ring-2 ring-[#ffd200]'
                           : 'bg-[#fffffa] text-[#005581] border-[#72cdf4] hover:bg-[#72cdf4]/20'
@@ -1661,17 +1797,17 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
                     >
                       <div className="flex items-center gap-2">
                         <XCircle className={`w-5 h-5 ${overallDecision === 'rejected' ? 'text-[#ffd200]' : 'text-rose-600'}`} />
-                        <span className="text-sm">رد کامل ادعا</span>
+                        <span className="text-sm font-black">۲. رد کامل ادعا</span>
                       </div>
-                      <span className={`text-[10px] font-bold ${overallDecision === 'rejected' ? 'text-[#ffe552]' : 'text-[#005581]/80'}`}>
-                        ← انتقال به ستون ۳ بورد کانبان (برگشت‌خورده)
-                      </span>
+                      <p className={`text-[11px] font-medium text-right ${overallDecision === 'rejected' ? 'text-slate-100' : 'text-[#005581]/80'}`}>
+                        عدم احراز شرایط بالینی و رد کل ادعای درمانی ثبت‌شده
+                      </p>
                     </button>
                   </div>
 
                   {/* General Decision Note */}
                   <div className="space-y-1.5 pt-2">
-                    <label className="text-xs font-bold text-[#005581]">جمع‌بندی و توضیحات پایانی رای بازبین:</label>
+                    <label className="text-xs font-bold text-[#005581]">علت رد ادعا و توضیحات کسورات بازبین:</label>
                     <textarea
                       disabled={signedClaimsMap[selectedClaim.id]}
                       value={decisionNotes}
@@ -1689,7 +1825,7 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
                       className="bg-[#005581] hover:bg-[#003d5c] text-white font-black text-xs px-8 py-3.5 rounded-xl transition-all shadow-md flex items-center gap-2 cursor-pointer"
                     >
                       <Lock className="w-4 h-4 text-[#ffd200]" />
-                      <span>ثبت نهایی رای بازبین و اعمال در کانبان بیمه</span>
+                      <span>ثبت نهایی رأی و اعمال کسورات</span>
                     </button>
                   </div>
                 )}
@@ -2307,7 +2443,7 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
                 <span>گواهی دیجیتال فعال و تاییدشده (Active / Verified):</span>
               </div>
               <p className="text-emerald-800 font-medium">
-                هویت‌سنجی و ثبت‌نام گواهی دیجیتال مریم عباسی قبلاً با موفقیت انجام شده است. نیازی به ورود مجدد اطلاعات گواهی نیست.
+                هویت‌سنجی و ثبت‌نام گواهی دیجیتال {activeReviewerName} قبلاً با موفقیت انجام شده است. نیازی به ورود مجدد اطلاعات گواهی نیست.
               </p>
             </div>
 
@@ -2315,7 +2451,7 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
             <div className="bg-[#72cdf4]/10 p-4 rounded-2xl border border-[#72cdf4] space-y-2 text-xs font-medium">
               <div className="flex justify-between py-1 border-b border-[#72cdf4]/50">
                 <span className="text-[#005581]/80 font-bold">نام و سمت بازبین:</span>
-                <span className="font-extrabold text-[#005581]">مریم عباسی (بازبین ارشد بیمه)</span>
+                <span className="font-extrabold text-[#005581]">{activeReviewerName}</span>
               </div>
               <div className="flex justify-between py-1 border-b border-[#72cdf4]/50">
                 <span className="text-[#005581]/80 font-bold">سریال گواهی دیجیتال:</span>
@@ -2514,6 +2650,73 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
                 })}
               </div>
             </div>
+
+            {/* Digital Signature Requirement Box (for Deep Review or AI Override) */}
+            {selectedClaim && (() => {
+              const { calculatedQueue, finalScore } = getRiskBreakdown(selectedClaim);
+              const isAiOverridden = editingActionProposed !== selectedDiscrepancy.actionProposed;
+              const isSignatureRequired = (calculatedQueue === 'deep_review' || finalScore > 55) || ((calculatedQueue === 'express' || finalScore <= 20) && isAiOverridden);
+
+              if (isSignatureRequired) {
+                return (
+                  <div className="bg-amber-50 dark:bg-amber-950/40 p-4 rounded-2xl border-2 border-amber-300 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-200 pb-2">
+                      <div className="flex items-center gap-2">
+                        <Lock className="w-5 h-5 text-amber-700 dark:text-amber-300" />
+                        <span className="text-xs font-black text-amber-950 dark:text-amber-100">
+                          {calculatedQueue === 'deep_review' || finalScore > 55
+                            ? 'الزام امضای دیجیتال: این پرونده در رده «بررسی دقیق (> ۵۵٪)» است'
+                            : 'الزام امضای دیجیتال: به دلیل تغییر نظر هوش مصنوعی در «بررسی سریع (۰ تا ۲۰٪)»'}
+                        </span>
+                      </div>
+                      <span className="font-mono text-[10px] bg-amber-200 text-amber-950 px-2 py-0.5 rounded font-bold self-start sm:self-auto">
+                        CERT-984021-IR (WORM)
+                      </span>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                      <label className="text-xs font-bold text-amber-900 dark:text-amber-200 whitespace-nowrap">
+                        پین امنیتی امضای دیجیتال:
+                      </label>
+                      <input
+                        type="password"
+                        maxLength={6}
+                        value={diagnosisSigningPin}
+                        onChange={(e) => {
+                          setDiagnosisSigningPin(e.target.value);
+                          if (diagnosisPinError) setDiagnosisPinError('');
+                        }}
+                        placeholder="پین ۴ رقمی..."
+                        className="w-full sm:w-48 bg-white text-xs font-mono font-black text-[#005581] p-2.5 rounded-xl border border-amber-400 focus:ring-2 focus:ring-[#ffd200] text-center tracking-widest"
+                      />
+                      <span className="text-[11px] text-amber-800 dark:text-amber-300 font-medium">
+                        تایید هویت بازبین ثبت‌کننده در سیستم غیرقابل تغییر
+                      </span>
+                    </div>
+
+                    {diagnosisPinError && (
+                      <p className="text-xs text-rose-700 dark:text-rose-400 font-black bg-rose-100 dark:bg-rose-950/60 p-2 rounded-xl border border-rose-300 animate-pulse">
+                        {diagnosisPinError}
+                      </p>
+                    )}
+                  </div>
+                );
+              } else if (calculatedQueue === 'express' || finalScore <= 20) {
+                return (
+                  <div className="bg-emerald-50 dark:bg-emerald-950/40 p-3 rounded-xl border border-emerald-300 text-xs text-emerald-900 dark:text-emerald-200 font-bold flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>بررسی سریع (۰ تا ۲۰٪): ثبت مستقیم بدون نیاز به امضا (انطباق کامل با نظر سیستم هوشمند)</span>
+                  </div>
+                );
+              } else {
+                return (
+                  <div className="bg-[#72cdf4]/10 p-3 rounded-xl border border-[#72cdf4] text-xs text-[#005581] font-bold flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-[#005581] shrink-0" />
+                    <span>بررسی استاندارد (۲۰ تا ۵۵٪): ثبت عادی کارشناسی</span>
+                  </div>
+                );
+              }
+            })()}
 
             {/* Modal Actions */}
             <div className="flex items-center justify-between pt-3 border-t border-[#72cdf4]">

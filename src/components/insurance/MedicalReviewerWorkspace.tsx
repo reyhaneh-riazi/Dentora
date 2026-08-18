@@ -44,6 +44,11 @@ import {
   Crosshair,
   Grid,
   Image as ImageIcon,
+  Send,
+  Clock,
+  MessageSquare,
+  Copy,
+  CheckCheck,
 } from 'lucide-react';
 import { mockClaims } from '../../data/mockData';
 import { Claim } from '../../types';
@@ -399,13 +404,16 @@ interface MedicalReviewerWorkspaceProps {
     deduction: number,
     reason: string
   ) => void;
+  currentUserName?: string;
 }
 
 export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> = ({
   claims: initialClaims,
   setClaims: setClaimsProp,
   onReviewDecision,
+  currentUserName,
 }) => {
+  const activeDoctorName = currentUserName?.trim() || 'دکتر احسان رستمی (پزشک معتمد)';
   const [activeStep, setActiveStep] = useState<number>(1);
   const [reviewMethod, setReviewMethod] = useState<'fast' | 'standard' | 'deep'>('deep');
   const [claimsLocal, setClaimsLocal] = useState<Claim[]>(
@@ -425,16 +433,10 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
   const [queueSearchQuery, setQueueSearchQuery] = useState<string>('');
 
   const trustedDoctor = {
-    name: 'دکتر حمید سجادی',
+    name: activeDoctorName,
     medicalCode: '۴۸۹۲۱-ن',
-    specialty: 'پزشک معتمد و آسیب‌شناس فک و دهان',
+    specialty: 'پزشک معتمد و کارشناس عالی رادیولوژی فک و دهان',
     wormKey: '0x8f2a-WORM-2026-ACTIVE',
-  };
-
-  const claimReviewerInfo = {
-    name: 'سمیه محمدی',
-    title: 'کارشناس ارشد ارزیابی ادعای درمان',
-    note: 'پرونده از نظر سقف تعهدات و مدارک مالی اولیه احراز اولیه گردیده و جهت ارزیابی رادیولوژی و بالینی ارجاع شد.',
   };
 
   const systemVersions = {
@@ -633,6 +635,27 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
   const selectedClaim = React.useMemo(() => {
     return claims.find((c) => c.id === selectedClaimId) || claims[0] || mockClaims[0];
   }, [claims, selectedClaimId]);
+
+  const claimReviewerInfo = React.useMemo(() => {
+    const reviewerName =
+      selectedClaim?.claimReviewerName ||
+      selectedClaim?.medicalHandover?.reviewerName ||
+      'زهرا صادقی (بازبین ارشد ادعا)';
+
+    const reviewerNote =
+      selectedClaim?.claimReviewerHandoverNote ||
+      selectedClaim?.medicalHandover?.note ||
+      selectedClaim?.reviewerDiagnosis ||
+      selectedClaim?.reviewerNotes ||
+      selectedClaim?.doctorReviewerDiagnosis ||
+      'پرونده از نظر سقف تعهدات و مدارک مالی اولیه احراز اولیه گردیده و جهت ارزیابی رادیولوژی و بالینی ارجاع شد.';
+
+    return {
+      name: reviewerName,
+      title: 'کارشناس ارشد ارزیابی ادعای درمان',
+      note: reviewerNote,
+    };
+  }, [selectedClaim]);
 
   const activeLineItems = React.useMemo(() => {
     if (!selectedClaim) return [];
@@ -951,6 +974,15 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
   const [showSuccessModal, setShowSuccessModal] = useState<boolean>(false);
   const [modalMessage, setModalMessage] = useState<string>('');
 
+  // Step 5: Electronic Prescription & Secretary Follow-up State
+  const [isSendingPrescription, setIsSendingPrescription] = useState<boolean>(false);
+  const [prescriptionSent, setPrescriptionSent] = useState<boolean>(false);
+  const [prescriptionTrackingCode, setPrescriptionTrackingCode] = useState<string>('IR-170075');
+  const [copiedTrackingCode, setCopiedTrackingCode] = useState<boolean>(false);
+  const [optionalVisitTime, setOptionalVisitTime] = useState<string>('');
+  const [optionalSecretaryMsg, setOptionalSecretaryMsg] = useState<string>('');
+  const [secretaryMsgSent, setSecretaryMsgSent] = useState<boolean>(false);
+
   useEffect(() => {
     if (selectedClaim) {
       const aiMarkersCount = activeLineItems.reduce((acc, item) => acc + (item.aiMarkers?.length || 0), 0);
@@ -1192,24 +1224,26 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
         : 'partially_approved';
 
     const claimAmount = selectedClaim.claimedAmount || selectedClaim.totalClaimedAmount || 5200000;
-    const deduction = mappedStatus === 'approved' ? 0 : (mappedStatus === 'partially_approved' ? Math.round(claimAmount * 0.25) : claimAmount);
+    const isApprovedOrPartial = mappedStatus === 'approved' || mappedStatus === 'partially_approved';
+    const deduction = mappedStatus === 'approved' ? 0 : (mappedStatus === 'partially_approved' ? Math.round(claimAmount * 0.2) : claimAmount);
+    const approvedTotal = Math.max(0, claimAmount - deduction);
 
     setClaims((prev) =>
       prev.map((c) => {
         if (c.id !== selectedClaim.id) return c;
         const updatedAppeals = (c.appeals || []).map((a) => ({
           ...a,
-          status: mappedStatus === 'approved' ? ('accepted' as const) : ('rejected' as const),
+          status: isApprovedOrPartial ? ('accepted' as const) : ('rejected' as const),
           responseNotes: `نظر نهایی بازبین پزشکی (${trustedDoctor.name}): ${reviewerSummaryText}`,
         }));
         return {
           ...c,
           appeals: updatedAppeals,
-          status: mappedStatus === 'approved' ? ('settled' as const) : ('rejected' as const),
+          status: isApprovedOrPartial ? ('settled' as const) : ('rejected' as const),
           deductionAmount: deduction,
-          totalApprovedAmount: mappedStatus === 'approved' ? claimAmount : 0,
-          baseApprovedAmount: mappedStatus === 'approved' ? (c.baseApprovedAmount || Math.round(claimAmount * 0.3)) : 0,
-          supplApprovedAmount: mappedStatus === 'approved' ? (c.supplApprovedAmount || Math.round(claimAmount * 0.7)) : 0,
+          totalApprovedAmount: isApprovedOrPartial ? approvedTotal : 0,
+          baseApprovedAmount: isApprovedOrPartial ? (c.baseApprovedAmount || Math.round(approvedTotal * 0.3)) : 0,
+          supplApprovedAmount: isApprovedOrPartial ? (c.supplApprovedAmount || Math.round(approvedTotal * 0.7)) : 0,
           deductionReason: mappedStatus === 'approved' ? undefined : reviewerSummaryText,
           rejectionReason: mappedStatus === 'approved' ? undefined : reviewerSummaryText,
           doctorReviewerDiagnosis: reviewerSummaryText,
@@ -1223,16 +1257,31 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
 
     if (isSigned) {
       setModalMessage(
-        `پرونده ${selectedClaim.claimNumber} به دلیل بررسی در «روش دقیق» با امضای دیجیتال و کد PIN پزشک معتمد (${trustedDoctor.name}) قفل گردید و به تاریخچه حسابرسی (بخش ۴) منتقل شد.`
+        `پرونده ${selectedClaim.claimNumber} به دلیل بررسی در «روش دقیق (> ۵۵٪)» با امضای دیجیتال و کد PIN پزشک معتمد (${trustedDoctor.name}) قفل گردید.`
       );
     } else {
       setModalMessage(
-        `پرونده ${selectedClaim.claimNumber} به دلیل بررسی در «روش غیردقیق» مستقیماً بدون نیاز به امضای دیجیتال ثبت گردید و به تاریخچه حسابرسی (بخش ۴) منتقل شد.`
+        `پرونده ${selectedClaim.claimNumber} با موفقیت بدون نیاز به امضای دیجیتال ثبت گردید.`
       );
     }
 
     setShowSuccessModal(true);
-    setActiveStep(4);
+  };
+
+  const handleSendToElectronicPrescription = () => {
+    setIsSendingPrescription(true);
+    setPrescriptionSent(false);
+    setTimeout(() => {
+      setIsSendingPrescription(false);
+      setPrescriptionSent(true);
+      setPrescriptionTrackingCode('IR-170075');
+    }, 1300);
+  };
+
+  const handleSendSecretaryMessage = () => {
+    if (!optionalSecretaryMsg.trim() && !optionalVisitTime.trim()) return;
+    setSecretaryMsgSent(true);
+    setTimeout(() => setSecretaryMsgSent(false), 4000);
   };
 
   const filteredClaims = claims.filter((c) => {
@@ -1242,9 +1291,9 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
       (c.clinicName || '').toLowerCase().includes(queueSearchQuery.toLowerCase());
 
     if (!matchesSearch) return false;
-    if (reviewMethod === 'fast') return c.riskScore < 30;
-    if (reviewMethod === 'standard') return c.riskScore >= 30 && c.riskScore < 70;
-    return c.riskScore >= 70 || c.id === selectedClaimId;
+    if (reviewMethod === 'fast') return c.riskScore <= 20;
+    if (reviewMethod === 'standard') return c.riskScore > 20 && c.riskScore <= 55;
+    return c.riskScore > 55;
   });
 
   return (
@@ -1780,6 +1829,30 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
               </div>
             </button>
 
+            <button
+              type="button"
+              onClick={() => setActiveStep(5)}
+              className={`w-full text-right p-3.5 rounded-xl text-xs transition-all flex items-start gap-3 border ${
+                activeStep === 5
+                  ? 'bg-[#005581] text-white border-[#005581] shadow-md font-black'
+                  : 'bg-white text-[#005581] border-[#72cdf4] hover:bg-[#72cdf4]/10 font-bold'
+              }`}
+            >
+              <div
+                className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 font-black text-xs ${
+                  activeStep === 5 ? 'bg-[#ffd200] text-[#005581]' : 'bg-[#72cdf4]/30 text-[#005581]'
+                }`}
+              >
+                ۵
+              </div>
+              <div>
+                <div className="font-black">۵. نسخه الکترونیک & پیگیری</div>
+                <div className={`text-[10px] mt-0.5 ${activeStep === 5 ? 'text-[#72cdf4]' : 'text-[#005581]/70'}`}>
+                  ارسال به سامانه سپام و پیام منشی
+                </div>
+              </div>
+            </button>
+
             <div className="bg-[#72cdf4]/10 p-3.5 rounded-xl border border-[#72cdf4] space-y-2 pt-3 mt-4 text-xs">
               <div className="flex items-center justify-between text-[#005581] font-black">
                 <span>پرونده فعال:</span>
@@ -1833,7 +1906,7 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
                     <div className="flex items-center justify-between">
                       <span className="flex items-center gap-2 font-black text-xs">
                         <Zap className="w-4 h-4 text-[#ffd200]" />
-                        <span>۱. بررسی خودکار هوشمند (AI Fast-Track)</span>
+                        <span>۱. بررسی سریع (۰ تا ۲۰٪)</span>
                       </span>
                       <span
                         className={`text-[10px] px-2.5 py-0.5 rounded-full font-black ${
@@ -1842,11 +1915,11 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
                             : 'bg-[#72cdf4]/30 text-[#005581]'
                         }`}
                       >
-                        {toFa(1)} پرونده
+                        {toFa(claims.filter((c) => c.riskScore <= 20).length)} پرونده
                       </span>
                     </div>
                     <div className="text-[10px] opacity-80 font-medium leading-relaxed">
-                      پرونده‌های کم‌ریسک؛ ثبت سریع سیستمی بدون امضای دیجیتال
+                      پرونده‌های با ریسک ۰ تا ۲۰٪؛ بدون نیاز به امضا مگر در صورت تغییر نظر AI
                     </div>
                   </button>
 
@@ -1862,7 +1935,7 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
                     <div className="flex items-center justify-between">
                       <span className="flex items-center gap-2 font-black text-xs">
                         <CheckCircle className="w-4 h-4 text-[#ffd200]" />
-                        <span>۲. بررسی استاندارد (Standard Review)</span>
+                        <span>۲. بررسی استاندارد (۲۰ تا ۵۵٪)</span>
                       </span>
                       <span
                         className={`text-[10px] px-2.5 py-0.5 rounded-full font-black ${
@@ -1871,11 +1944,11 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
                             : 'bg-[#72cdf4]/30 text-[#005581]'
                         }`}
                       >
-                        {toFa(2)} پرونده
+                        {toFa(claims.filter((c) => c.riskScore > 20 && c.riskScore <= 55).length)} پرونده
                       </span>
                     </div>
                     <div className="text-[10px] opacity-80 font-medium leading-relaxed">
-                      بررسی معمول پرونده‌ها با چک‌لیست نمونه‌گیری؛ ثبت بدون امضا
+                      پرونده‌های حد واسط با ریسک ۲۰ تا ۵۵٪؛ بررسی رادیولوژی استاندارد بدون هم‌پوشانی
                     </div>
                   </button>
 
@@ -1891,7 +1964,7 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
                     <div className="flex items-center justify-between">
                       <span className="flex items-center gap-2 font-black text-xs">
                         <ShieldCheck className="w-4 h-4 text-[#ffd200]" />
-                        <span>۳. بررسی دقیق کارشناسی (Deep Review)</span>
+                        <span>{'۳. بررسی دقیق (> ۵۵٪)'}</span>
                       </span>
                       <span
                         className={`text-[10px] px-2.5 py-0.5 rounded-full font-black ${
@@ -1900,11 +1973,11 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
                             : 'bg-[#72cdf4]/30 text-[#005581]'
                         }`}
                       >
-                        فعال (نیازمند امضا)
+                        {toFa(claims.filter((c) => c.riskScore > 55).length)} پرونده (الزام امضا)
                       </span>
                     </div>
                     <div className="text-[10px] opacity-80 font-medium leading-relaxed">
-                      پرونده‌های پرریسک؛ ارزیابی رادیولوژی دقیق و **الزام امضای دیجیتال**
+                      پرونده‌های با ریسک بالای ۵۵٪؛ **الزام قطعی امضای دیجیتال** و PIN برای تشخیص و رای
                     </div>
                   </button>
                 </div>
@@ -2989,28 +3062,6 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
                   </span>
                 </div>
 
-                <div className="bg-[#72cdf4]/15 border border-[#72cdf4] p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-                  <div className="flex items-center gap-2 text-[#005581] font-bold">
-                    <Info className="w-5 h-5 text-[#005581] shrink-0" />
-                    <div>
-                      <span>روش بررسی فعال برای این پرونده: </span>
-                      <span className="font-black bg-[#005581] text-[#ffd200] px-2.5 py-0.5 rounded text-[11px] mr-1">
-                        {reviewMethod === 'deep'
-                          ? 'روش دقیق (Deep Review) - نیازمند امضای دیجیتال'
-                          : reviewMethod === 'standard'
-                          ? 'روش استاندارد - ثبت مستقیم بدون امضا'
-                          : 'روش سریع AI - ثبت مستقیم بدون امضا'}
-                      </span>
-                    </div>
-                  </div>
-
-                  <span className="text-[11px] font-black text-[#005581] opacity-90">
-                    {reviewMethod === 'deep'
-                      ? '⚠️ موقع ثبت پرونده، کادر امضای دیجیتال باز خواهد شد.'
-                      : '✅ این پرونده به صورت مستقیم و بدون نیاز به امضای دیجیتال در تاریخچه ثبت می‌شود.'}
-                  </span>
-                </div>
-
                 {/* Summary of Appeal Dossier and Evidence in Step 3 */}
                 {isClaimAppealed && activeAppeal && (
                   <div className="bg-amber-50/90 rounded-2xl p-5 border-2 border-amber-400 space-y-4 shadow-sm animate-fadeIn">
@@ -3294,18 +3345,29 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
                     پزشک معتمد صادرکننده: <span className="font-black">{trustedDoctor.name}</span> ({trustedDoctor.medicalCode})
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={handleSubmitSection3FinalVerdict}
-                    className="bg-[#005581] hover:bg-[#003d5c] text-white font-black text-xs px-8 py-3.5 rounded-2xl shadow-lg transition-all flex items-center gap-2 hover:scale-105 cursor-pointer"
-                  >
-                    <ShieldCheck className="w-5 h-5 text-[#ffd200]" />
-                    <span>
-                      {reviewMethod === 'deep'
-                        ? 'ثبت رای نهایی و ورود به کادر امضای دیجیتال'
-                        : 'ثبت مستقیم رای نهایی و انتقال به تاریخچه'}
-                    </span>
-                  </button>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setActiveStep(5)}
+                      className="bg-emerald-700 hover:bg-emerald-800 text-white font-black text-xs px-5 py-3.5 rounded-2xl shadow-md transition-all flex items-center gap-2 hover:scale-105 cursor-pointer"
+                    >
+                      <Send className="w-4 h-4 text-emerald-200" />
+                      <span>انتقال به مرحله ۵ (ارسال نسخه الکترونیک)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleSubmitSection3FinalVerdict}
+                      className="bg-[#005581] hover:bg-[#003d5c] text-white font-black text-xs px-8 py-3.5 rounded-2xl shadow-lg transition-all flex items-center gap-2 hover:scale-105 cursor-pointer"
+                    >
+                      <ShieldCheck className="w-5 h-5 text-[#ffd200]" />
+                      <span>
+                        {reviewMethod === 'deep'
+                          ? 'ثبت رای نهایی و ورود به کادر امضای دیجیتال'
+                          : 'ثبت مستقیم رای نهایی و انتقال به تاریخچه'}
+                      </span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -3461,6 +3523,263 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
                       ))}
                     </tbody>
                   </table>
+                </div>
+              </div>
+
+              {/* Action Button to Step 5 */}
+              <div className="flex justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={() => setActiveStep(5)}
+                  className="bg-emerald-700 hover:bg-emerald-800 text-white font-black text-xs px-6 py-3 rounded-xl shadow-md transition-all flex items-center gap-2 hover:scale-105 cursor-pointer"
+                >
+                  <Send className="w-4 h-4 text-emerald-200" />
+                  <span>انتقال به مرحله ۵ (ارسال به سامانه نسخه الکترونیک)</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 5: ELECTRONIC PRESCRIPTION & SECRETARY FOLLOW-UP */}
+          {activeStep === 5 && (
+            <div className="space-y-6 animate-fadeIn">
+              {/* Header Box */}
+              <div className="bg-[#fffffa] rounded-2xl p-6 border-2 border-[#005581] space-y-4 shadow-sm">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-[#72cdf4] gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-emerald-700 text-white flex items-center justify-center shadow">
+                      <Send className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h2 className="text-sm font-black text-[#005581]">
+                        مرحله ۵: ارسال به سامانه نسخه الکترونیک و پیگیری پذیرش
+                      </h2>
+                      <div className="text-[11px] text-[#005581]/80 font-bold">
+                        سامانه یکپارچه سپام، بیمه سلامت و سازمان تأمین اجتماعی
+                      </div>
+                    </div>
+                  </div>
+                  <span className="bg-emerald-50 text-emerald-900 border border-emerald-300 text-[11px] font-black px-3 py-1 rounded-full self-start sm:self-auto">
+                    پروتکل SEPAM-FHIR v4.2
+                  </span>
+                </div>
+
+                {/* Patient / Claim Info summary */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                  <div className="bg-[#72cdf4]/15 p-3 rounded-xl border border-[#72cdf4]">
+                    <span className="text-[10px] text-[#005581]/70 block font-bold">بیمار:</span>
+                    <span className="font-black text-[#005581]">{selectedClaim.patientName}</span>
+                    <span className="text-[10px] block font-mono text-[#005581]/80">کد ملی: {selectedClaim.patientNationalId || '۰۰۱۸۲۳۴۹۱۲'}</span>
+                  </div>
+
+                  <div className="bg-[#72cdf4]/15 p-3 rounded-xl border border-[#72cdf4]">
+                    <span className="text-[10px] text-[#005581]/70 block font-bold">پزشک معالج / صادرکننده:</span>
+                    <span className="font-black text-[#005581]">{trustedDoctor.name}</span>
+                    <span className="text-[10px] block font-mono text-[#005581]/80">نظام‌پزشکی: {trustedDoctor.medicalCode}</span>
+                  </div>
+
+                  <div className="bg-[#72cdf4]/15 p-3 rounded-xl border border-[#72cdf4]">
+                    <span className="text-[10px] text-[#005581]/70 block font-bold">سازمان بیمه‌گر:</span>
+                    <span className="font-black text-[#005581]">{selectedClaim.primaryInsurerName || 'بیمه پایه سلامت / تأمین اجتماعی'}</span>
+                    <span className="text-[10px] block text-emerald-800 font-bold">پوشش آنلاین فعال</span>
+                  </div>
+
+                  <div className="bg-[#72cdf4]/15 p-3 rounded-xl border border-[#72cdf4]">
+                    <span className="text-[10px] text-[#005581]/70 block font-bold">شماره پرونده درمانی:</span>
+                    <span className="font-black text-[#005581] font-mono">{selectedClaim.claimNumber}</span>
+                    <span className="text-[10px] block text-[#005581]/80 font-bold">{selectedClaim.clinicName}</span>
+                  </div>
+                </div>
+
+                {/* Primary Action Button: Send to E-Prescription */}
+                <div className="bg-gradient-to-l from-emerald-50 via-teal-50 to-emerald-50 dark:from-emerald-950/30 dark:to-teal-950/20 p-5 rounded-2xl border-2 border-emerald-300 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-xs font-black text-emerald-950 dark:text-emerald-100 flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-emerald-700" />
+                        <span>ارسال اقلام و خدمات پرونده به سامانه الکترونیک نسخه‌نویسی</span>
+                      </h3>
+                      <p className="text-[11px] text-emerald-800 dark:text-emerald-300 font-medium mt-0.5">
+                        ارسال داده‌های بالینی و خدمات صحه‌گذاری‌شده دندان‌پزشکی به گیت‌وی سلامت
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleSendToElectronicPrescription}
+                      disabled={isSendingPrescription}
+                      className="bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 text-white font-black text-xs px-6 py-3 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer hover:scale-105 active:scale-95"
+                    >
+                      {isSendingPrescription ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                          <span>در حال ارسال به سامانه...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-4 h-4 text-[#ffd200]" />
+                          <span>ارسال به سامانه نسخه الکترونیک</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* SUCCESS MESSAGE DISPLAY AS SPECIFIED */}
+                  {prescriptionSent && (
+                    <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border-2 border-emerald-500 shadow-md space-y-2 animate-fadeIn">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div className="flex items-center gap-2.5 text-emerald-800 dark:text-emerald-300 font-black text-sm">
+                          <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0" />
+                          <span className="font-extrabold text-base">✓ ارسال شد — کد پیگیری: {prescriptionTrackingCode}</span>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard?.writeText(prescriptionTrackingCode);
+                            setCopiedTrackingCode(true);
+                            setTimeout(() => setCopiedTrackingCode(false), 2000);
+                          }}
+                          className="bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-200 border border-emerald-300 px-3 py-1.5 rounded-lg text-xs font-black flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
+                        >
+                          {copiedTrackingCode ? (
+                            <>
+                              <CheckCheck className="w-4 h-4 text-emerald-700" />
+                              <span>کپی شد!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-4 h-4" />
+                              <span>کپی کد پیگیری</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-4 text-[11px] text-slate-600 dark:text-slate-400 pt-1 border-t border-emerald-100 dark:border-slate-800 font-medium">
+                        <span>زمان ثبت در وب‌سرویس: {new Date().toLocaleTimeString('fa-IR')}</span>
+                        <span>•</span>
+                        <span>کد رهگیری ملی: <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{prescriptionTrackingCode}</span></span>
+                        <span>•</span>
+                        <span>وضعیت استعلام: <span className="text-emerald-700 font-bold">تأییدشده و فعال در داروخانه/مرکز</span></span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* OPTIONAL FIELDS: TIME LOGGING & SECRETARY FOLLOW-UP */}
+                <div className="bg-white p-5 rounded-2xl border border-[#72cdf4] space-y-4">
+                  <div className="border-b border-[#72cdf4]/40 pb-2 flex items-center justify-between">
+                    <h3 className="text-xs font-black text-[#005581] flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-[#005581]" />
+                      <span>تنظیمات اختیاری و ارسال پیام پیگیری به منشی</span>
+                    </h3>
+                    <span className="text-[10px] text-[#005581]/70 font-bold bg-[#72cdf4]/20 px-2 py-0.5 rounded">
+                      تکمیل این بخش کاملاً اختیاری است
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Optional Field 1: ثبت زمان */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-black text-[#005581] flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-[#005581]" />
+                        <span>ثبت زمان ویزیت / ارسال (اختیاری):</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={optionalVisitTime}
+                        onChange={(e) => setOptionalVisitTime(e.target.value)}
+                        placeholder="مثال: ساعت ۱۱:۴۵ یا نوبت عصر"
+                        className="w-full bg-white text-xs font-bold text-[#005581] p-3 rounded-xl border border-[#72cdf4] focus:ring-2 focus:ring-[#ffd200] focus:outline-none"
+                      />
+                      <span className="text-[10px] text-[#005581]/60 font-medium block">
+                        در صورت خالی گذاشتن، زمان جاری سرور به‌صورت سیستمی لحاظ می‌گردد.
+                      </span>
+                    </div>
+
+                    {/* Optional Field 2: ارسال پیام به منشی */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-black text-[#005581] flex items-center gap-1.5">
+                        <MessageSquare className="w-3.5 h-3.5 text-[#005581]" />
+                        <span>ارسال پیام پیگیری به منشی و پذیرش (اختیاری):</span>
+                      </label>
+                      <textarea
+                        value={optionalSecretaryMsg}
+                        onChange={(e) => setOptionalSecretaryMsg(e.target.value)}
+                        rows={2}
+                        placeholder="متن یادداشت جهت اطلاع یا هماهنگی نوبت بعدی بیمار توسط منشی پذیرش..."
+                        className="w-full bg-white text-xs font-bold text-[#005581] p-3 rounded-xl border border-[#72cdf4] focus:ring-2 focus:ring-[#ffd200] focus:outline-none resize-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Quick Chips for Secretary message */}
+                  <div className="flex flex-wrap gap-1.5 items-center pt-1">
+                    <span className="text-[10px] font-bold text-[#005581]/70">نمونه پیام‌های آماده:</span>
+                    <button
+                      type="button"
+                      onClick={() => setOptionalSecretaryMsg('نسخه الکترونیک در سامانه صادر گردید. کد پیگیری به بیمار تحویل شود.')}
+                      className="text-[10px] bg-[#72cdf4]/20 hover:bg-[#72cdf4]/40 text-[#005581] px-2 py-1 rounded-lg font-bold border border-[#72cdf4] transition cursor-pointer"
+                    >
+                      + تحویل کد رهگیری به بیمار
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOptionalSecretaryMsg('نوبت ویزیت و قالب‌گیری روکش برای ۱۰ روز آینده تنظیم گردد.')}
+                      className="text-[10px] bg-[#72cdf4]/20 hover:bg-[#72cdf4]/40 text-[#005581] px-2 py-1 rounded-lg font-bold border border-[#72cdf4] transition cursor-pointer"
+                    >
+                      + رزرو نوبت قالب‌گیری روکش
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOptionalSecretaryMsg('گرافی کنترل بعد از پرکردگی کانال‌ها در سامانه ضمیمه شد.')}
+                      className="text-[10px] bg-[#72cdf4]/20 hover:bg-[#72cdf4]/40 text-[#005581] px-2 py-1 rounded-lg font-bold border border-[#72cdf4] transition cursor-pointer"
+                    >
+                      + ثبت گرافی کنترل
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-[#72cdf4]/40">
+                    <div>
+                      {secretaryMsgSent && (
+                        <span className="text-xs font-black text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-300 inline-flex items-center gap-1.5 animate-fadeIn">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                          <span>✓ پیام پیگیری با موفقیت در کارتابل منشی ثبت شد.</span>
+                        </span>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleSendSecretaryMessage}
+                      className="bg-[#005581] hover:bg-[#003d5c] text-white font-black text-xs px-5 py-2.5 rounded-xl shadow-md transition flex items-center gap-2 cursor-pointer"
+                    >
+                      <Send className="w-4 h-4 text-[#ffd200]" />
+                      <span>ثبت زمان و ارسال یادداشت به منشی</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Bottom Navigation */}
+                <div className="flex items-center justify-between pt-3 border-t border-[#72cdf4]">
+                  <button
+                    type="button"
+                    onClick={() => setActiveStep(4)}
+                    className="bg-[#72cdf4]/20 hover:bg-[#72cdf4]/40 text-[#005581] font-black text-xs px-4 py-2.5 rounded-xl border border-[#72cdf4] transition flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                    <span>بازگشت به تاریخچه حسابرسی (مرحله ۴)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveStep(1)}
+                    className="bg-[#005581] hover:bg-[#003d5c] text-white font-black text-xs px-6 py-2.5 rounded-xl shadow-md transition flex items-center gap-2 cursor-pointer"
+                  >
+                    <span>بازگشت به فهرست پرونده‌ها (مرحله ۱)</span>
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             </div>

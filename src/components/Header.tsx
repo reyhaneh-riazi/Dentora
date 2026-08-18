@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { UserRole, Branch, ClinicRegistration } from '../types';
 import {
   Activity,
@@ -80,6 +80,33 @@ export const Header: React.FC<HeaderProps> = ({
     insurer_admin: { title: 'ادمین بیمه', color: 'bg-[#003350]', badge: 'Insurer Admin' },
     lab: { title: 'پورتال لابراتوار', color: 'bg-[#005581]', badge: 'Dental Lab' },
   };
+
+  const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
+  const [isClinicDropdownOpen, setIsClinicDropdownOpen] = useState(false);
+  const [isBranchDropdownOpen, setIsBranchDropdownOpen] = useState(false);
+
+  const roleMenuRef = useRef<HTMLDivElement>(null);
+  const clinicMenuRef = useRef<HTMLDivElement>(null);
+  const branchMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (roleMenuRef.current && !roleMenuRef.current.contains(event.target as Node)) {
+        setIsRoleDropdownOpen(false);
+      }
+      if (clinicMenuRef.current && !clinicMenuRef.current.contains(event.target as Node)) {
+        setIsClinicDropdownOpen(false);
+      }
+      if (branchMenuRef.current && !branchMenuRef.current.contains(event.target as Node)) {
+        setIsBranchDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   const currentBranch = branches.find((b) => b.id === activeBranchId) || branches[0];
 
@@ -233,89 +260,128 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Clinic Dropdown Switcher */}
             {clinics.length > 0 && onClinicSelect && (
-              <div className="relative group">
-                <div className="flex items-center gap-1.5 bg-[#004266] border border-[#72cdf4]/40 text-[#fffffa] px-3 py-1.5 rounded-xl text-xs font-bold cursor-pointer hover:bg-[#003858] transition shadow-xs whitespace-nowrap">
+              <div className="relative" ref={clinicMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsClinicDropdownOpen((prev) => !prev);
+                    setIsBranchDropdownOpen(false);
+                    setIsRoleDropdownOpen(false);
+                  }}
+                  className="flex items-center gap-1.5 bg-[#004266] border border-[#72cdf4]/40 text-[#fffffa] px-3 py-1.5 rounded-xl text-xs font-bold cursor-pointer hover:bg-[#003858] transition shadow-xs whitespace-nowrap"
+                >
                   <Building className="w-3.5 h-3.5 text-[#ffd200]" />
                   <span className="max-w-[110px] truncate">{currentClinic?.name || 'انتخاب کلینیک'}</span>
                   <ChevronDown className="w-3.5 h-3.5 text-[#72cdf4]" />
-                </div>
-                <div className="absolute left-0 md:right-0 mt-1.5 w-64 bg-[#004266] border border-[#72cdf4]/40 rounded-2xl shadow-xl py-1.5 hidden group-hover:block z-50">
-                  <div className="px-3 py-1 text-[11px] text-[#72cdf4] font-semibold border-b border-[#003350]">انتخاب کلینیک فعال / بررسی مالک</div>
-                  {clinics.map((c) => (
-                    <button
-                      key={c.id}
-                      onClick={() => onClinicSelect(c)}
-                      className={`w-full text-right px-3 py-2 text-xs flex flex-col gap-0.5 hover:bg-[#003350] transition border-b border-[#003350]/50 last:border-0 ${
-                        c.id === currentClinic?.id ? 'text-[#ffd200] font-bold bg-[#003350]/80' : 'text-[#fffffa]'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span>{c.name}</span>
-                        <span className="text-[10px] text-[#72cdf4] font-mono">{c.id}</span>
-                      </div>
-                      <span className="text-[11px] text-[#ffe552] font-semibold">
-                        مالک: {c.ownerName} ({c.ownerRole === 'dentist' ? 'دندان‌پزشک معالج' : 'مدیر ارشد'})
-                      </span>
-                    </button>
-                  ))}
-                </div>
+                </button>
+                {isClinicDropdownOpen && (
+                  <div className="absolute left-0 md:right-0 mt-1.5 w-64 bg-[#004266] border border-[#72cdf4]/40 rounded-2xl shadow-xl py-1.5 z-50">
+                    <div className="px-3 py-1 text-[11px] text-[#72cdf4] font-semibold border-b border-[#003350]">انتخاب کلینیک فعال / بررسی مالک</div>
+                    {clinics.map((c) => (
+                      <button
+                        key={c.id}
+                        onClick={() => {
+                          onClinicSelect(c);
+                          setIsClinicDropdownOpen(false);
+                        }}
+                        className={`w-full text-right px-3 py-2 text-xs flex flex-col gap-0.5 hover:bg-[#003350] transition border-b border-[#003350]/50 last:border-0 ${
+                          c.id === currentClinic?.id ? 'text-[#ffd200] font-bold bg-[#003350]/80' : 'text-[#fffffa]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span>{c.name}</span>
+                          <span className="text-[10px] text-[#72cdf4] font-mono">{c.id}</span>
+                        </div>
+                        <span className="text-[11px] text-[#ffe552] font-semibold">
+                          مالک: {c.ownerName} ({c.ownerRole === 'dentist' ? 'دندان‌پزشک معالج' : 'مدیر ارشد'})
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
             {/* Branch Dropdown */}
-            <div className="relative group">
-              <div className="flex items-center gap-1.5 bg-[#004266] border border-[#72cdf4]/40 text-[#fffffa] px-3 py-1.5 rounded-xl text-xs font-bold cursor-pointer hover:bg-[#003858] transition shadow-xs whitespace-nowrap">
+            <div className="relative" ref={branchMenuRef}>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsBranchDropdownOpen((prev) => !prev);
+                  setIsClinicDropdownOpen(false);
+                  setIsRoleDropdownOpen(false);
+                }}
+                className="flex items-center gap-1.5 bg-[#004266] border border-[#72cdf4]/40 text-[#fffffa] px-3 py-1.5 rounded-xl text-xs font-bold cursor-pointer hover:bg-[#003858] transition shadow-xs whitespace-nowrap"
+              >
                 <Building2 className="w-3.5 h-3.5 text-[#ffe552]" />
                 <span className="max-w-[110px] truncate">{currentBranch.name}</span>
                 <ChevronDown className="w-3.5 h-3.5 text-[#72cdf4]" />
-              </div>
-              <div className="absolute left-0 md:right-0 mt-1.5 w-52 bg-[#004266] border border-[#72cdf4]/40 rounded-2xl shadow-xl py-1.5 hidden group-hover:block z-50">
-                <div className="px-3 py-1 text-[11px] text-[#72cdf4] font-semibold border-b border-[#003350]">انتخاب شعبه فعال</div>
-                {branches.map((b) => (
-                  <button
-                    key={b.id}
-                    onClick={() => onBranchChange(b.id)}
-                    className={`w-full text-right px-3 py-2 text-xs flex items-center justify-between hover:bg-[#003350] transition ${
-                      b.id === activeBranchId ? 'text-[#ffd200] font-bold bg-[#003350]/80' : 'text-[#fffffa]'
-                    }`}
-                  >
-                    <span>{b.name}</span>
-                    <span className="text-[10px] text-[#72cdf4] font-mono">{b.code}</span>
-                  </button>
-                ))}
-              </div>
+              </button>
+              {isBranchDropdownOpen && (
+                <div className="absolute left-0 md:right-0 mt-1.5 w-52 bg-[#004266] border border-[#72cdf4]/40 rounded-2xl shadow-xl py-1.5 z-50">
+                  <div className="px-3 py-1 text-[11px] text-[#72cdf4] font-semibold border-b border-[#003350]">انتخاب شعبه فعال</div>
+                  {branches.map((b) => (
+                    <button
+                      key={b.id}
+                      onClick={() => {
+                        onBranchChange(b.id);
+                        setIsBranchDropdownOpen(false);
+                      }}
+                      className={`w-full text-right px-3 py-2 text-xs flex items-center justify-between hover:bg-[#003350] transition ${
+                        b.id === activeBranchId ? 'text-[#ffd200] font-bold bg-[#003350]/80' : 'text-[#fffffa]'
+                      }`}
+                    >
+                      <span>{b.name}</span>
+                      <span className="text-[10px] text-[#72cdf4] font-mono">{b.code}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Role Switcher (RBAC testing menu) */}
-            <div className="relative group">
-              <div className="flex items-center gap-1.5 bg-[#ffd200] text-[#005581] px-3.5 py-1.5 rounded-xl text-xs font-black cursor-pointer shadow-md hover:bg-[#ffe552] transition ring-1 ring-white/30 whitespace-nowrap">
+            <div className="relative" ref={roleMenuRef}>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsRoleDropdownOpen((prev) => !prev);
+                  setIsClinicDropdownOpen(false);
+                  setIsBranchDropdownOpen(false);
+                }}
+                className="flex items-center gap-1.5 bg-[#ffd200] text-[#005581] px-3.5 py-1.5 rounded-xl text-xs font-black cursor-pointer shadow-md hover:bg-[#ffe552] transition ring-1 ring-white/30 whitespace-nowrap"
+              >
                 <UserCheck className="w-4 h-4" />
                 <span>پورتال: {roleLabels[currentRole]?.title || currentRole}</span>
                 <ChevronDown className="w-3.5 h-3.5 text-[#005581]" />
-              </div>
-              <div className="absolute left-0 mt-1.5 w-60 bg-[#004266] border border-[#72cdf4]/40 rounded-2xl shadow-2xl py-2 hidden group-hover:block z-50 text-right">
-                <div className="px-3.5 py-1.5 text-[11px] text-[#72cdf4] font-semibold border-b border-[#003350] flex justify-between items-center">
-                  <span>تغییر پورتال جهت بررسی</span>
-                  <span className="text-[10px] text-[#ffd200] font-mono">RBAC</span>
+              </button>
+              {isRoleDropdownOpen && (
+                <div className="absolute left-0 mt-1.5 w-60 bg-[#004266] border border-[#72cdf4]/40 rounded-2xl shadow-2xl py-2 z-50 text-right">
+                  <div className="px-3.5 py-1.5 text-[11px] text-[#72cdf4] font-semibold border-b border-[#003350] flex justify-between items-center">
+                    <span>تغییر پورتال جهت بررسی</span>
+                    <span className="text-[10px] text-[#ffd200] font-mono">RBAC</span>
+                  </div>
+                  {(Object.keys(roleLabels) as UserRole[]).map((r) => (
+                    <button
+                      key={r}
+                      onClick={() => {
+                        onRoleChange(r);
+                        setIsRoleDropdownOpen(false);
+                      }}
+                      className={`w-full text-right px-3.5 py-2 text-xs flex items-center justify-between hover:bg-[#003350] transition ${
+                        r === currentRole ? 'text-[#ffd200] font-bold bg-[#003350]' : 'text-[#fffffa]'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full ${roleLabels[r].color}`}></span>
+                        {roleLabels[r].title}
+                      </span>
+                      <span className="text-[10px] text-[#005581] font-mono px-1.5 py-0.5 rounded bg-[#ffe552] font-bold">
+                        {roleLabels[r].badge}
+                      </span>
+                    </button>
+                  ))}
                 </div>
-                {(Object.keys(roleLabels) as UserRole[]).map((r) => (
-                  <button
-                    key={r}
-                    onClick={() => onRoleChange(r)}
-                    className={`w-full text-right px-3.5 py-2 text-xs flex items-center justify-between hover:bg-[#003350] transition ${
-                      r === currentRole ? 'text-[#ffd200] font-bold bg-[#003350]' : 'text-[#fffffa]'
-                    }`}
-                  >
-                    <span className="flex items-center gap-2">
-                      <span className={`w-2 h-2 rounded-full ${roleLabels[r].color}`}></span>
-                      {roleLabels[r].title}
-                    </span>
-                    <span className="text-[10px] text-[#005581] font-mono px-1.5 py-0.5 rounded bg-[#ffe552] font-bold">
-                      {roleLabels[r].badge}
-                    </span>
-                  </button>
-                ))}
-              </div>
+              )}
             </div>
 
             {/* Logout / Exit button */}

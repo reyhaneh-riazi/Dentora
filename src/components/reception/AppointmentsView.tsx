@@ -12,6 +12,7 @@ import {
   PatientQuestion as GlobalPatientQuestion,
   PatientInsuranceDispute,
   PatientImageRecord,
+  Invoice,
   UserProfile,
   ClinicRegistration,
 } from '../../types';
@@ -78,6 +79,8 @@ import {
   Printer,
   FileCheck2,
   ImageIcon,
+  Receipt,
+  Banknote,
 } from 'lucide-react';
 
 interface AppointmentsViewProps {
@@ -117,6 +120,20 @@ interface AppointmentsViewProps {
   onReplyQuestion?: (questionId: string, replyMessage: string, senderRole: 'receptionist' | 'dentist', senderName: string) => void;
   insuranceDisputes?: PatientInsuranceDispute[];
   onReplyDispute?: (disputeId: string, responseMessage: string, status?: 'under_review' | 'approved_pay' | 'need_docs' | 'rejected') => void;
+  invoices?: Invoice[];
+  onRegisterPayment?: (paymentData: {
+    patientId: string;
+    patientName: string;
+    nationalId?: string;
+    phone?: string;
+    amount: number;
+    paymentMethod: 'pos' | 'cash' | 'transfer';
+    posTerminalName?: string;
+    trackingCode: string;
+    notes?: string;
+    reason?: string;
+    submissionId?: string;
+  }) => void;
   users?: UserProfile[];
   currentClinic?: ClinicRegistration;
 }
@@ -196,6 +213,7 @@ type PatientFileSubTab =
   | 'odontogram'
   | 'radiography'
   | 'visit_history'
+  | 'billing_payment'
   | 'ai_proposals'
   | 'edit_info';
 
@@ -248,6 +266,8 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
   onReplyQuestion,
   insuranceDisputes: propsInsuranceDisputes,
   onReplyDispute,
+  invoices = [],
+  onRegisterPayment,
   users = [],
   currentClinic,
 }) => {
@@ -477,6 +497,179 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
   const [editHistory, setEditHistory] = useState('');
   const [editAllergies, setEditAllergies] = useState('');
   const [editEmergency, setEditEmergency] = useState('');
+
+  // Manual POS & Cash Payment Modal State
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [paymentTarget, setPaymentTarget] = useState<{
+    submission?: DoctorSubmission;
+    patientId: string;
+    patientName: string;
+    nationalId?: string;
+    phone?: string;
+    dentistName?: string;
+    procedureName?: string;
+    totalAmount?: number;
+    estimatedBaseCovered?: number;
+    estimatedSupplCovered?: number;
+    patientNetShare?: number;
+  } | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState<number>(0);
+  const [paymentMethod, setPaymentMethod] = useState<'pos' | 'cash' | 'transfer'>('pos');
+  const [posTerminal, setPosTerminal] = useState<string>('دستگاه ۱ - بانک پاسارگاد (پذیرش)');
+  const [paymentTrackingCode, setPaymentTrackingCode] = useState<string>('');
+  const [paymentReason, setPaymentReason] = useState<string>('دریافتی سهم فرانشیز ویزیت و درمان دندان‌پزشکی');
+  const [paymentNotes, setPaymentNotes] = useState<string>('');
+  const [paymentSuccessReceipt, setPaymentSuccessReceipt] = useState<{
+    receiptNumber: string;
+    trackingCode: string;
+    date: string;
+    time: string;
+    patientName: string;
+    nationalId?: string;
+    phone?: string;
+    amount: number;
+    method: 'pos' | 'cash' | 'transfer';
+    posTerminal?: string | null;
+    procedureName: string;
+    dentistName: string;
+    clinicName: string;
+    cashierName: string;
+  } | null>(null);
+  const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
+
+  const handleOpenPaymentModalForSubmission = (sub: DoctorSubmission) => {
+    const matchingPatient = localPatients.find(
+      (p) => p.nationalId === sub.nationalId || p.phone === sub.patientPhone || p.fullName === sub.patientName
+    );
+    const totalCost = sub.totalCost || 3800000;
+    const base = sub.baseCovered || Math.round(totalCost * 0.3);
+    const suppl = sub.supplCovered || Math.round(totalCost * 0.4);
+    const net = Math.max(0, totalCost - base - suppl);
+
+    setPaymentTarget({
+      submission: sub,
+      patientId: matchingPatient?.id || sub.patientId || `pat-${sub.id}`,
+      patientName: sub.patientName,
+      nationalId: sub.nationalId,
+      phone: sub.patientPhone,
+      dentistName: sub.dentistName,
+      procedureName: sub.treatmentSummary,
+      totalAmount: totalCost,
+      estimatedBaseCovered: base,
+      estimatedSupplCovered: suppl,
+      patientNetShare: net,
+    });
+    setPaymentAmount(net > 0 ? net : totalCost);
+    setPaymentMethod('pos');
+    setPosTerminal('دستگاه ۱ - بانک پاسارگاد (پذیرش)');
+    setPaymentTrackingCode(String(Math.floor(100000 + Math.random() * 900000)));
+    setPaymentReason(`سهم فرانشیز و پرداخت بیمار بابت ${sub.treatmentSummary.split('\n')[0]}`);
+    setPaymentNotes('');
+    setIsPaymentModalOpen(true);
+  };
+
+  const handleOpenPaymentModalForPatient = (p: Patient) => {
+    const matchingInvoices = (invoices || []).filter(
+      (inv) =>
+        inv.patientId === p.id ||
+        inv.patientNationalId === p.nationalId ||
+        (inv.patientName && inv.patientName === p.fullName)
+    );
+    const pendingInv = matchingInvoices.find((inv) => inv.status !== 'paid');
+    const net = pendingInv
+      ? pendingInv.totalAmount - pendingInv.baseInsuranceCovered - pendingInv.supplInsuranceCovered - (pendingInv.patientSharePaid || 0)
+      : 1140000;
+
+    setPaymentTarget({
+      patientId: p.id,
+      patientName: p.fullName,
+      nationalId: p.nationalId,
+      phone: p.phone,
+      dentistName: pendingInv?.dentistName || 'دکتر کاویانی',
+      procedureName: pendingInv?.items?.[0]?.procedureName || 'خدمات و درمان دندان‌پزشکی',
+      totalAmount: pendingInv?.totalAmount || 3800000,
+      estimatedBaseCovered: pendingInv?.baseInsuranceCovered || 1140000,
+      estimatedSupplCovered: pendingInv?.supplInsuranceCovered || 1520000,
+      patientNetShare: net > 0 ? net : 1140000,
+    });
+    setPaymentAmount(net > 0 ? net : 1140000);
+    setPaymentMethod('pos');
+    setPosTerminal('دستگاه ۱ - بانک پاسارگاد (پذیرش)');
+    setPaymentTrackingCode(String(Math.floor(100000 + Math.random() * 900000)));
+    setPaymentReason(`دریافتی سهم بیمار - پرونده ${p.fullName}`);
+    setPaymentNotes('');
+    setIsPaymentModalOpen(true);
+  };
+
+  const handleSubmitPayment = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!paymentTarget || paymentAmount <= 0) {
+      alert('لطفاً مبلغ دریافتی معتبر وارد نمایید.');
+      return;
+    }
+
+    const todayFa = new Date().toLocaleDateString('fa-IR');
+    const timeFa = new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+    const finalTracking = paymentTrackingCode || String(Math.floor(100000 + Math.random() * 900000));
+
+    if (onRegisterPayment) {
+      onRegisterPayment({
+        patientId: paymentTarget.patientId,
+        patientName: paymentTarget.patientName,
+        nationalId: paymentTarget.nationalId,
+        phone: paymentTarget.phone,
+        amount: Number(paymentAmount),
+        paymentMethod,
+        posTerminalName: paymentMethod === 'pos' ? posTerminal : undefined,
+        trackingCode: finalTracking,
+        notes: paymentNotes,
+        reason: paymentReason,
+        submissionId: paymentTarget.submission?.id,
+      });
+    }
+
+    if (paymentTarget.submission) {
+      setDoctorSubmissions((prev) =>
+        prev.map((s) =>
+          s.id === paymentTarget.submission!.id
+            ? {
+                ...s,
+                paymentReceived: {
+                  amount: Number(paymentAmount),
+                  method: paymentMethod,
+                  posTerminalName: paymentMethod === 'pos' ? posTerminal : undefined,
+                  trackingCode: finalTracking,
+                  paidAt: `${todayFa} ${timeFa}`,
+                  notes: paymentNotes,
+                },
+              }
+            : s
+        )
+      );
+    }
+
+    const receipt = {
+      receiptNumber: `REC-${Date.now().toString().slice(-6)}`,
+      trackingCode: finalTracking,
+      date: todayFa,
+      time: timeFa,
+      patientName: paymentTarget.patientName,
+      nationalId: paymentTarget.nationalId,
+      phone: paymentTarget.phone,
+      amount: Number(paymentAmount),
+      method: paymentMethod,
+      posTerminal: paymentMethod === 'pos' ? posTerminal : null,
+      procedureName: paymentReason || paymentTarget.procedureName || 'خدمات دندان‌پزشکی',
+      dentistName: paymentTarget.dentistName || 'دکتر کاویانی',
+      clinicName: currentClinic?.name || 'کلینیک دندان‌پزشکی البرز',
+      cashierName: 'مریم امیری (پذیرش)',
+    };
+
+    setPaymentSuccessReceipt(receipt);
+    setIsPaymentModalOpen(false);
+    setIsReceiptModalOpen(true);
+    showReceptionToast(`✅ دریافتی ${Number(paymentAmount).toLocaleString()} تومان از ${paymentTarget.patientName} در سیستم و حسابداری ثبت شد.`);
+  };
 
   // Doctor Submissions Pending Approval
   const [doctorSubmissions, setDoctorSubmissions] = useState<DoctorSubmission[]>([
@@ -1965,13 +2158,21 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                           </div>
                         </div>
 
-                        <div className="pt-1">
+                        <div className="pt-1 flex items-center gap-2">
                           <button
                             onClick={() => handleOpenPatientFile(p)}
-                            className="w-full py-2 rounded-xl bg-[#005581] hover:bg-[#004266] text-white text-xs font-bold transition cursor-pointer flex items-center justify-center gap-2 shadow"
+                            className="flex-1 py-2 rounded-xl bg-[#005581] hover:bg-[#004266] text-white text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
                           >
                             <Eye className="w-4 h-4 text-[#ffd200]" />
-                            <span>مشاهده پرونده کامل (اودنتوگرام، تصاویر، سوابق مراجعات)</span>
+                            <span>پرونده کامل</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenPaymentModalForPatient(p)}
+                            className="py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black transition cursor-pointer flex items-center gap-1 shadow-xs"
+                          >
+                            <CreditCard className="w-3.5 h-3.5" />
+                            <span>ثبت دریافتی / پوز</span>
                           </button>
                         </div>
                       </div>
@@ -1986,152 +2187,247 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                   <div className="p-3.5 rounded-xl bg-[#005581]/5 border border-[#005581]/20 text-xs text-[#005581] dark:text-[#72cdf4] font-medium flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-[#005581] shrink-0" />
                     <span>
-                      این پرونده‌ها مستقیماً از سیستم درمان پزشک پس از ثبت معاینه یا دیکته صوتی ارسال شده‌اند و جهت ثبت مالی و بیمه‌ای نهایی در انتظار تایید منشی می‌باشند.
+                      این پرونده‌ها مستقیماً از سیستم درمان پزشک پس از ثبت معاینه یا دیکته صوتی ارسال شده‌اند و جهت ثبت مالی، پرداخت کارت‌خوان/نقدی و بیمه‌ای در انتظار اقدام منشی می‌باشند.
                     </span>
                   </div>
 
-                  {doctorSubmissions.map((sub) => (
-                    <div
-                      key={sub.id}
-                      className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-3"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-700 pb-2">
-                        <div className="flex items-center gap-2">
-                          <strong className="text-sm font-bold text-slate-900 dark:text-slate-100">{sub.patientName}</strong>
-                          <span className="text-xs font-mono text-slate-400">({sub.nationalId})</span>
-                          <span className="text-[10px] px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-bold">
-                            پزشک معالج: {sub.dentistName}
-                          </span>
-                        </div>
-                        <span className="text-xs font-mono text-slate-400">{sub.submittedAt}</span>
-                      </div>
+                  {doctorSubmissions.map((sub) => {
+                    const totalCost = sub.totalCost || 3800000;
+                    const base = sub.baseCovered || Math.round(totalCost * 0.3);
+                    const suppl = sub.supplCovered || Math.round(totalCost * 0.4);
+                    const patientNet = Math.max(0, totalCost - base - suppl);
+                    const isPaid = !!sub.paymentReceived;
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                        <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-1">
-                          <span className="block font-bold text-slate-800 dark:text-slate-200">طرح درمان ارسال‌شده:</span>
-                          <p className="text-slate-600 dark:text-slate-300 leading-relaxed font-medium">{sub.treatmentSummary}</p>
+                    return (
+                      <div
+                        key={sub.id}
+                        className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-3"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-700 pb-2">
+                          <div className="flex items-center gap-2">
+                            <strong className="text-sm font-bold text-slate-900 dark:text-slate-100">{sub.patientName}</strong>
+                            <span className="text-xs font-mono text-slate-400">({sub.nationalId})</span>
+                            <span className="text-[10px] px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-bold">
+                              پزشک معالج: {sub.dentistName}
+                            </span>
+                          </div>
+                          <span className="text-xs font-mono text-slate-400">{sub.submittedAt}</span>
                         </div>
-                        <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-1">
-                          <span className="block font-bold text-slate-800 dark:text-slate-200">نسخه دارویی:</span>
-                          <p className="text-slate-600 dark:text-slate-300 leading-relaxed font-medium">{sub.prescriptionSummary}</p>
-                        </div>
-                      </div>
 
-                      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
-                        <div className="flex flex-wrap items-center gap-2">
-                          {insuranceModuleActive && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                          <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-1">
+                            <span className="block font-bold text-slate-800 dark:text-slate-200">طرح درمان ارسال‌شده:</span>
+                            <p className="text-slate-600 dark:text-slate-300 leading-relaxed font-medium">{sub.treatmentSummary}</p>
+                          </div>
+                          <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-1">
+                            <span className="block font-bold text-slate-800 dark:text-slate-200">نسخه دارویی:</span>
+                            <p className="text-slate-600 dark:text-slate-300 leading-relaxed font-medium">{sub.prescriptionSummary}</p>
+                          </div>
+                        </div>
+
+                        {/* Financial Status & POS/Cash Registration Highlight Bar */}
+                        {isPaid ? (
+                          <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 flex flex-wrap items-center justify-between gap-2 text-xs">
+                            <div className="flex items-center gap-2">
+                              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                              <span className="font-bold text-emerald-900 dark:text-emerald-200">
+                                دریافتی ثبت‌شده: <strong className="font-mono text-emerald-700 dark:text-emerald-300">{sub.paymentReceived!.amount.toLocaleString()} تومان</strong> ({sub.paymentReceived!.method === 'pos' ? 'کارتخوان POS' : sub.paymentReceived!.method === 'cash' ? 'وجه نقد' : 'کارت به کارت'} - کد پیگیری: <span className="font-mono">{sub.paymentReceived!.trackingCode}</span>)
+                              </span>
+                            </div>
                             <button
                               type="button"
                               onClick={() => {
-                                // Find or create matching claim for this submission
-                                let existingClaim = claims.find(
-                                  (c) => c.patientName === sub.patientName || c.nationalId === sub.nationalId
-                                );
-                                if (!existingClaim) {
-                                  const generatedClaim: Claim = {
-                                    id: `CLM-SUB-${sub.id}`,
-                                    claimNumber: `CLM-1405-${sub.id.slice(-4) || '9901'}`,
-                                    patientId: `pat-${sub.id}`,
-                                    patientName: sub.patientName,
-                                    nationalId: sub.nationalId,
-                                    patientPhone: sub.patientPhone,
-                                    insuranceCompany: 'بیمه سامان (طرح طلایی)',
-                                    insuranceProvider: 'بیمه سامان (طرح طلایی)',
-                                    treatmentName: sub.treatmentSummary,
-                                    toothFdi: sub.toothFdi || 16,
-                                    dateOfService: '۱۴۰۴/۱۱/۲۰',
-                                    totalAmount: 4500000,
-                                    claimedAmount: 4500000,
-                                    coveredAmount: 3150000,
-                                    baseApprovedAmount: 1350000,
-                                    supplApprovedAmount: 1800000,
-                                    deductionAmount: 0,
-                                    status: 'draft',
-                                    riskScore: 12,
-                                    submittedDate: sub.submittedAt,
-                                    autoApprovalConfidence: 94,
-                                    greenLaneEligible: true,
-                                    evidences: [
-                                      { id: 'ev-1', title: 'گرافی RVG دیجیتال قبل و بعد', type: 'xray', uploaded: true, required: true },
-                                      { id: 'ev-2', title: 'احراز هویت و استعلام آنلاین استحقاق', type: 'pre_auth_certificate', uploaded: true, required: true },
-                                    ],
-                                    narrativeText:
-                                      sub.clinicalNotes ||
-                                      `بیمار ${sub.patientName} با کد ملی ${sub.nationalId} با شکایت از درد و ناراحتی دندان ${sub.toothFdi || 16} مراجعه نمود. بر اساس معاینات بالینی و رادیوگرافی RVG، درمان ${sub.treatmentSummary} انجام شد. مستندات بالینی، تعرفه مصوب و ادله توجیهی جهت درج در سامانه بیمه مورد تایید است.`,
-                                  };
-                                  if (setClaims) {
-                                    setClaims((prev) => [generatedClaim, ...prev]);
-                                  }
-                                  existingClaim = generatedClaim;
-                                }
-                                setTargetClaimIdForReview(existingClaim.id);
-                                setActiveTab('insurance_docs');
+                                setPaymentSuccessReceipt({
+                                  receiptNumber: `REC-${sub.id.slice(-6)}`,
+                                  trackingCode: sub.paymentReceived!.trackingCode,
+                                  date: sub.paymentReceived!.paidAt.split(' ')[0] || '۱۴۰۵/۰۵/۱۳',
+                                  time: sub.paymentReceived!.paidAt.split(' ')[1] || '۱۲:۳۰',
+                                  patientName: sub.patientName,
+                                  nationalId: sub.nationalId,
+                                  phone: sub.patientPhone,
+                                  amount: sub.paymentReceived!.amount,
+                                  method: sub.paymentReceived!.method,
+                                  posTerminal: sub.paymentReceived!.posTerminalName || 'دستگاه ۱ - بانک پاسارگاد',
+                                  procedureName: sub.treatmentSummary,
+                                  dentistName: sub.dentistName,
+                                  clinicName: currentClinic?.name || 'کلینیک دندان‌پزشکی البرز',
+                                  cashierName: 'مریم امیری (پذیرش)',
+                                });
+                                setIsReceiptModalOpen(true);
                               }}
-                              className="px-4 py-2 rounded-xl bg-[#ffd200] hover:bg-amber-400 text-[#005581] font-black text-xs shadow transition cursor-pointer flex items-center gap-1.5 shrink-0"
+                              className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] flex items-center gap-1 shadow-2xs cursor-pointer"
                             >
-                              <FileText className="w-4 h-4 text-[#005581]" />
-                              <span>بررسی شرح بیمه</span>
+                              <Receipt className="w-3.5 h-3.5" />
+                              <span>مشاهده رسید پرداخت</span>
                             </button>
-                          )}
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const matchingPatient = localPatients.find(
-                                (p) =>
-                                  p.nationalId === sub.nationalId ||
-                                  p.phone === sub.patientPhone ||
-                                  p.fullName === sub.patientName
-                              ) || {
-                                id: `p-${sub.id}`,
-                                udrCode: `UDR-1405-${sub.id}`,
-                                fullName: sub.patientName,
-                                nationalId: sub.nationalId,
-                                phone: sub.patientPhone,
-                                age: 38,
-                                gender: 'مرد',
-                                medicalHistory: [sub.treatmentSummary],
-                                allergies: ['بدون حساسیت دارویی ثبت‌شده'],
-                                consentTokens: [],
-                                primaryInsurance: {
-                                  provider: 'تامین اجتماعی',
-                                  policyNumber: 'POL-998811',
-                                  active: true,
-                                },
-                                supplementaryInsurance: {
-                                  provider: 'بیمه سامان',
-                                  policyNumber: 'SUP-445511',
-                                  ceilingRemaining: 25000000,
-                                  waitingPeriodDays: 0,
-                                  active: true,
-                                },
-                                teethMap: defaultTeethMap,
-                              };
-                              handleOpenPatientFile(matchingPatient);
-                            }}
-                            className="px-4 py-2 rounded-xl bg-[#005581] hover:bg-[#004266] text-white font-bold text-xs shadow transition cursor-pointer flex items-center gap-2"
-                          >
-                            <Eye className="w-4 h-4 text-[#ffd200]" />
-                            <span>مشاهده پرونده کامل بیمار</span>
-                          </button>
-
-                          {sub.status === 'approved' ? (
-                            <span className="px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-800 font-bold text-xs flex items-center gap-1">
-                              <Check className="w-4 h-4 text-emerald-700" /> ثبت نهایی در پرونده بیمار گردید
-                            </span>
-                          ) : (
+                          </div>
+                        ) : (
+                          <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 flex flex-wrap items-center justify-between gap-2 text-xs">
+                            <div className="flex items-center gap-2 text-amber-900 dark:text-amber-300">
+                              <CreditCard className="w-4 h-4 text-amber-600 shrink-0" />
+                              <span>
+                                وضعیت مالی: <strong>در انتظار پرداخت بیمار</strong> (هزینه کل: <span className="font-mono">{totalCost.toLocaleString()}</span> ت | سهم خالص بیمار: <strong className="font-mono text-emerald-700 dark:text-emerald-300">{patientNet.toLocaleString()} تومان</strong>)
+                              </span>
+                            </div>
                             <button
-                              onClick={() => handleApproveDoctorSubmission(sub.id)}
-                              className="px-4 py-2 rounded-xl bg-[#005581] hover:bg-[#004266] text-white font-bold text-xs shadow transition cursor-pointer flex items-center gap-1.5"
+                              type="button"
+                              onClick={() => handleOpenPaymentModalForSubmission(sub)}
+                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-black text-xs flex items-center gap-1 shadow-xs transition cursor-pointer"
                             >
-                              <CheckSquare className="w-4 h-4 text-[#ffd200]" />
-                              <span>تایید و ثبت نهایی در پرونده بیمار</span>
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>ثبت دریافت کارت‌خوان / نقد</span>
                             </button>
-                          )}
+                          </div>
+                        )}
+
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {/* Prominent Payment Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleOpenPaymentModalForSubmission(sub)}
+                              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow transition cursor-pointer flex items-center gap-1.5 shrink-0"
+                            >
+                              <CreditCard className="w-4 h-4 text-[#ffd200]" />
+                              <span>{isPaid ? 'ثبت پرداخت تکمیلی / تغییر' : 'ثبت دریافتی بیمار (کارت‌خوان / نقد)'}</span>
+                            </button>
+
+                            {insuranceModuleActive && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  let existingClaim = claims.find(
+                                    (c) => c.patientName === sub.patientName || c.nationalId === sub.nationalId
+                                  );
+                                  if (!existingClaim) {
+                                    const treatedTeeth = sub.teethFdiList && sub.teethFdiList.length > 0
+                                      ? sub.teethFdiList
+                                      : (sub.toothFdi ? [sub.toothFdi] : [16]);
+                                    const primaryFdi = sub.toothFdi || treatedTeeth[0] || 16;
+                                    const totalCost = sub.totalCost || 4500000;
+                                    const baseApproved = sub.baseCovered || 1350000;
+                                    const supplApproved = sub.supplCovered || 1800000;
+
+                                    const claimItems = treatedTeeth.map((toothNum, idx) => ({
+                                      id: `ci-${sub.id}-${idx + 1}`,
+                                      toothNumber: toothNum,
+                                      procedureTitle: `${sub.treatmentSummary.split('\n')[0]} (دندان ${toothNum})`,
+                                      procedureCode: 'DNT-PRC-STD',
+                                      surfaceDetail: 'سطوح استاندارد',
+                                      tariffAmount: Math.round(totalCost / treatedTeeth.length),
+                                      claimedAmount: Math.round(totalCost / treatedTeeth.length),
+                                      baseShare: Math.round(baseApproved / treatedTeeth.length),
+                                      supplementaryShare: Math.round(supplApproved / treatedTeeth.length),
+                                    }));
+
+                                    const generatedClaim: Claim = {
+                                      id: `CLM-SUB-${sub.id}`,
+                                      claimNumber: `CLM-1405-${sub.id.slice(-4) || '9901'}`,
+                                      patientId: sub.patientId || `pat-${sub.id}`,
+                                      patientName: sub.patientName,
+                                      nationalId: sub.nationalId,
+                                      patientPhone: sub.patientPhone,
+                                      dentistName: sub.dentistName || 'دکتر معالج',
+                                      insuranceCompany: 'بیمه سامان (طرح طلایی)',
+                                      insuranceProvider: 'بیمه سامان (طرح طلایی)',
+                                      treatmentName: sub.treatmentSummary,
+                                      toothFdi: primaryFdi,
+                                      teethFdiList: treatedTeeth,
+                                      items: claimItems,
+                                      dateOfService: sub.submittedAt?.includes('امروز') ? new Date().toLocaleDateString('fa-IR') : '۱۴۰۵/۰۵/۲۰',
+                                      totalAmount: totalCost,
+                                      claimedAmount: totalCost,
+                                      coveredAmount: baseApproved + supplApproved,
+                                      baseApprovedAmount: baseApproved,
+                                      supplApprovedAmount: supplApproved,
+                                      deductionAmount: 0,
+                                      status: 'draft',
+                                      riskScore: 12,
+                                      submittedDate: sub.submittedAt,
+                                      autoApprovalConfidence: 94,
+                                      greenLaneEligible: true,
+                                      evidences: [
+                                        { id: 'ev-1', title: 'گرافی RVG دیجیتال قبل و بعد', type: 'xray', uploaded: true, required: true },
+                                        { id: 'ev-2', title: 'احراز هویت و استعلام آنلاین استحقاق', type: 'pre_auth_certificate', uploaded: true, required: true },
+                                      ],
+                                      narrativeText:
+                                        sub.clinicalNotes ||
+                                        `بیمار ${sub.patientName} با کد ملی ${sub.nationalId} با شکایت از درد و ناراحتی در دندان‌های ${treatedTeeth.join(' و ')} مراجعه نمود. بر اساس معاینات بالینی و رادیوگرافی RVG، درمان ${sub.treatmentSummary} توسط ${sub.dentistName || 'دکتر معالج'} انجام شد. مستندات بالینی، تعرفه مصوب و ادله توجیهی جهت درج در سامانه بیمه مورد تایید است.`,
+                                    };
+                                    if (setClaims) {
+                                      setClaims((prev) => [generatedClaim, ...prev]);
+                                    }
+                                    existingClaim = generatedClaim;
+                                  }
+                                  setTargetClaimIdForReview(existingClaim.id);
+                                  setActiveTab('insurance_docs');
+                                }}
+                                className="px-4 py-2 rounded-xl bg-[#ffd200] hover:bg-amber-400 text-[#005581] font-black text-xs shadow transition cursor-pointer flex items-center gap-1.5 shrink-0"
+                              >
+                                <FileText className="w-4 h-4 text-[#005581]" />
+                                <span>بررسی شرح بیمه</span>
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const matchingPatient = localPatients.find(
+                                  (p) =>
+                                    p.nationalId === sub.nationalId ||
+                                    p.phone === sub.patientPhone ||
+                                    p.fullName === sub.patientName
+                                ) || {
+                                  id: `p-${sub.id}`,
+                                  udrCode: `UDR-1405-${sub.id}`,
+                                  fullName: sub.patientName,
+                                  nationalId: sub.nationalId,
+                                  phone: sub.patientPhone,
+                                  age: 38,
+                                  gender: 'مرد',
+                                  medicalHistory: [sub.treatmentSummary],
+                                  allergies: ['بدون حساسیت دارویی ثبت‌شده'],
+                                  consentTokens: [],
+                                  primaryInsurance: {
+                                    provider: 'تامین اجتماعی',
+                                    policyNumber: 'POL-998811',
+                                    active: true,
+                                  },
+                                  supplementaryInsurance: {
+                                    provider: 'بیمه سامان',
+                                    policyNumber: 'SUP-445511',
+                                    ceilingRemaining: 25000000,
+                                    waitingPeriodDays: 0,
+                                    active: true,
+                                  },
+                                  teethMap: defaultTeethMap,
+                                };
+                                handleOpenPatientFile(matchingPatient);
+                              }}
+                              className="px-4 py-2 rounded-xl bg-[#005581] hover:bg-[#004266] text-white font-bold text-xs shadow transition cursor-pointer flex items-center gap-2"
+                            >
+                              <Eye className="w-4 h-4 text-[#ffd200]" />
+                              <span>مشاهده پرونده کامل بیمار</span>
+                            </button>
+
+                            {sub.status === 'approved' ? (
+                              <span className="px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-800 font-bold text-xs flex items-center gap-1">
+                                <Check className="w-4 h-4 text-emerald-700" /> ثبت نهایی در پرونده بیمار گردید
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => handleApproveDoctorSubmission(sub.id)}
+                                className="px-4 py-2 rounded-xl bg-[#005581] hover:bg-[#004266] text-white font-bold text-xs shadow transition cursor-pointer flex items-center gap-1.5"
+                              >
+                                <CheckSquare className="w-4 h-4 text-[#ffd200]" />
+                                <span>تایید و ثبت نهایی در پرونده بیمار</span>
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -3761,12 +4057,22 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                 </div>
               </div>
 
-              <button
-                onClick={() => setSelectedPatientFile(null)}
-                className="p-2 rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleOpenPaymentModalForPatient(selectedPatientFile)}
+                  className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
+                >
+                  <CreditCard className="w-4 h-4 text-[#ffd200]" />
+                  <span>ثبت دریافت وجه / پوز</span>
+                </button>
+                <button
+                  onClick={() => setSelectedPatientFile(null)}
+                  className="p-2 rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Patient File Navigation Tabs */}
@@ -3813,6 +4119,18 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                 }`}
               >
                 سوابق مراجعات و درمان‌ها
+              </button>
+
+              <button
+                onClick={() => setPatientFileTab('billing_payment')}
+                className={`px-3.5 py-2 rounded-xl transition cursor-pointer flex items-center gap-1.5 ${
+                  patientFileTab === 'billing_payment'
+                    ? 'bg-emerald-700 text-white shadow'
+                    : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                }`}
+              >
+                <CreditCard className="w-3.5 h-3.5" />
+                <span>صورت‌حساب‌ها و پرداختی‌ها</span>
               </button>
 
               <button
@@ -4080,6 +4398,160 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                           </div>
                         </div>
                       )}
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* TAB CONTENT: Billing & Payments */}
+            {patientFileTab === 'billing_payment' && (
+              <div className="space-y-4 text-xs">
+                {(() => {
+                  const patientInvoices = (invoices || []).filter(
+                    (inv) =>
+                      inv.patientId === selectedPatientFile.id ||
+                      inv.patientNationalId === selectedPatientFile.nationalId ||
+                      (inv.patientName && inv.patientName === selectedPatientFile.fullName)
+                  );
+
+                  const totalBilled = patientInvoices.reduce((sum, i) => sum + (i.totalAmount || 0), 0);
+                  const totalPaid = patientInvoices.reduce((sum, i) => sum + (i.patientSharePaid || 0), 0);
+                  const totalInsurance = patientInvoices.reduce(
+                    (sum, i) => sum + (i.baseInsuranceCovered || 0) + (i.supplInsuranceCovered || 0),
+                    0
+                  );
+                  const balanceDue = Math.max(0, totalBilled - totalInsurance - totalPaid);
+
+                  return (
+                    <div className="space-y-3">
+                      {/* Financial Metrics Row */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                        <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-1">
+                          <span className="text-slate-500 font-medium text-[11px] block">کل صورت‌حساب‌ها</span>
+                          <span className="font-mono font-bold text-slate-900 dark:text-slate-100 text-sm">
+                            {totalBilled.toLocaleString('fa-IR')} تومان
+                          </span>
+                        </div>
+                        <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 space-y-1">
+                          <span className="text-blue-700 dark:text-blue-300 font-medium text-[11px] block">پوشش بیمه (پایه و تکمیلی)</span>
+                          <span className="font-mono font-bold text-blue-800 dark:text-blue-200 text-sm">
+                            {totalInsurance.toLocaleString('fa-IR')} تومان
+                          </span>
+                        </div>
+                        <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 space-y-1">
+                          <span className="text-emerald-700 dark:text-emerald-300 font-medium text-[11px] block">دریافتی نقد و کارت‌خوان</span>
+                          <span className="font-mono font-bold text-emerald-800 dark:text-emerald-200 text-sm">
+                            {totalPaid.toLocaleString('fa-IR')} تومان
+                          </span>
+                        </div>
+                        <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 space-y-1">
+                          <span className="text-amber-700 dark:text-amber-300 font-medium text-[11px] block">مانده بدهی خالص بیمار</span>
+                          <span className={`font-mono font-bold text-sm ${balanceDue > 0 ? 'text-amber-800 dark:text-amber-300' : 'text-emerald-600'}`}>
+                            {balanceDue > 0 ? `${balanceDue.toLocaleString('fa-IR')} تومان` : 'تسویه کامل ✓'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Action Bar */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl bg-[#005581]/5 border border-[#005581]/20">
+                        <span className="font-bold text-[#005581] dark:text-[#72cdf4] flex items-center gap-1.5">
+                          <Banknote className="w-4 h-4" />
+                          <span>ثبت سریع تراکنش جدید صندوق و کارت‌خوان متصل</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenPaymentModalForPatient(selectedPatientFile)}
+                          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-xs cursor-pointer flex items-center gap-1.5 transition"
+                        >
+                          <CreditCard className="w-4 h-4 text-[#ffd200]" />
+                          <span>ثبت دریافتی (کارت‌خوان POS / نقد)</span>
+                        </button>
+                      </div>
+
+                      {/* Invoice and Receipt List */}
+                      <div className="space-y-2">
+                        <h5 className="font-bold text-slate-800 dark:text-slate-200 text-xs">لیست فاکتورها و رسیدهای ثبت‌شده:</h5>
+                        {patientInvoices.length === 0 ? (
+                          <div className="p-6 text-center text-slate-400 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-800">
+                            تاکنون فاکتور مالی برای این پرونده صادر نشده است. با کلیک بر روی دکمه بالا می‌توانید اولین دریافتی را ثبت نمایید.
+                          </div>
+                        ) : (
+                          patientInvoices.map((inv) => (
+                            <div
+                              key={inv.id}
+                              className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 flex flex-wrap items-center justify-between gap-3"
+                            >
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-slate-900 dark:text-slate-100">
+                                    {inv.items?.[0]?.procedureName || 'خدمات دندان‌پزشکی'}
+                                  </span>
+                                  <span
+                                    className={`px-2 py-0.5 rounded-md font-bold text-[10px] ${
+                                      inv.status === 'paid'
+                                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                        : inv.status === 'partial'
+                                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                                        : 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300'
+                                    }`}
+                                  >
+                                    {inv.status === 'paid' ? 'تسویه‌شده' : inv.status === 'partial' ? 'پرداخت علی‌الحساب' : 'پرداخت‌نشده'}
+                                  </span>
+                                  {inv.paymentMethod && (
+                                    <span className="text-[10px] px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-950/60 text-[#005581] dark:text-[#72cdf4] font-medium">
+                                      {inv.paymentMethod === 'pos' ? 'کارتخوان POS' : inv.paymentMethod === 'cash' ? 'وجه نقد' : 'کارت به کارت'}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[11px] text-slate-500 flex flex-wrap gap-x-3 gap-y-1">
+                                  <span>تاریخ: <strong className="font-mono">{inv.date}</strong></span>
+                                  <span>پزشک: <strong>{inv.dentistName}</strong></span>
+                                  {inv.trackingCode && <span>کد پیگیری: <strong className="font-mono">{inv.trackingCode}</strong></span>}
+                                  {inv.posTerminalName && <span>ترمینال: <strong>{inv.posTerminalName}</strong></span>}
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-3">
+                                <div className="text-left">
+                                  <div className="font-bold text-xs text-slate-900 dark:text-slate-100 font-mono">
+                                    {inv.totalAmount.toLocaleString('fa-IR')} تومان
+                                  </div>
+                                  <div className="text-[10px] text-emerald-600 font-bold">
+                                    دریافتی: {(inv.patientSharePaid || 0).toLocaleString('fa-IR')} ت
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPaymentSuccessReceipt({
+                                      receiptNumber: `REC-${inv.id.slice(-6)}`,
+                                      trackingCode: inv.trackingCode || '140599',
+                                      date: inv.paidAt?.split(' ')[0] || inv.date,
+                                      time: inv.paidAt?.split(' ')[1] || '۱۲:۰۰',
+                                      patientName: inv.patientName,
+                                      nationalId: inv.patientNationalId || selectedPatientFile.nationalId,
+                                      phone: selectedPatientFile.phone,
+                                      amount: inv.patientSharePaid || inv.totalAmount,
+                                      method: inv.paymentMethod || 'pos',
+                                      posTerminal: inv.posTerminalName || 'دستگاه ۱ - بانک پاسارگاد',
+                                      procedureName: inv.items?.[0]?.procedureName || 'خدمات دندان‌پزشکی',
+                                      dentistName: inv.dentistName,
+                                      clinicName: currentClinic?.name || 'کلینیک دندان‌پزشکی البرز',
+                                      cashierName: 'مریم امیری (پذیرش)',
+                                    });
+                                    setIsReceiptModalOpen(true);
+                                  }}
+                                  className="px-3 py-1.5 rounded-lg bg-[#005581] hover:bg-[#004266] text-white font-bold text-xs flex items-center gap-1 shadow-xs cursor-pointer"
+                                >
+                                  <Receipt className="w-3.5 h-3.5 text-[#ffd200]" />
+                                  <span>مشاهده رسید</span>
+                                </button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
                     </div>
                   );
                 })()}
@@ -4758,6 +5230,401 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                 className="px-4 py-2 rounded-xl bg-[#005581] text-white font-bold text-xs cursor-pointer"
               >
                 تایید و بازگشت
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: MANUAL PAYMENT REGISTRATION (POS / CASH) */}
+      {isPaymentModalOpen && paymentTarget && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs z-50 flex items-center justify-center p-3 md:p-6 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-xl w-full border border-slate-200 dark:border-slate-800 shadow-2xl p-5 md:p-6 space-y-4 animate-scaleUp">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-md">
+                  <CreditCard className="w-5 h-5 text-[#ffd200]" />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-900 dark:text-slate-100 text-base">
+                    ثبت دریافت وجه بیمار — کارتخوان POS و صندوق
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    همگام‌سازی خودکار با تابلوی پول امروز، پنل حسابداری و پورتال بیمار
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPaymentModalOpen(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Patient & Treatment Summary Card */}
+            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-xs space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-700 pb-2">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-900 dark:text-slate-100 text-sm">{paymentTarget.patientName}</span>
+                  {paymentTarget.nationalId && (
+                    <span className="text-slate-500 font-mono">({paymentTarget.nationalId})</span>
+                  )}
+                </div>
+                <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-200 font-bold text-[10px]">
+                  پزشک: {paymentTarget.dentistName || 'دکتر کاویانی'}
+                </span>
+              </div>
+
+              {paymentTarget.procedureName && (
+                <div className="text-slate-600 dark:text-slate-300">
+                  <strong>خدمت / درمان: </strong>
+                  <span>{paymentTarget.procedureName.split('\n')[0]}</span>
+                </div>
+              )}
+
+              {/* Financial Calculation breakdown */}
+              <div className="grid grid-cols-3 gap-2 pt-1 font-mono text-center">
+                <div className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
+                  <span className="block text-[10px] text-slate-500 font-sans">هزینه کل درمان</span>
+                  <strong className="text-slate-900 dark:text-slate-100 text-xs">
+                    {(paymentTarget.totalAmount || 0).toLocaleString('fa-IR')} ت
+                  </strong>
+                </div>
+                <div className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
+                  <span className="block text-[10px] text-blue-600 font-sans">پوشش بیمه</span>
+                  <strong className="text-blue-700 dark:text-blue-300 text-xs">
+                    {((paymentTarget.estimatedBaseCovered || 0) + (paymentTarget.estimatedSupplCovered || 0)).toLocaleString('fa-IR')} ت
+                  </strong>
+                </div>
+                <div className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800">
+                  <span className="block text-[10px] text-emerald-800 dark:text-emerald-300 font-sans font-bold">سهم خالص بیمار</span>
+                  <strong className="text-emerald-700 dark:text-emerald-300 text-xs font-bold">
+                    {(paymentTarget.patientNetShare || 0).toLocaleString('fa-IR')} ت
+                  </strong>
+                </div>
+              </div>
+            </div>
+
+            {/* Payment Entry Form */}
+            <form onSubmit={handleSubmitPayment} className="space-y-3.5 text-xs">
+              {/* Payment Method Selector */}
+              <div>
+                <label className="block font-bold text-slate-800 dark:text-slate-200 mb-1.5">
+                  روش دریافت وجه:
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('pos')}
+                    className={`py-2.5 px-3 rounded-xl font-bold flex items-center justify-center gap-1.5 transition cursor-pointer border ${
+                      paymentMethod === 'pos'
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                        : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100'
+                    }`}
+                  >
+                    <CreditCard className="w-4 h-4 text-[#ffd200]" />
+                    <span>کارت‌خوان POS</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('cash')}
+                    className={`py-2.5 px-3 rounded-xl font-bold flex items-center justify-center gap-1.5 transition cursor-pointer border ${
+                      paymentMethod === 'cash'
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                        : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Banknote className="w-4 h-4 text-[#ffd200]" />
+                    <span>وجه نقد (صندوق)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('transfer')}
+                    className={`py-2.5 px-3 rounded-xl font-bold flex items-center justify-center gap-1.5 transition cursor-pointer border ${
+                      paymentMethod === 'transfer'
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                        : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100'
+                    }`}
+                  >
+                    <ArrowRightLeft className="w-4 h-4 text-[#ffd200]" />
+                    <span>کارت به کارت / شبا</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* POS Terminal Selection if POS */}
+              {paymentMethod === 'pos' && (
+                <div>
+                  <label className="block font-bold text-slate-800 dark:text-slate-200 mb-1">
+                    انتخاب دستگاه کارتخوان متصل:
+                  </label>
+                  <select
+                    value={posTerminal}
+                    onChange={(e) => setPosTerminal(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-bold focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                  >
+                    <option value="دستگاه ۱ - بانک پاسارگاد (پذیرش)">دستگاه ۱ — بانک پاسارگاد (کانتر پذیرش)</option>
+                    <option value="دستگاه ۲ - بانک سامان (صندوق مالی)">دستگاه ۲ — بانک سامان (صندوق مالی)</option>
+                    <option value="دستگاه ۳ - بانک ملت (پزشکان)">دستگاه ۳ — بانک ملت (بخش پزشکان)</option>
+                  </select>
+                </div>
+              )}
+
+              {/* Amount Input & Quick Presets */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="font-bold text-slate-800 dark:text-slate-200">
+                    مبلغ دریافتی (تومان):
+                  </label>
+                  {paymentAmount > 0 && (
+                    <span className="font-mono font-bold text-emerald-600 text-xs">
+                      {paymentAmount.toLocaleString('fa-IR')} تومان
+                    </span>
+                  )}
+                </div>
+                <input
+                  type="number"
+                  required
+                  min={1000}
+                  step={1000}
+                  value={paymentAmount || ''}
+                  onChange={(e) => setPaymentAmount(Number(e.target.value))}
+                  placeholder="مبلغ را به تومان وارد نمایید..."
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-mono font-bold text-sm focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                />
+
+                {/* Quick Presets */}
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {paymentTarget.patientNetShare && paymentTarget.patientNetShare > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setPaymentAmount(paymentTarget.patientNetShare!)}
+                      className="px-2.5 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 font-bold text-[11px] hover:bg-emerald-200 transition cursor-pointer"
+                    >
+                      سهم خالص: {paymentTarget.patientNetShare.toLocaleString('fa-IR')} ت
+                    </button>
+                  )}
+                  {paymentTarget.totalAmount && paymentTarget.totalAmount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setPaymentAmount(paymentTarget.totalAmount!)}
+                      className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-[11px] hover:bg-slate-200 transition cursor-pointer"
+                    >
+                      کل هزینه: {paymentTarget.totalAmount.toLocaleString('fa-IR')} ت
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setPaymentAmount(500000)}
+                    className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-[11px] hover:bg-slate-200 transition cursor-pointer"
+                  >
+                    ۵۰۰,۰۰۰ ت (بیعانه)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentAmount(1000000)}
+                    className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-[11px] hover:bg-slate-200 transition cursor-pointer"
+                  >
+                    ۱,۰۰۰,۰۰۰ ت
+                  </button>
+                </div>
+              </div>
+
+              {/* Tracking Code & Reason */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-800 dark:text-slate-200 mb-1">
+                    شماره پیگیری / شماره ارجاع شتاب (RRN):
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={paymentTrackingCode}
+                      onChange={(e) => setPaymentTrackingCode(e.target.value)}
+                      placeholder="مثال: 948271"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-emerald-500 text-xs"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setPaymentTrackingCode(String(Math.floor(100000 + Math.random() * 900000)))}
+                      className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[10px] px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold hover:bg-slate-200"
+                    >
+                      تولید خودکار
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-800 dark:text-slate-200 mb-1">
+                    بابت / شرح دریافتی:
+                  </label>
+                  <input
+                    type="text"
+                    value={paymentReason}
+                    onChange={(e) => setPaymentReason(e.target.value)}
+                    placeholder="شرح دریافت وجه..."
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-medium text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-emerald-500 text-xs"
+                  />
+                </div>
+              </div>
+
+              {/* Sync Notification Note */}
+              <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 text-[11px] text-[#005581] dark:text-[#72cdf4] flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>
+                  با ثبت این دریافتی، مبلغ فوراً در <strong>«تابلوی پول امروز»</strong>، <strong>«پنل حسابدار»</strong>، <strong>«پورتال شخصی بیمار»</strong> و <strong>«دفتر روزنامه کلینیک»</strong> سینک و ثبت قطعی می‌شود.
+                </span>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setIsPaymentModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold text-xs transition cursor-pointer"
+                >
+                  انصراف
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-md transition cursor-pointer flex items-center gap-2"
+                >
+                  <Check className="w-4 h-4 text-[#ffd200]" />
+                  <span>ثبت در صندوق و صدور رسید دیجیتال</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: PAYMENT SUCCESS & OFFICIAL DIGITAL RECEIPT */}
+      {isReceiptModalOpen && paymentSuccessReceipt && (
+        <div className="fixed inset-0 bg-slate-900/75 backdrop-blur-xs z-50 flex items-center justify-center p-3 md:p-6 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full border border-slate-200 dark:border-slate-800 shadow-2xl p-5 space-y-4 animate-scaleUp">
+            {/* Printable Receipt Paper */}
+            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-dashed border-slate-300 dark:border-slate-700 space-y-3">
+              {/* Header with clinic logo */}
+              <div className="text-center pb-2 border-b border-slate-200 dark:border-slate-700 space-y-1">
+                <div className="w-10 h-10 rounded-2xl bg-[#005581] text-[#ffd200] font-black flex items-center justify-center mx-auto text-lg shadow-xs">
+                  🦷
+                </div>
+                <h4 className="font-black text-sm text-slate-900 dark:text-slate-100">
+                  {paymentSuccessReceipt.clinicName}
+                </h4>
+                <div className="text-[10px] text-slate-500 font-bold">
+                  رسید رسمی پرداخت الکترونیک درمان دندان‌پزشکی
+                </div>
+              </div>
+
+              {/* Success Badge */}
+              <div className="p-2.5 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-center space-y-0.5">
+                <div className="flex items-center justify-center gap-1.5 text-emerald-800 dark:text-emerald-200 font-black text-xs">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>تراکنش با موفقیت انجام و ثبت شد</span>
+                </div>
+                <div className="font-mono text-[10px] text-emerald-700 dark:text-emerald-300 font-bold">
+                  شماره رسید: {paymentSuccessReceipt.receiptNumber}
+                </div>
+              </div>
+
+              {/* Receipt Details Grid */}
+              <div className="space-y-1.5 text-xs text-slate-700 dark:text-slate-300">
+                <div className="flex justify-between border-b border-slate-200/60 dark:border-slate-700/60 pb-1">
+                  <span className="text-slate-500">نام و نام خانوادگی بیمار:</span>
+                  <strong className="text-slate-900 dark:text-slate-100">{paymentSuccessReceipt.patientName}</strong>
+                </div>
+                {paymentSuccessReceipt.nationalId && (
+                  <div className="flex justify-between border-b border-slate-200/60 dark:border-slate-700/60 pb-1">
+                    <span className="text-slate-500">کد ملی بیمار:</span>
+                    <strong className="font-mono">{paymentSuccessReceipt.nationalId}</strong>
+                  </div>
+                )}
+                <div className="flex justify-between border-b border-slate-200/60 dark:border-slate-700/60 pb-1">
+                  <span className="text-slate-500">پزشک معالج:</span>
+                  <strong>{paymentSuccessReceipt.dentistName}</strong>
+                </div>
+                <div className="flex justify-between border-b border-slate-200/60 dark:border-slate-700/60 pb-1">
+                  <span className="text-slate-500">شرح خدمات:</span>
+                  <strong className="text-right text-[11px] max-w-[200px] truncate">{paymentSuccessReceipt.procedureName}</strong>
+                </div>
+                <div className="flex justify-between border-b border-slate-200/60 dark:border-slate-700/60 pb-1">
+                  <span className="text-slate-500">روش پرداخت:</span>
+                  <strong className="text-emerald-700 dark:text-emerald-300">
+                    {paymentSuccessReceipt.method === 'pos'
+                      ? 'کارتخوان POS متصل'
+                      : paymentSuccessReceipt.method === 'cash'
+                      ? 'وجه نقد صندوق'
+                      : 'کارت به کارت'}
+                  </strong>
+                </div>
+                {paymentSuccessReceipt.posTerminal && (
+                  <div className="flex justify-between border-b border-slate-200/60 dark:border-slate-700/60 pb-1">
+                    <span className="text-slate-500">ترمینال پذیرنده:</span>
+                    <span className="font-medium text-[11px]">{paymentSuccessReceipt.posTerminal}</span>
+                  </div>
+                )}
+                <div className="flex justify-between border-b border-slate-200/60 dark:border-slate-700/60 pb-1">
+                  <span className="text-slate-500">کد پیگیری شتاب / ارجاع:</span>
+                  <strong className="font-mono text-slate-900 dark:text-slate-100">{paymentSuccessReceipt.trackingCode}</strong>
+                </div>
+                <div className="flex justify-between border-b border-slate-200/60 dark:border-slate-700/60 pb-1">
+                  <span className="text-slate-500">زمان و تاریخ تراکنش:</span>
+                  <span className="font-mono text-slate-500">{paymentSuccessReceipt.date} — {paymentSuccessReceipt.time}</span>
+                </div>
+                <div className="flex justify-between border-b border-slate-200/60 dark:border-slate-700/60 pb-1">
+                  <span className="text-slate-500">متصدی ثبت صندوق:</span>
+                  <span>{paymentSuccessReceipt.cashierName}</span>
+                </div>
+
+                {/* Amount Paid - Big Highlight */}
+                <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 flex items-center justify-between text-sm mt-2">
+                  <span className="font-bold text-slate-800 dark:text-slate-200">مبلغ دریافتی:</span>
+                  <span className="font-mono font-black text-emerald-700 dark:text-emerald-400 text-base">
+                    {paymentSuccessReceipt.amount.toLocaleString('fa-IR')} تومان
+                  </span>
+                </div>
+              </div>
+
+              {/* Digital Watermark Note */}
+              <div className="text-center text-[10px] text-slate-400 font-mono pt-1">
+                ✓ تاییدشده در سامانه یکپارچه اتوماسیون درمانگاه دنتورا
+              </div>
+            </div>
+
+            {/* Sync Alert Banner */}
+            <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-[11px] text-emerald-900 dark:text-emerald-200 flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>این مبلغ در تابلوی روزانه حسابداری و صورت‌حساب بیمار ثبت گردید.</span>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-between gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  window.print();
+                }}
+                className="px-4 py-2 rounded-xl bg-[#005581] hover:bg-[#004266] text-white font-bold text-xs flex items-center gap-1.5 shadow transition cursor-pointer"
+              >
+                <Printer className="w-4 h-4 text-[#ffd200]" />
+                <span>چاپ فیش حرارتی / A5</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsReceiptModalOpen(false);
+                  setPaymentSuccessReceipt(null);
+                }}
+                className="px-5 py-2 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 text-slate-800 dark:text-slate-100 font-bold text-xs transition cursor-pointer"
+              >
+                بستن
               </button>
             </div>
           </div>

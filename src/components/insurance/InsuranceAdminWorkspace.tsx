@@ -483,21 +483,21 @@ export const InsuranceAdminWorkspace: React.FC<{
                 <div className="flex justify-between items-center text-xs font-bold text-[#005581]">
                   <span>سقف مسیر سریع (Express Lane):</span>
                   <span className="bg-[#ffe552] text-[#005581] font-black px-2.5 py-1 rounded-lg border border-[#ffd200]">
-                    زیر ۳۰٪ ریسک (ثابت سیستمی)
+                    زیر ۲۰٪ ریسک (ثابت سیستمی)
                   </span>
                 </div>
 
                 <div className="flex justify-between items-center text-xs font-bold text-[#005581] pt-2 border-t border-[#72cdf4]/40">
                   <span>محدوده بررسی معمولی (Standard):</span>
                   <span className="bg-[#72cdf4]/30 text-[#005581] font-black px-2.5 py-1 rounded-lg border border-[#72cdf4]">
-                    ۳۰٪ تا ۷۰٪ ریسک
+                    ۲۰٪ تا ۵۵٪ ریسک
                   </span>
                 </div>
 
                 <div className="flex justify-between items-center text-xs font-bold text-[#005581] pt-2 border-t border-[#72cdf4]/40">
                   <span>کف مسیر بررسی عمیق (Deep Review):</span>
                   <span className="bg-[#ffd200] text-[#005581] font-black px-2.5 py-1 rounded-lg border border-[#ffd200]">
-                    بالای ۷۰٪ ریسک (ثابت)
+                    بالای ۵۵٪ ریسک (ثابت)
                   </span>
                 </div>
 
@@ -873,7 +873,7 @@ export const InsuranceAdminWorkspace: React.FC<{
                     <span>صف مسیر سریع (Express Queue)</span>
                   </h3>
                   <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-2 py-0.5 rounded border border-emerald-300">
-                    ریسک زیر ۳۰٪
+                    ریسک زیر ۲۰٪
                   </span>
                 </div>
 
@@ -912,7 +912,7 @@ export const InsuranceAdminWorkspace: React.FC<{
                     <span>صف ارزیابی معمولی (Standard Queue)</span>
                   </h3>
                   <span className="bg-amber-100 text-amber-800 text-[10px] font-black px-2 py-0.5 rounded border border-amber-300">
-                    ریسک ۳۰٪ تا ۷۰٪
+                    ریسک ۲۰٪ تا ۵۵٪
                   </span>
                 </div>
 
@@ -951,7 +951,7 @@ export const InsuranceAdminWorkspace: React.FC<{
                     <span>صف بررسی عمیق (Deep Review)</span>
                   </h3>
                   <span className="bg-rose-100 text-rose-800 text-[10px] font-black px-2 py-0.5 rounded border border-rose-300">
-                    ریسک بالای ۷۰٪
+                    ریسک بالای ۵۵٪
                   </span>
                 </div>
 

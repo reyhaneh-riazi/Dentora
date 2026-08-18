@@ -16,7 +16,7 @@ import {
 import { UserRole } from '../../types';
 
 interface InsurerLandingPageProps {
-  onInsurerLogin: (providerName: string, role: UserRole) => void;
+  onInsurerLogin: (providerName: string, role: UserRole, userName?: string, email?: string) => void;
   onBackToDentora: () => void;
 }
 
@@ -25,19 +25,67 @@ export const InsurerLandingPage: React.FC<InsurerLandingPageProps> = ({
   onBackToDentora,
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'login' | 'signup'>('signup');
+  const [activeTab, setActiveTab] = useState<'login' | 'signup' | 'presets'>('presets');
 
   // Form states
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [providerName, setProviderName] = useState('بیمه تامین اجتماعی');
+  const [providerName, setProviderName] = useState('بیمه ایران');
   const [insurerRole, setInsurerRole] = useState<UserRole>('reviewer');
 
+  const presetAccounts = [
+    {
+      name: 'زهرا صادقی',
+      roleTitle: 'بازبین ادعاها و اسناد',
+      role: 'reviewer' as UserRole,
+      provider: 'بیمه ایران',
+      email: 'sadeghi@iraninsurance.ir',
+      badge: 'Claim Reviewer',
+      color: 'border-cyan-500/40 bg-cyan-500/10 text-cyan-900',
+    },
+    {
+      name: 'دکتر احسان رستمی',
+      roleTitle: 'پزشک معتمد و بازبین بالینی/رادیولوژی',
+      role: 'medical_inspector' as UserRole,
+      provider: 'بیمه ایران',
+      email: 'rostami@iraninsurance.ir',
+      badge: 'Medical Reviewer',
+      color: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-900',
+    },
+    {
+      name: 'مریم عباسی',
+      roleTitle: 'بازبین ادعاها و اسناد',
+      role: 'reviewer' as UserRole,
+      provider: 'بیمه تامین اجتماعی',
+      email: 'abbasi@tamin.ir',
+      badge: 'Claim Reviewer',
+      color: 'border-blue-500/40 bg-blue-500/10 text-blue-900',
+    },
+    {
+      name: 'دکتر حمید سجادی',
+      roleTitle: 'پزشک معتمد و بازبین پزشکی',
+      role: 'medical_inspector' as UserRole,
+      provider: 'بیمه تامین اجتماعی',
+      email: 'sajjadi@tamin.ir',
+      badge: 'Medical Reviewer',
+      color: 'border-purple-500/40 bg-purple-500/10 text-purple-900',
+    },
+    {
+      name: 'مهندس رضا بهرامی',
+      roleTitle: 'مدیر ارشد سازمان بیمه‌گر',
+      role: 'insurance_manager' as UserRole,
+      provider: 'بیمه تامین اجتماعی',
+      email: 'bahrami@tamin.ir',
+      badge: 'Insurance Manager',
+      color: 'border-amber-500/40 bg-amber-500/10 text-amber-900',
+    },
+  ];
+
   const insuranceProviders = [
+    'بیمه ایران',
     'بیمه تامین اجتماعی',
     'بیمه خدمات درمانی / سلامت',
-    'بیمه ایران',
     'بیمه سامان',
     'بیمه دانا',
     'بیمه البرز',
@@ -52,7 +100,8 @@ export const InsurerLandingPage: React.FC<InsurerLandingPageProps> = ({
       alert('لطفاً ایمیل سازمانی خود را وارد نمایید.');
       return;
     }
-    onInsurerLogin(providerName, insurerRole);
+    const resolvedName = fullName.trim() || (insurerRole === 'reviewer' ? 'زهرا صادقی' : insurerRole === 'medical_inspector' ? 'دکتر احسان رستمی' : 'کارشناس بیمه');
+    onInsurerLogin(providerName, insurerRole, resolvedName, email);
   };
 
   return (
@@ -232,7 +281,18 @@ export const InsurerLandingPage: React.FC<InsurerLandingPageProps> = ({
             </div>
 
             {/* Toggle Tabs */}
-            <div className="flex bg-slate-100 p-1.5 rounded-2xl">
+            <div className="flex bg-slate-100 p-1.5 rounded-2xl gap-1">
+              <button
+                type="button"
+                onClick={() => setActiveTab('presets')}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                  activeTab === 'presets'
+                    ? 'bg-[#005581] text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                حساب‌های کارشناسی
+              </button>
               <button
                 type="button"
                 onClick={() => setActiveTab('login')}
@@ -242,7 +302,7 @@ export const InsurerLandingPage: React.FC<InsurerLandingPageProps> = ({
                     : 'text-slate-500 hover:text-slate-800'
                 }`}
               >
-                ورود
+                ورود مستقیم
               </button>
               <button
                 type="button"
@@ -253,11 +313,55 @@ export const InsurerLandingPage: React.FC<InsurerLandingPageProps> = ({
                     : 'text-slate-500 hover:text-slate-800'
                 }`}
               >
-                ثبت‌نام
+                ثبت‌نام جدید
               </button>
             </div>
 
+            {/* Tab: Presets */}
+            {activeTab === 'presets' && (
+              <div className="space-y-3">
+                <p className="text-xs text-slate-500 font-medium">
+                  جهت ورود سریع با هویت کارشناسی مورد نظر خود، روی کارت مربوطه کلیک فرمایید:
+                </p>
+                <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                  {presetAccounts.map((acc) => (
+                    <button
+                      key={acc.email}
+                      type="button"
+                      onClick={() => {
+                        onInsurerLogin(acc.provider, acc.role, acc.name, acc.email);
+                      }}
+                      className="w-full text-right p-3 rounded-2xl border border-slate-200 hover:border-[#005581] bg-white hover:bg-slate-50 transition cursor-pointer flex items-center justify-between shadow-2xs group"
+                    >
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-extrabold text-sm text-slate-900 group-hover:text-[#005581]">
+                            {acc.name}
+                          </span>
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-[#005581]/10 text-[#005581] font-bold">
+                            {acc.provider}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 font-medium">{acc.roleTitle}</p>
+                        <p className="text-[11px] text-slate-400 font-mono">{acc.email}</p>
+                      </div>
+                      <div className="flex flex-col items-end gap-1">
+                        <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-[#ffd200]/20 text-[#005581] border border-[#ffd200]">
+                          {acc.badge}
+                        </span>
+                        <span className="text-xs text-[#005581] font-bold flex items-center gap-1 group-hover:translate-x-[-2px] transition">
+                          <span>ورود</span>
+                          <ChevronLeft className="w-3.5 h-3.5" />
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Form */}
+            {activeTab !== 'presets' && (
             <form onSubmit={handleSubmit} className="space-y-4">
               
               {activeTab === 'signup' && (
@@ -268,7 +372,7 @@ export const InsurerLandingPage: React.FC<InsurerLandingPageProps> = ({
                   <input
                     type="text"
                     required
-                    placeholder="مثلاً: علی کارشناس"
+                    placeholder="مثلاً: زهرا صادقی"
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                     className="w-full px-4 py-2.5 rounded-xl border-2 border-slate-200 focus:border-[#005581] text-sm outline-none transition bg-slate-50 focus:bg-white"
@@ -346,6 +450,7 @@ export const InsurerLandingPage: React.FC<InsurerLandingPageProps> = ({
               </button>
 
             </form>
+            )}
 
           </div>
         </div>

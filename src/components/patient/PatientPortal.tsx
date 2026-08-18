@@ -1298,7 +1298,7 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
                               </span>
                             </div>
 
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                               <span
                                 className={`px-3 py-1 rounded-full text-xs font-black ${
                                   isPaid ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'
@@ -1306,12 +1306,25 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
                               >
                                 {isPaid ? (
                                   <span className="inline-flex items-center gap-1">
-                                    <Check className="w-3.5 h-3.5" /> تسویه‌شده آنلاین
+                                    <Check className="w-3.5 h-3.5" />
+                                    {inv.paymentMethod === 'pos'
+                                      ? 'تسویه‌شده در پذیرش (کارت‌خوان POS)'
+                                      : inv.paymentMethod === 'cash'
+                                      ? 'تسویه‌شده نقدی در صندوق کلینیک'
+                                      : inv.paymentMethod === 'transfer'
+                                      ? 'تسویه‌شده (کارت به کارت)'
+                                      : 'تسویه‌شده آنلاین'}
                                   </span>
                                 ) : (
                                   'پرداخت‌نشده (بدهکار)'
                                 )}
                               </span>
+
+                              {inv.trackingCode && (
+                                <span className="text-[10px] px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-slate-600 dark:text-slate-300">
+                                  کد پیگیری: {inv.trackingCode}
+                                </span>
+                              )}
 
                               {!isPaid && (
                                 <button
@@ -1344,7 +1357,7 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
                               سهم بیمه تکمیلی: <strong className="font-mono text-[#005581]">{inv.supplInsuranceCovered.toLocaleString()} تومان</strong>
                             </div>
                             <div>
-                              خالص سهم بیمار: <strong className="font-mono text-rose-600 font-extrabold">{patientNet.toLocaleString()} تومان</strong>
+                              خالص پرداختی بیمار: <strong className="font-mono text-emerald-700 dark:text-emerald-400 font-extrabold">{(inv.patientSharePaid || patientNet).toLocaleString()} تومان</strong>
                             </div>
                           </div>
                         </div>

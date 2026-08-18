@@ -256,6 +256,7 @@ export interface Invoice {
   id: string;
   patientId: string;
   patientName: string;
+  patientNationalId?: string;
   dentistId: string;
   dentistName: string;
   date: string;
@@ -266,6 +267,10 @@ export interface Invoice {
   paymentMethod: 'cash' | 'pos' | 'transfer' | 'online';
   status: 'draft' | 'paid' | 'partial' | 'pending_insurance';
   doctorCommissionAmount: number;
+  trackingCode?: string;
+  posTerminalName?: string;
+  paidAt?: string;
+  paymentNotes?: string;
   items: {
     procedureName: string;
     toothFdi: number;
@@ -307,15 +312,22 @@ export interface TodayMoneyBoard {
 export type ClaimStatus =
   | 'draft'
   | 'queued'
+  | 'pending_reception'
   | 'submitted'
   | 'needs_fix'
+  | 'needs_evidence'
   | 'express_review'
   | 'standard_review'
   | 'deep_review'
   | 'approved'
   | 'partially_approved'
+  | 'partially_rejected'
   | 'rejected'
+  | 'rejected_by_insurer'
+  | 'approved_by_insurer'
   | 'appealed'
+  | 'paid'
+  | 'accepted'
   | 'settled';
 
 export type DeductionReasonCode = 'TARIFF_EXCEEDED' | 'DOCUMENTATION_MISSING' | 'MEDICAL_UNNECESSARY' | 'DUP_CLAIM' | string;
@@ -395,6 +407,7 @@ export interface Claim {
   primaryInsurerName?: string;
   supplementaryInsurerName?: string;
   toothFdi: number;
+  teethFdiList?: number[];
   treatmentName: string;
   dateOfService: string;
   serviceDate?: string;
@@ -562,11 +575,20 @@ export interface DoctorSubmission {
   prescriptionSummary: string;
   clinicalNotes?: string;
   toothFdi?: number;
+  teethFdiList?: number[];
   totalCost?: number;
   baseCovered?: number;
   supplCovered?: number;
   submittedAt: string;
   status: 'pending' | 'approved';
+  paymentReceived?: {
+    amount: number;
+    method: 'pos' | 'cash' | 'transfer';
+    posTerminalName?: string;
+    trackingCode: string;
+    paidAt: string;
+    notes?: string;
+  };
 }
 
 export interface MedicalQuestionSet {

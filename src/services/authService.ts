@@ -32,6 +32,21 @@ export interface LabAccount {
   createdAt: string;
 }
 
+export interface AuthInsurerRecord {
+  id: string;
+  name: string;
+  fullName: string;
+  nationalId?: string;
+  phone: string;
+  email: string;
+  passwordHash: string;
+  role: UserRole;
+  providerName: string;
+  medicalCouncilNo?: string;
+  avatarUrl?: string;
+  createdAt: string;
+}
+
 export interface AuthPatientRecord {
   id: string;
   fullName: string;
@@ -834,5 +849,199 @@ export function signUpLab(data: {
   setActiveLabSession(newLab);
 
   return { success: true, lab: newLab };
+}
+
+// Default Insurer Seed Accounts
+export const DEFAULT_INSURER_ACCOUNTS: AuthInsurerRecord[] = [
+  {
+    id: 'u-ins-sadeghi',
+    name: 'زهرا صادقی',
+    fullName: 'زهرا صادقی',
+    nationalId: '0019283746',
+    phone: '09123334455',
+    email: 'sadeghi@iraninsurance.ir',
+    passwordHash: '123456',
+    role: 'reviewer',
+    providerName: 'بیمه ایران',
+    createdAt: '۱۴۰۳/۰۲/۰۱',
+  },
+  {
+    id: 'u-ins-rostami',
+    name: 'دکتر احسان رستمی',
+    fullName: 'دکتر احسان رستمی',
+    nationalId: '0028374655',
+    phone: '09124445566',
+    email: 'rostami@iraninsurance.ir',
+    passwordHash: '123456',
+    role: 'medical_inspector',
+    providerName: 'بیمه ایران',
+    medicalCouncilNo: '91823',
+    createdAt: '۱۴۰۳/۰۲/۰۱',
+  },
+  {
+    id: 'u-ins-abbasi',
+    name: 'مریم عباسی',
+    fullName: 'مریم عباسی',
+    nationalId: '0037465566',
+    phone: '09125556677',
+    email: 'abbasi@tamin.ir',
+    passwordHash: '123456',
+    role: 'reviewer',
+    providerName: 'بیمه تامین اجتماعی',
+    createdAt: '۱۴۰۳/۰۱/۲۰',
+  },
+  {
+    id: 'u-ins-sajjadi',
+    name: 'دکتر حمید سجادی',
+    fullName: 'دکتر حمید سجادی',
+    nationalId: '0046556677',
+    phone: '09126667788',
+    email: 'sajjadi@tamin.ir',
+    passwordHash: '123456',
+    role: 'medical_inspector',
+    providerName: 'بیمه تامین اجتماعی',
+    medicalCouncilNo: '78452',
+    createdAt: '۱۴۰۳/۰۱/۲۰',
+  },
+  {
+    id: 'u-ins-bahrami',
+    name: 'مهندس رضا بهرامی',
+    fullName: 'مهندس رضا بهرامی',
+    nationalId: '0055667788',
+    phone: '09127778899',
+    email: 'bahrami@tamin.ir',
+    passwordHash: '123456',
+    role: 'insurance_manager',
+    providerName: 'بیمه تامین اجتماعی',
+    createdAt: '۱۴۰۳/۰۱/۱۰',
+  },
+  {
+    id: 'u-ins-farhadi',
+    name: 'دکتر سارا فرهادی',
+    fullName: 'دکتر سارا فرهادی',
+    nationalId: '0066778899',
+    phone: '09128889900',
+    email: 'farhadi@iraninsurance.ir',
+    passwordHash: '123456',
+    role: 'insurer_admin',
+    providerName: 'بیمه ایران',
+    createdAt: '۱۴۰۳/۰۱/۱۰',
+  },
+];
+
+const STORAGE_KEY_INSURER_ACCOUNTS = 'dentora_insurer_accounts_v1';
+
+export function getStoredInsurerAccounts(): AuthInsurerRecord[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_INSURER_ACCOUNTS);
+    if (!raw) {
+      localStorage.setItem(STORAGE_KEY_INSURER_ACCOUNTS, JSON.stringify(DEFAULT_INSURER_ACCOUNTS));
+      return DEFAULT_INSURER_ACCOUNTS;
+    }
+    return JSON.parse(raw);
+  } catch (err) {
+    console.error('Failed to parse stored insurer accounts', err);
+    return DEFAULT_INSURER_ACCOUNTS;
+  }
+}
+
+export function saveStoredInsurerAccounts(accounts: AuthInsurerRecord[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEY_INSURER_ACCOUNTS, JSON.stringify(accounts));
+  } catch (err) {
+    console.error('Failed to save insurer accounts', err);
+  }
+}
+
+export function signInInsurer(
+  emailOrPhone: string,
+  password?: string,
+  providerName?: string,
+  role?: UserRole
+): { success: boolean; error?: string; user?: AuthInsurerRecord } {
+  const cleanInput = toEnglishDigits(emailOrPhone).trim().toLowerCase();
+  const accounts = getStoredInsurerAccounts();
+
+  let matched = accounts.find(
+    (a) =>
+      a.email.toLowerCase() === cleanInput ||
+      toEnglishDigits(a.phone) === cleanInput ||
+      a.name.toLowerCase().includes(cleanInput) ||
+      a.fullName.toLowerCase().includes(cleanInput)
+  );
+
+  if (!matched && role) {
+    matched = accounts.find(
+      (a) => a.role === role && (!providerName || a.providerName === providerName)
+    );
+  }
+
+  if (matched) {
+    return { success: true, user: matched };
+  }
+
+  // If new user name passed directly
+  const newUser: AuthInsurerRecord = {
+    id: `u-ins-${Date.now()}`,
+    name: emailOrPhone,
+    fullName: emailOrPhone,
+    phone: '09120000000',
+    email: emailOrPhone.includes('@') ? emailOrPhone : `${cleanInput}@insurance.ir`,
+    passwordHash: password || '123456',
+    role: role || 'reviewer',
+    providerName: providerName || 'بیمه ایران',
+    createdAt: new Date().toLocaleDateString('fa-IR'),
+  };
+
+  const updated = [newUser, ...accounts];
+  saveStoredInsurerAccounts(updated);
+  return { success: true, user: newUser };
+}
+
+export function signUpInsurer(data: {
+  fullName: string;
+  email: string;
+  phone?: string;
+  nationalId?: string;
+  password?: string;
+  role: UserRole;
+  providerName: string;
+  medicalCouncilNo?: string;
+}): { success: boolean; error?: string; user?: AuthInsurerRecord } {
+  const cleanName = data.fullName.trim();
+  const cleanEmail = data.email.trim().toLowerCase();
+  const cleanPass = data.password ? data.password.trim() : '123456';
+
+  if (!cleanName) {
+    return { success: false, error: 'نام و نام خانوادگی الزامی است.' };
+  }
+  if (!cleanEmail) {
+    return { success: false, error: 'ایمیل سازمانی الزامی است.' };
+  }
+
+  const accounts = getStoredInsurerAccounts();
+  const existing = accounts.find((a) => a.email.toLowerCase() === cleanEmail);
+
+  if (existing) {
+    return { success: true, user: existing };
+  }
+
+  const newInsurer: AuthInsurerRecord = {
+    id: `u-ins-${Date.now()}`,
+    name: cleanName,
+    fullName: cleanName,
+    nationalId: data.nationalId,
+    phone: data.phone || '09120000000',
+    email: cleanEmail,
+    passwordHash: cleanPass,
+    role: data.role,
+    providerName: data.providerName,
+    medicalCouncilNo: data.medicalCouncilNo,
+    createdAt: new Date().toLocaleDateString('fa-IR'),
+  };
+
+  const updated = [newInsurer, ...accounts];
+  saveStoredInsurerAccounts(updated);
+  return { success: true, user: newInsurer };
 }
 

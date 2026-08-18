@@ -968,30 +968,40 @@ export default function App() {
     prescription: string[];
     clinicalNotes: string;
     toothFdi?: number;
+    teethFdiList?: number[];
     nextVisitDate?: string;
   }) => {
     const todayFa = new Date().toLocaleDateString('fa-IR');
     const timeFa = new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
     const patientObj = patients.find((p) => p.id === data.patientId) || activePatient;
-    const docName = currentUserName.includes('دکتر') ? currentUserName : 'دکتر کاویانی';
+    const docName = currentUserName.includes('دکتر') ? currentUserName : (currentClinic?.ownerRole === 'dentist' ? currentClinic.ownerName : 'دکتر کاویانی');
 
-    // 1. Update Patient object (syncs teethMap, treatmentHistory, clinicalNotes, prescriptions)
-    const fdi = data.toothFdi || 16;
+    // Determine all treated teeth
+    const treatedTeethList = data.teethFdiList && data.teethFdiList.length > 0
+      ? data.teethFdiList
+      : (data.toothFdi ? [data.toothFdi] : [16]);
+    const primaryFdi = data.toothFdi || treatedTeethList[0] || 16;
+
     const cleanProcedureName = data.treatmentPlan
       ? data.treatmentPlan.split('\n')[0].replace(/^[0-9.-]+\s*/, '').trim()
       : 'درمان تخصصی دندان‌پزشکی';
 
+    // 1. Update Patient object (syncs teethMap, treatmentHistory, clinicalNotes, prescriptions)
     setPatients((prev) =>
       prev.map((p) => {
         if (p.id === patientObj.id || p.nationalId === patientObj.nationalId) {
-          // Keep medicalHistory strictly for systemic medical conditions (e.g. فشار خون، دیابت و ...)
+          // Keep medicalHistory strictly for systemic medical conditions
           const cleanMedHistory = (p.medicalHistory || []).filter(
             (item) => !item.startsWith('ثبت تصویر') && !item.includes('[هوش مصنوعی]') && !item.includes('RVG') && !item.includes('OPG') && !item.startsWith('درمان توسط')
           );
 
+          const teethMention = treatedTeethList.length > 1
+            ? `دندان‌های ${treatedTeethList.join(' و ')}`
+            : `دندان ${primaryFdi}`;
+
           const newClinicalNotes = [
             ...(p.clinicalNotes || []),
-            `[${todayFa} ${docName}] دندان ${fdi}: ${data.clinicalNotes || data.treatmentPlan}`,
+            `[${todayFa} ${docName}] ${teethMention}: ${data.clinicalNotes || data.treatmentPlan}`,
           ];
 
           const newPrescriptions = data.prescription && data.prescription.length > 0
@@ -1007,31 +1017,30 @@ export default function App() {
               ]
             : (p.prescriptions || []);
 
-          const currentTooth = p.teethMap?.[fdi] || {
-            fdiNumber: fdi,
-            condition: 'filled',
-            affectedSurfaces: ['Occlusal'],
-            treatmentHistory: [],
-          };
-
-          const updatedTeethMap = {
-            ...p.teethMap,
-            [fdi]: {
+          let updatedTeethMap = { ...p.teethMap };
+          treatedTeethList.forEach((toothNum) => {
+            const currentTooth = updatedTeethMap[toothNum] || {
+              fdiNumber: toothNum,
+              condition: 'filled' as const,
+              affectedSurfaces: ['Occlusal'],
+              treatmentHistory: [],
+            };
+            updatedTeethMap[toothNum] = {
               ...currentTooth,
               condition: 'filled' as const,
               treatmentHistory: [
                 ...(currentTooth.treatmentHistory || []),
                 {
-                  id: `th-${Date.now()}`,
+                  id: `th-${Date.now()}-${toothNum}`,
                   date: todayFa,
                   procedureName: cleanProcedureName,
                   dentistName: docName,
-                  cost: data.totalCost || 0,
+                  cost: Math.round((data.totalCost || 0) / treatedTeethList.length),
                   status: 'completed' as const,
                 },
               ],
-            },
-          };
+            };
+          });
 
           return {
             ...p,
@@ -1056,7 +1065,8 @@ export default function App() {
       treatmentSummary: data.treatmentPlan,
       prescriptionSummary: data.prescription.join(' + ') || 'بدون نسخه دارویی',
       clinicalNotes: data.clinicalNotes,
-      toothFdi: fdi,
+      toothFdi: primaryFdi,
+      teethFdiList: treatedTeethList,
       totalCost: data.totalCost,
       baseCovered: data.baseCovered,
       supplCovered: data.supplCovered,
@@ -1073,7 +1083,7 @@ export default function App() {
         patientName: patientObj.fullName,
         patientPhone: patientObj.phone,
         doctorName: docName,
-        reason: `پیگیری درمان دندان ${fdi} (${data.treatmentPlan.split('\n')[0]})`,
+        reason: `پیگیری درمان ${treatedTeethList.length > 1 ? `دندان‌های ${treatedTeethList.join(' و ')}` : `دندان ${primaryFdi}`} (${data.treatmentPlan.split('\n')[0]})`,
         suggestedDate: data.nextVisitDate || '۱۴۰۵/۰۵/۲۵ (۲ هفته بعد)',
         status: 'pending',
       };
@@ -1090,6 +1100,12 @@ export default function App() {
     const base = data.baseCovered || 0;
     const suppl = data.supplCovered || 0;
 
+    const invoiceItems = treatedTeethList.map((toothNum) => ({
+      procedureName: `${cleanProcedureName} (دندان ${toothNum})`,
+      toothFdi: toothNum,
+      amount: Math.round(cost / treatedTeethList.length),
+    }));
+
     const newInvoice: Invoice = {
       id: `inv-${Date.now()}`,
       patientId: patientObj.id,
@@ -1104,10 +1120,10 @@ export default function App() {
       paymentMethod: 'cash',
       status: 'pending_insurance',
       doctorCommissionAmount: Math.round(cost * 0.45),
-      items: [
+      items: invoiceItems.length > 0 ? invoiceItems : [
         {
-          procedureName: data.treatmentPlan.split('\n')[0] || 'درمان دندان‌پزشکی تخصصی',
-          toothFdi: fdi,
+          procedureName: cleanProcedureName,
+          toothFdi: primaryFdi,
           amount: cost,
         },
       ],
@@ -1224,6 +1240,17 @@ export default function App() {
     const base = sub.baseCovered || Math.round(cost * 0.3);
     const suppl = sub.supplCovered || Math.round(cost * 0.4);
 
+    const subTreatedTeeth = sub.teethFdiList && sub.teethFdiList.length > 0
+      ? sub.teethFdiList
+      : (sub.toothFdi ? [sub.toothFdi] : [16]);
+    const primaryTooth = sub.toothFdi || subTreatedTeeth[0] || 16;
+
+    const invoiceItems = subTreatedTeeth.map((toothNum) => ({
+      procedureName: `${cleanProcedure} (دندان ${toothNum})`,
+      toothFdi: toothNum,
+      amount: Math.round(cost / subTreatedTeeth.length),
+    }));
+
     const newInvoice: Invoice = {
       id: `inv-${Date.now()}`,
       patientId: patientObj.id,
@@ -1238,10 +1265,10 @@ export default function App() {
       paymentMethod: 'cash',
       status: 'pending_insurance',
       doctorCommissionAmount: Math.round(cost * 0.45),
-      items: [
+      items: invoiceItems.length > 0 ? invoiceItems : [
         {
           procedureName: sub.treatmentSummary.split('\n')[0] || 'درمان دندان‌پزشکی تخصصی',
-          toothFdi: sub.toothFdi || 16,
+          toothFdi: primaryTooth,
           amount: cost,
         },
       ],
@@ -1250,21 +1277,36 @@ export default function App() {
 
     // D. Create Claim if insurance coverage exists
     if (base > 0 || suppl > 0) {
+      const claimItems = subTreatedTeeth.map((toothNum, idx) => ({
+        id: `ci-${Date.now()}-${idx + 1}`,
+        toothNumber: toothNum,
+        procedureTitle: `${cleanProcedure} دندان ${toothNum}`,
+        procedureCode: 'DNT-GEN-PRC',
+        surfaceDetail: 'سطوح استاندارد',
+        tariffAmount: Math.round(cost / subTreatedTeeth.length),
+        claimedAmount: Math.round(cost / subTreatedTeeth.length),
+        baseShare: Math.round(base / subTreatedTeeth.length),
+        supplementaryShare: Math.round(suppl / subTreatedTeeth.length),
+      }));
+
       const newClaim: Claim = {
         id: `CLM-${Math.floor(1000 + Math.random() * 9000)}`,
         claimNumber: `CLM-${Math.floor(1000 + Math.random() * 9000)}`,
         patientId: patientObj.id,
         patientName: patientObj.fullName,
         nationalId: patientObj.nationalId,
+        dentistName: sub.dentistName,
         insuranceProvider: patientObj.primaryInsurance?.provider || 'بیمه تامین اجتماعی',
-        toothFdi: sub.toothFdi || 16,
+        toothFdi: primaryTooth,
+        teethFdiList: subTreatedTeeth,
+        items: claimItems,
         treatmentName: sub.treatmentSummary.split('\n')[0] || 'عصب‌کشی و ترمیم تخصصی دندان',
         dateOfService: todayFa,
         claimedAmount: cost,
         baseApprovedAmount: base,
         supplApprovedAmount: suppl,
         deductionAmount: 0,
-        status: 'express_review',
+        status: 'draft',
         riskScore: 8,
         greenLaneEligible: true,
         evidences: [
@@ -1298,6 +1340,137 @@ export default function App() {
       entityName: 'PatientMedicalRecord',
       entityId: patientObj.id,
       hashWORM: `WORM-ETH-${Math.random().toString(36).substring(2, 10).toUpperCase()}`,
+    };
+    setAuditLogs((prev) => [newLog, ...prev]);
+  };
+
+  // Reception / Secretary Manual Payment Registration (POS & Cash)
+  const handleRegisterPatientPayment = (paymentData: {
+    patientId: string;
+    patientName: string;
+    nationalId?: string;
+    phone?: string;
+    amount: number;
+    paymentMethod: 'pos' | 'cash' | 'transfer';
+    posTerminalName?: string;
+    trackingCode: string;
+    notes?: string;
+    reason?: string;
+    submissionId?: string;
+  }) => {
+    const todayFa = new Date().toLocaleDateString('fa-IR');
+    const timeFa = new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+    const {
+      patientId,
+      patientName,
+      nationalId = '',
+      amount,
+      paymentMethod,
+      posTerminalName = 'دستگاه ۱ - بانک پاسارگاد',
+      trackingCode,
+      notes = '',
+      reason = 'دریافتی صندوق و پذیرش درمان دندان‌پزشکی',
+      submissionId,
+    } = paymentData;
+
+    // 1. Update Today's Money Board (Instant sync with Accountant & Dashboards)
+    setTodayMoneyBoard((prev) => ({
+      ...prev,
+      receivedTodayCashPos: prev.receivedTodayCashPos + amount,
+      totalInvoicedToday: Math.max(prev.totalInvoicedToday, prev.receivedTodayCashPos + amount),
+    }));
+
+    // 2. Update or create invoice
+    setInvoices((prev) => {
+      const matchIndex = prev.findIndex(
+        (inv) =>
+          (inv.patientId === patientId || (inv.patientName && inv.patientName === patientName)) &&
+          inv.status !== 'paid'
+      );
+
+      if (matchIndex >= 0) {
+        const existing = prev[matchIndex];
+        const newPaid = (existing.patientSharePaid || 0) + amount;
+        const patientNet = existing.totalAmount - existing.baseInsuranceCovered - existing.supplInsuranceCovered;
+        const newStatus = newPaid >= patientNet ? 'paid' : 'partial';
+
+        const updatedInvoice: Invoice = {
+          ...existing,
+          patientSharePaid: newPaid,
+          status: newStatus,
+          paymentMethod,
+          posTerminalName,
+          trackingCode,
+          paidAt: `${todayFa} ${timeFa}`,
+          paymentNotes: notes || existing.paymentNotes,
+        };
+
+        const clone = [...prev];
+        clone[matchIndex] = updatedInvoice;
+        return clone;
+      } else {
+        const newInvoice: Invoice = {
+          id: `inv-${Date.now()}`,
+          patientId,
+          patientName,
+          patientNationalId: nationalId,
+          dentistId: 'u-dentist1',
+          dentistName: 'دکتر کاویانی',
+          date: todayFa,
+          totalAmount: amount,
+          baseInsuranceCovered: 0,
+          supplInsuranceCovered: 0,
+          patientSharePaid: amount,
+          paymentMethod,
+          status: 'paid',
+          doctorCommissionAmount: Math.round(amount * 0.45),
+          posTerminalName,
+          trackingCode,
+          paidAt: `${todayFa} ${timeFa}`,
+          paymentNotes: notes,
+          items: [
+            {
+              procedureName: reason || 'دریافتی و تسویه درمان دندان‌پزشکی',
+              toothFdi: 16,
+              amount,
+            },
+          ],
+        };
+        return [newInvoice, ...prev];
+      }
+    });
+
+    // 3. Update doctor submission if submissionId provided
+    if (submissionId) {
+      setDoctorSubmissions((prev) =>
+        prev.map((s) =>
+          s.id === submissionId
+            ? {
+                ...s,
+                paymentReceived: {
+                  amount,
+                  method: paymentMethod,
+                  posTerminalName,
+                  trackingCode,
+                  paidAt: `${todayFa} ${timeFa}`,
+                  notes,
+                },
+              }
+            : s
+        )
+      );
+    }
+
+    // 4. Record WORM audit log
+    const newLog: AuditLog = {
+      id: `log-${Date.now()}`,
+      timestamp: `${todayFa} ${timeFa}`,
+      actorName: currentUserName,
+      actorRole: currentRole,
+      action: 'PATIENT_PAYMENT_COLLECTED',
+      entityName: 'FinancialPaymentReceipt',
+      entityId: patientId,
+      hashWORM: `WORM-PAY-${Math.random().toString(36).substring(2, 10).toUpperCase()}`,
     };
     setAuditLogs((prev) => [newLog, ...prev]);
   };
@@ -1398,7 +1571,7 @@ export default function App() {
   // Insurance Reviewer Handlers
   const handleReviewDecision = (
     claimId: string,
-    decision: 'approved' | 'rejected' | 'partially_approved',
+    decision: 'approved' | 'rejected' | 'partially_approved' | 'partially_rejected',
     deductionOrReason?: number | string,
     reasonText?: string
   ) => {
@@ -1408,23 +1581,29 @@ export default function App() {
     setClaims((prev) =>
       prev.map((c) => {
         if (c.id !== claimId) return c;
+        const isApprovedOrPartial = decision === 'approved' || decision === 'partially_approved';
         const updatedAppeals = (c.appeals || []).map((a) => ({
           ...a,
-          status: decision === 'approved' ? ('accepted' as const) : ('rejected' as const),
-          responseNotes: finalReason || (decision === 'approved' ? 'اعتراض کلینیک پذیرفته شد و کسورات ملغی گردید.' : 'اعتراض کلینیک رد شد.'),
+          status: isApprovedOrPartial ? ('accepted' as const) : ('rejected' as const),
+          responseNotes: finalReason || (decision === 'approved' ? 'اعتراض کلینیک پذیرفته شد و پرونده بدون کسورات تسویه گردید.' : isApprovedOrPartial ? 'اعتراض کلینیک بررسی شد و بخش مصوب پرونده تایید و تسویه گردید.' : 'اعتراض کلینیک رد شد.'),
         }));
 
-        if (decision === 'approved') {
+        const claimAmount = c.claimedAmount || c.totalAmount || c.totalClaimedAmount || 5200000;
+
+        if (isApprovedOrPartial) {
+          const appliedDeduction = decision === 'approved' ? 0 : (deduction || Math.round(claimAmount * 0.2));
+          const approvedAmount = Math.max(0, claimAmount - appliedDeduction);
+
           return {
             ...c,
             status: 'settled' as const,
             appeals: updatedAppeals,
-            baseApprovedAmount: c.baseApprovedAmount || Math.round((c.claimedAmount || 5200000) * 0.3),
-            supplApprovedAmount: c.supplApprovedAmount || Math.round((c.claimedAmount || 5200000) * 0.7),
-            deductionAmount: 0,
-            deductionReason: undefined,
-            totalApprovedAmount: c.claimedAmount || c.totalClaimedAmount || 5200000,
-            doctorReviewerDiagnosis: finalReason || 'تایید کامل مدارک بالینی و رادیولوژی توسط پزشک معتمد',
+            baseApprovedAmount: c.baseApprovedAmount || Math.round(approvedAmount * 0.3),
+            supplApprovedAmount: c.supplApprovedAmount || Math.round(approvedAmount * 0.7),
+            deductionAmount: appliedDeduction,
+            deductionReason: appliedDeduction > 0 ? (finalReason || 'تایید جزئی ادعا با کسر مازاد سقف تعرفه مصوب بیمه') : undefined,
+            totalApprovedAmount: approvedAmount,
+            doctorReviewerDiagnosis: finalReason || (decision === 'approved' ? 'تایید کامل مدارک بالینی و رادیولوژی توسط بازبین و انتقال به تسویه‌شده' : 'تایید جزئی مدارک بالینی و تسویه سهم مصوب بیمه'),
           };
         } else {
           return {
@@ -1434,13 +1613,11 @@ export default function App() {
             deductionAmount:
               deduction ||
               c.deductionAmount ||
-              (decision === 'partially_approved'
-                ? Math.round((c.claimedAmount || 5200000) * 0.25)
-                : c.claimedAmount || 5200000),
+              claimAmount,
             deductionReason:
               finalReason ||
-              (decision === 'partially_approved'
-                ? 'کسورات تعرفه‌ای مصوب بازبین بیمه'
+              (decision === 'partially_rejected'
+                ? 'رد جزئی ادعا به دلیل نقص در مدارک یا عدم انطباق با تعرفه مصوب'
                 : 'رد کامل ادعا به دلیل عدم تطابق با دستورالعمل‌های بیمه‌ای'),
             doctorReviewerDiagnosis: finalReason,
           };
@@ -1661,6 +1838,8 @@ export default function App() {
             onReplyQuestion={handleReplyQuestion}
             insuranceDisputes={insuranceDisputes}
             onReplyDispute={handleReplyInsuranceDispute}
+            invoices={invoices}
+            onRegisterPayment={handleRegisterPatientPayment}
             users={users}
             currentClinic={currentClinic}
           />
@@ -1731,6 +1910,7 @@ export default function App() {
             onToggleConnectionStatus={handleToggleConnectionStatus}
             onPayInstallment={handlePayInstallment}
             onSubmitAppeal={handleSubmitAppeal}
+            onSendClaimToInsurance={handleSendClaimToInsurance}
           />
         )}
 

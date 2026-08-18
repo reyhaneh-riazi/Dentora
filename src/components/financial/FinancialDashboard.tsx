@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import * as XLSX from 'xlsx';
 import { TodayMoneyBoard, Invoice, InstallmentPlan } from '../../types';
 import {
   DollarSign,
@@ -28,6 +29,7 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
   onPayInstallment,
 }) => {
   const [activeTab, setActiveTab] = useState<'board' | 'waterfall' | 'installments' | 'commissions'>('board');
+  const [exportSuccessMsg, setExportSuccessMsg] = useState<string | null>(null);
 
   // Waterfall Calculation Playground State
   const [procedureCost, setProcedureCost] = useState<number>(5200000); // e.g. 5,200,000 Tomans
@@ -39,6 +41,90 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
   const remainingAfterBase = procedureCost - baseInsuranceAmount;
   const supplInsuranceAmount = Math.round((remainingAfterBase * supplInsuranceCoveragePercent) / 100);
   const patientShare = procedureCost - baseInsuranceAmount - supplInsuranceAmount;
+
+  const handleExportExcel = () => {
+    const headers = [
+      'شناسه فاکتور',
+      'تاریخ',
+      'نام بیمار',
+      'کد ملی',
+      'پزشک معالج',
+      'شرح خدمات',
+      'مبلغ کل (تومان)',
+      'سهم بیمه پایه',
+      'سهم بیمه تکمیلی',
+      'پرداختی نقد/پوز بیمار',
+      'روش پرداخت',
+      'کد پیگیری شتاب',
+      'ترمینال کارتخوان',
+      'وضعیت تسویه',
+    ];
+
+    const rows = (invoices || []).map((inv) => [
+      inv.id,
+      inv.date || '۱۴۰۵/۰۵/۱۳',
+      inv.patientName || 'بیمار',
+      inv.patientNationalId || '—',
+      inv.dentistName || 'پزشک',
+      inv.items?.[0]?.procedureName || 'خدمات دندان‌پزشکی',
+      inv.totalAmount || 0,
+      inv.baseInsuranceCovered || 0,
+      inv.supplInsuranceCovered || 0,
+      inv.patientSharePaid || 0,
+      inv.paymentMethod === 'pos' ? 'کارتخوان POS' : inv.paymentMethod === 'cash' ? 'وجه نقد' : 'کارت به کارت',
+      inv.trackingCode || '—',
+      inv.posTerminalName || '—',
+      inv.status === 'paid' ? 'تسویه‌شده' : inv.status === 'partial' ? 'علی‌الحساب' : 'پرداخت‌نشده',
+    ]);
+
+    try {
+      const data = [headers, ...rows];
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      
+      const colWidths = headers.map((h, i) => {
+        let maxLen = h.length;
+        rows.forEach((r) => {
+          const valStr = String(r[i] ?? '');
+          if (valStr.length > maxLen) maxLen = valStr.length;
+        });
+        return { wch: Math.min(45, Math.max(14, maxLen + 3)) };
+      });
+      ws['!cols'] = colWidths;
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'صورت‌حساب‌ها');
+      
+      XLSX.writeFile(wb, 'گزارش_جامع_مالی_و_صندوق_کلینیک_دنتورا.xlsx');
+      setExportSuccessMsg('فایل اکسل رسمی «گزارش_جامع_مالی_و_صندوق_کلینیک_دنتورا.xlsx» با موفقیت دانلود شد.');
+      setTimeout(() => setExportSuccessMsg(null), 4000);
+    } catch (err) {
+      console.warn('XLSX export fallback:', err);
+      const csvContent = [
+        headers.join(','),
+        ...rows.map((row) =>
+          row
+            .map((cell) => {
+              const str = String(cell ?? '').replace(/"/g, '""');
+              return `"${str}"`;
+            })
+            .join(',')
+        ),
+      ].join('\r\n');
+
+      const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', 'گزارش_جامع_مالی_و_صندوق_کلینیک_دنتورا.csv');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      setExportSuccessMsg('فایل اکسل صورت‌حساب‌ها و درآمد کلینیک با موفقیت دانلود شد.');
+      setTimeout(() => setExportSuccessMsg(null), 4000);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -56,14 +142,22 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => alert('گزارش جامع مالی با فرمت Excel صادر گردید.')}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 text-xs font-semibold border border-slate-300 dark:border-slate-700 transition"
+            type="button"
+            onClick={handleExportExcel}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition shadow-xs cursor-pointer"
           >
-            <Download className="w-4 h-4 text-emerald-600" />
+            <Download className="w-4 h-4 text-[#ffd200]" />
             <span>خروجی اکسل</span>
           </button>
         </div>
       </div>
+
+      {exportSuccessMsg && (
+        <div className="p-3 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-xs font-bold flex items-center gap-2 animate-fadeIn">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+          <span>{exportSuccessMsg}</span>
+        </div>
+      )}
 
       {/* TABS Navigation */}
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">

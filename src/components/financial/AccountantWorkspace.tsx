@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import * as XLSX from 'xlsx';
 import {
   TodayMoneyBoard,
   Invoice,
@@ -77,6 +78,7 @@ interface AccountantWorkspaceProps {
     category?: string,
     ruleCitation?: string
   ) => void;
+  onSendClaimToInsurance?: (claimId: string) => void;
   initialActiveTab?: AccountantNavTab;
   hideSidebar?: boolean;
 }
@@ -89,7 +91,6 @@ type AccountantNavTab =
   | 'insurance_tier2';
 
 type InsuranceSubTab =
-  | 'multi_payer'
   | 'kanban'
   | 'deductions'
   | 'appeal_form';
@@ -113,12 +114,13 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
   isBNPLEnabledForClinic = true,
   onPayInstallment,
   onSubmitAppeal,
+  onSendClaimToInsurance,
   initialActiveTab = 'cash_flow',
   hideSidebar = false,
 }) => {
   // Navigation State
   const [activeTab, setActiveTab] = useState<AccountantNavTab>(initialActiveTab);
-  const [activeInsuranceSubTab, setActiveInsuranceSubTab] = useState<InsuranceSubTab>('multi_payer');
+  const [activeInsuranceSubTab, setActiveInsuranceSubTab] = useState<InsuranceSubTab>('kanban');
 
   // Local state for Installments & New Plan Modal
   const [localInstallments, setLocalInstallments] = useState<InstallmentPlan[]>(installments);
@@ -138,6 +140,139 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
   const [dateFilter, setDateFilter] = useState<'today' | 'this_month' | 'this_year'>('today');
   const [selectedDentist, setSelectedDentist] = useState<string>('all');
   const [selectedBranch, setSelectedBranch] = useState<string>('all');
+  const [excelToastMsg, setExcelToastMsg] = useState<string | null>(null);
+
+  const showExcelToast = (msg: string) => {
+    setExcelToastMsg(msg);
+    setTimeout(() => setExcelToastMsg(null), 4500);
+  };
+
+  const exportToExcel = (fileName: string, headers: string[], rows: (string | number)[][]) => {
+    try {
+      const data = [headers, ...rows];
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      
+      // Auto column widths calculation
+      const colWidths = headers.map((h, i) => {
+        let maxLen = h.length;
+        rows.forEach((r) => {
+          const valStr = String(r[i] ?? '');
+          if (valStr.length > maxLen) maxLen = valStr.length;
+        });
+        return { wch: Math.min(45, Math.max(14, maxLen + 3)) };
+      });
+      ws['!cols'] = colWidths;
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'گزارش مالی دنتورا');
+      
+      XLSX.writeFile(wb, `${fileName}.xlsx`);
+      showExcelToast(`فایل اکسل رسمی «${fileName}.xlsx» با موفقیت صادر و دانلود شد.`);
+    } catch (err) {
+      console.warn('XLSX.writeFile fallback to Blob/CSV:', err);
+      const csvContent = [
+        headers.join(','),
+        ...rows.map((row) =>
+          row
+            .map((cell) => {
+              const str = String(cell ?? '').replace(/"/g, '""');
+              return `"${str}"`;
+            })
+            .join(',')
+        ),
+      ].join('\r\n');
+
+      const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `${fileName}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      showExcelToast(`فایل اکسل «${fileName}.csv» با موفقیت صادر و دانلود شد.`);
+    }
+  };
+
+  const handleExportTaxAndLedgerExcel = () => {
+    const headers = [
+      'شناسه سند / فاکتور',
+      'تاریخ ثبت',
+      'نام بیمار',
+      'کد ملی',
+      'نام پزشک معالج',
+      'شرح خدمت دندان‌پزشکی',
+      'مبلغ کل تعرفه (تومان)',
+      'سهم بیمه پایه (تومان)',
+      'سهم بیمه تکمیلی (تومان)',
+      'دریافتی نقد / کارتخوان بیمار (تومان)',
+      'روش دریافت',
+      'کد پیگیری شتاب / RRN',
+      'شماره ترمینال POS',
+      'وضعیت تسویه فاکتور',
+      'مالیات بر ارزش افزوده و تکلیفی (تومان)',
+    ];
+
+    const rows = (invoices && invoices.length > 0
+      ? invoices
+      : [
+          {
+            id: 'INV-1405-101',
+            date: '۱۴۰۵/۰۵/۱۳',
+            patientName: 'سارا تهرانی',
+            patientNationalId: '0012938471',
+            dentistName: 'دکتر کاویانی',
+            items: [{ procedureName: 'عصب‌کشی ۳ کاناله دندان ۱۶', cost: 4500000 }],
+            totalAmount: 4500000,
+            baseInsuranceCovered: 1350000,
+            supplInsuranceCovered: 1800000,
+            patientSharePaid: 1350000,
+            paymentMethod: 'pos',
+            trackingCode: '982741',
+            posTerminalName: 'دستگاه ۱ - بانک پاسارگاد',
+            status: 'paid',
+          },
+          {
+            id: 'INV-1405-102',
+            date: '۱۴۰۵/۰۵/۱۳',
+            patientName: 'محمد رضایی',
+            patientNationalId: '0087654321',
+            dentistName: 'دکتر سلیمانی',
+            items: [{ procedureName: 'ایمپلنت اشترومن دندان ۲۴', cost: 14000000 }],
+            totalAmount: 14000000,
+            baseInsuranceCovered: 0,
+            supplInsuranceCovered: 6000000,
+            patientSharePaid: 8000000,
+            paymentMethod: 'pos',
+            trackingCode: '614920',
+            posTerminalName: 'دستگاه ۲ - بانک سامان',
+            status: 'paid',
+          },
+        ]
+    ).map((inv: any) => {
+      const taxAmount = Math.round((inv.totalAmount || 0) * 0.1);
+      return [
+        inv.id,
+        inv.date || '۱۴۰۵/۰۵/۱۳',
+        inv.patientName || 'بیمار عمومی',
+        inv.patientNationalId || '—',
+        inv.dentistName || 'دکتر معالج',
+        inv.items?.[0]?.procedureName || 'خدمات دندان‌پزشکی',
+        inv.totalAmount || 0,
+        inv.baseInsuranceCovered || 0,
+        inv.supplInsuranceCovered || 0,
+        inv.patientSharePaid || 0,
+        inv.paymentMethod === 'pos' ? 'کارتخوان POS' : inv.paymentMethod === 'cash' ? 'وجه نقد' : 'کارت به کارت',
+        inv.trackingCode || '—',
+        inv.posTerminalName || '—',
+        inv.status === 'paid' ? 'تسویه‌شده' : inv.status === 'partial' ? 'علی‌الحساب' : 'در انتظار پرداخت',
+        taxAmount,
+      ];
+    });
+
+    exportToExcel('دفتر_روزنامه_مالیاتی_و_صورت‌حساب‌های_کلینیک_دنتورا', headers, rows);
+  };
   const [selectedServiceCategory, setSelectedServiceCategory] = useState<string>('all');
   
   // Dentora Insurance Connection & Gateway-less Baseline State
@@ -234,7 +369,7 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
   const handleCreateNewPlan = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newPlanPatientName.trim() || !newPlanPhone.trim()) {
-      alert('لطفاً نام بیمار و شماره تماس را وارد فرمایید.');
+      showExcelToast('لطفاً نام بیمار و شماره تماس را وارد فرمایید.');
       return;
     }
     // If BNPL, the BNPL service pays 100% upfront to clinic, remaining clinic balance is 0.
@@ -273,9 +408,9 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
     setNewPlanPhone('');
     setNewPlanTreatmentTitle('');
     setNewPlanIsBNPL(false);
-    alert(
+    showExcelToast(
       newPlanIsBNPL
-        ? `طرح تقسیط اعتباری BNPL با تسویه ۱۰۰٪ یکجا توسط پلتفرم با کلینیک برای ${newPlanPatientName} ثبت گردید.`
+        ? `طرح تقسیط اعتباری BNPL با تسویه ۱۰۰٪ یکجا برای ${newPlanPatientName} ثبت گردید.`
         : `پلان اقساط عادی جدید با موفقیت برای ${newPlanPatientName} ثبت گردید.`
     );
   };
@@ -381,7 +516,7 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
   // Handle Refund Process
   const handleConfirmRefund = () => {
     if (!refundReason.trim()) {
-      alert('لطفاً علت استرداد وجه را وارد فرمایید.');
+      showExcelToast('لطفاً علت استرداد وجه را وارد فرمایید.');
       return;
     }
 
@@ -648,7 +783,8 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
             {/* Quick Excel Export Action */}
             <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
               <button
-                onClick={() => alert('گزارش استاندارد حسابداری و مالیاتی در قالب فایل اکسل صادر گردید.')}
+                type="button"
+                onClick={handleExportTaxAndLedgerExcel}
                 className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-2xs cursor-pointer"
               >
                 <Download className="w-4 h-4 text-[#ffd200]" />
@@ -850,11 +986,15 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
                     <TrendingUp className="w-4 h-4 text-[#005581] group-hover:scale-110 transition-transform" />
                   </div>
                   <div className="text-2xl font-black text-[#005581] font-mono">
-                    {moneyBoard.totalInvoicedToday.toLocaleString()} <span className="text-xs font-normal text-slate-700">تومان</span>
+                    {(invoices && invoices.length > 0
+                      ? invoices.reduce((sum, inv) => sum + (inv.totalAmount || 0), 0)
+                      : moneyBoard.totalInvoicedToday
+                    ).toLocaleString()}{' '}
+                    <span className="text-xs font-normal text-slate-700">تومان</span>
                   </div>
                   <p className="text-[11px] text-slate-700">مجموع ارزش خدمات درمانی ثبت‌شده</p>
                   <div className="flex items-center justify-between pt-2 border-t border-[#72cdf4]/60 text-[10px] font-extrabold text-[#005581]">
-                    <span>مشاهده لیست ۶ فاکتور امروز</span>
+                    <span>مشاهده لیست {invoices?.length || 6} فاکتور امروز</span>
                     <Search className="w-3.5 h-3.5 text-[#005581]" />
                   </div>
                 </div>
@@ -1567,8 +1707,27 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
                   </select>
 
                   <button
-                    onClick={() => alert('ریز گزارش کامل صندوق روزانه و تفکیک مالی در قالب فایل Excel خروجی گرفته شد.')}
-                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition cursor-pointer shadow-xs"
+                    onClick={() => {
+                      const headers = [
+                        'نام دندان‌پزشک',
+                        'تخصص / خدمت',
+                        'درصد کارانه',
+                        'کل کارکرد (تومان)',
+                        'سهم بیمه پایه (تومان)',
+                        'سهم بیمه تکمیلی (تومان)',
+                        'سهم پرداختی بیمار (تومان)',
+                        'سهم خالص پزشک (تومان)',
+                        'سهم سود کلینیک (تومان)',
+                        'شعبه',
+                        'تاریخ گزارش',
+                      ];
+                      const rows = [
+                        ['دکتر کاویانی', 'عصب‌کشی (انودونتیکس)', '45%', 6200000, 1240000, 2480000, 2480000, 2790000, 3410000, 'شعبه مرکزی', '۱۴۰۵/۰۵/۲۰'],
+                        ['دکتر شریفی', 'جراحی ایمپلنت', '50%', 22500000, 4500000, 9000000, 9000000, 11250000, 11250000, 'شعبه تخصصی', '۱۴۰۵/۰۵/۲۰'],
+                      ];
+                      exportToExcel('گزارش_جامع_صندوق_و_کارکرد_پزشکان_دنتورا', headers, rows);
+                    }}
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition cursor-pointer shadow-xs active:scale-95"
                   >
                     <Download className="w-3.5 h-3.5 text-[#ffd200]" />
                     <span>خروجی Excel صندوق</span>
@@ -1667,7 +1826,7 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
                 <ShieldAlert className="w-10 h-10 text-amber-600 mx-auto" />
                 <h3 className="font-extrabold text-base text-amber-900">ماژول بیمه در این کلینیک غیرفعال است</h3>
                 <p className="text-xs text-amber-800 max-w-md mx-auto">
-                  بخش‌های چندسهمی، بورد کانبان ادعاها و مدیریت کسورات بیمه‌ای صرفاً در صورت فعال بودن ماژول بیمه کلینیک نمایش داده می‌شوند.
+                  بخش‌های بورد کانبان ادعاها و مدیریت کسورات بیمه‌ای صرفاً در صورت فعال بودن ماژول بیمه کلینیک نمایش داده می‌شوند.
                 </p>
                 <div className="pt-2">
                   <span className="px-3.5 py-2 bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs rounded-xl inline-block">
@@ -1685,7 +1844,7 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
                       <span>امور مالی و کسورات بیمه</span>
                     </h2>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      تفکیک چندسهمی، بورد کانبان ادعاها، مغایرت کسورات و ثبت اعتراض رسمی
+                      بورد کانبان ادعاها، مغایرت کسورات و ثبت اعتراض رسمی
                     </p>
                   </div>
 
@@ -1697,19 +1856,8 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
                   )}
                 </div>
 
-                {/* Sub-tab Switcher (Note: L4 Fast Settlement panel belongs to Owner workspace) */}
+                {/* Sub-tab Switcher */}
                 <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 pb-3">
-                  <button
-                    onClick={() => setActiveInsuranceSubTab('multi_payer')}
-                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
-                      activeInsuranceSubTab === 'multi_payer'
-                        ? 'bg-[#005581] text-white shadow-2xs'
-                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                    }`}
-                  >
-                    ۱. فاکتورهای چندسهمی
-                  </button>
-
                   <button
                     onClick={() => setActiveInsuranceSubTab('kanban')}
                     className={`px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
@@ -1718,7 +1866,7 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
                         : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                     }`}
                   >
-                    ۲. کانبان پیگیری ادعاها
+                    ۱. کانبان پیگیری ادعاها
                   </button>
 
                   <button
@@ -1729,7 +1877,7 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
                         : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                     }`}
                   >
-                    ۳. مغایرت کسورات بیمه
+                    ۲. مغایرت کسورات بیمه
                   </button>
 
                   <button
@@ -1740,85 +1888,11 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
                         : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                     }`}
                   >
-                    ۴. ثبت اعتراض رسمی (همراه با تصویر و آیین‌نامه)
+                    ۳. ثبت اعتراض رسمی (همراه با تصویر و آیین‌نامه)
                   </button>
                 </div>
 
-                {/* Sub-tab 1: Multi-payer Invoices */}
-                {activeInsuranceSubTab === 'multi_payer' && (
-                  <div className="space-y-4">
-                    <h3 className="font-bold text-sm text-slate-900">
-                      محاسبه‌گر و تفکیک سه ضلعی فاکتور (بیمه پایه ← بیمه تکمیلی ← پرداختی بیمار)
-                    </h3>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="space-y-4 bg-slate-50 p-4 rounded-xl border text-xs">
-                        <div>
-                          <label className="block font-bold text-slate-800 mb-1">هزینه کل درمان (تومان):</label>
-                          <input
-                            type="number"
-                            value={waterfallCost}
-                            onChange={(e) => setWaterfallCost(Number(e.target.value))}
-                            className="w-full px-3 py-2 border rounded-xl font-mono text-sm font-bold bg-white"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block font-bold text-slate-800 mb-1">
-                            پوشش بیمه پایه: {baseCoveragePercent}٪
-                          </label>
-                          <input
-                            type="range"
-                            min="0"
-                            max="50"
-                            value={baseCoveragePercent}
-                            onChange={(e) => setBaseCoveragePercent(Number(e.target.value))}
-                            className="w-full"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block font-bold text-slate-800 mb-1">
-                            پوشش بیمه تکمیلی: {supplCoveragePercent}٪
-                          </label>
-                          <input
-                            type="range"
-                            min="0"
-                            max="100"
-                            value={supplCoveragePercent}
-                            onChange={(e) => setSupplCoveragePercent(Number(e.target.value))}
-                            className="w-full"
-                          />
-                        </div>
-                      </div>
-
-                      {/* Result Waterfall Display */}
-                      <div className="p-4 rounded-xl bg-slate-900 text-white font-mono text-xs space-y-2.5">
-                        <h4 className="font-bold text-cyan-400 border-b border-slate-800 pb-2">
-                          تفکیک مالی سه ضلعی:
-                        </h4>
-                        <div className="flex justify-between border-b border-slate-800 py-1">
-                          <span>۱. تعرفه درمانی:</span>
-                          <span className="font-bold">{waterfallCost.toLocaleString()} تومان</span>
-                        </div>
-                        <div className="flex justify-between border-b border-slate-800 py-1 text-slate-300">
-                          <span>۲. سهم بیمه پایه ({baseCoveragePercent}٪):</span>
-                          <span className="text-emerald-400 font-bold">- {calculatedBaseShare.toLocaleString()} تومان</span>
-                        </div>
-                        <div className="flex justify-between border-b border-slate-800 py-1 text-slate-300">
-                          <span>۳. سهم بیمه تکمیلی ({supplCoveragePercent}٪):</span>
-                          <span className="text-cyan-400 font-bold">- {calculatedSupplShare.toLocaleString()} تومان</span>
-                        </div>
-                        <div className="flex justify-between bg-emerald-950/60 p-3 rounded-xl border border-emerald-500/40 mt-2">
-                          <span className="font-bold text-emerald-300 font-sans">سهم نقدی بیمار:</span>
-                          <span className="font-black text-emerald-400 text-base">{calculatedPatientShare.toLocaleString()} تومان</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Sub-tab 2: Claims Kanban Board (Clicking card opens full details/checklist/fix modal) */}
+                {/* Sub-tab 1: Claims Kanban Board (Clicking card opens full details/checklist/fix modal) */}
                 {activeInsuranceSubTab === 'kanban' && (
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
@@ -1838,11 +1912,12 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
                         { key: 'rejected', title: '۳. برگشت‌خورده / کسورات', color: 'border-rose-300 bg-rose-50/90', badgeBg: 'bg-rose-700 text-white', labelBtn: 'ثبت اعتراض رسمی' },
                         { key: 'settled', title: '۴. تسویه‌شده', color: 'border-emerald-300 bg-emerald-50/90', badgeBg: 'bg-emerald-700 text-white', labelBtn: 'مشاهده فیش واریز' },
                       ].map((col) => {
-                        const colClaims = localClaims.filter((c) => {
-                          if (col.key === 'draft') return c.status === 'draft' || c.status === 'queued';
-                          if (col.key === 'submitted') return c.status === 'submitted' || c.status === 'approved_by_insurer' || c.status === 'express_review' || c.status === 'standard_review' || c.status === 'needs_fix' || c.status === 'needs_evidence' || c.status === 'deep_review';
-                          if (col.key === 'rejected') return c.status === 'rejected' || c.status === 'rejected_by_insurer' || c.status === 'appealed';
-                          if (col.key === 'settled') return c.status === 'settled' || c.status === 'paid';
+                        const activeClaimsList = claims && claims.length > 0 ? claims : localClaims;
+                        const colClaims = activeClaimsList.filter((c) => {
+                          if (col.key === 'draft') return c.status === 'draft' || c.status === 'queued' || c.status === 'pending_reception';
+                          if (col.key === 'submitted') return c.status === 'submitted' || c.status === 'express_review' || c.status === 'standard_review' || c.status === 'deep_review' || c.status === 'needs_fix' || c.status === 'needs_evidence';
+                          if (col.key === 'rejected') return c.status === 'rejected' || c.status === 'rejected_by_insurer' || c.status === 'partially_rejected' || c.status === 'appealed';
+                          if (col.key === 'settled') return c.status === 'settled' || c.status === 'paid' || c.status === 'approved' || c.status === 'partially_approved' || c.status === 'approved_by_insurer' || c.status === 'accepted';
                           return false;
                         });
 
@@ -1921,9 +1996,38 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
                 {/* Sub-tab 3: Deductions Discrepancy */}
                 {activeInsuranceSubTab === 'deductions' && (
                   <div className="space-y-4">
-                    <h3 className="font-bold text-sm text-slate-900">
-                      جدول مغایرت‌گیری و بررسی کسورات بیمه‌گر
-                    </h3>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <h3 className="font-bold text-sm text-slate-900">
+                        جدول مغایرت‌گیری و بررسی کسورات بیمه‌گر
+                      </h3>
+                      <button
+                        onClick={() => {
+                          const headers = [
+                            'کد ادعا',
+                            'نام بیمار',
+                            'سازمان بیمه‌گر',
+                            'مبلغ ادعاشده (تومان)',
+                            'مبلغ تاییدشده (تومان)',
+                            'مبلغ کسورات (تومان)',
+                            'علت رسمی کسورات',
+                          ];
+                          const rows = claims.map((c) => [
+                            c.claimNumber,
+                            c.patientName,
+                            c.insuranceProvider,
+                            c.claimedAmount,
+                            c.baseApprovedAmount + c.supplApprovedAmount,
+                            c.deductionAmount,
+                            c.deductionReason || 'سقف تعرفه',
+                          ]);
+                          exportToExcel('گزارش_مغایرت_و_کسورات_بیمه', headers, rows);
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition cursor-pointer shadow-xs active:scale-95"
+                      >
+                        <Download className="w-3.5 h-3.5 text-[#ffd200]" />
+                        <span>خروجی Excel کسورات</span>
+                      </button>
+                    </div>
 
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs text-right">
@@ -2160,11 +2264,11 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
                       <button
                         onClick={() => {
                           if (!selectedClaimForAppeal) {
-                            alert('لطفاً ابتدا ادعای مورد نظر را انتخاب فرمایید.');
+                            showExcelToast('لطفاً ابتدا ادعای مورد نظر را انتخاب فرمایید.');
                             return;
                           }
                           if (appealAttachedImages.length === 0) {
-                            alert('برای ثبت اعتراض، آپلود/پیوست حداقل یک تصویر گرافی RVG یا شرح بیمه‌ای الزامی است.');
+                            showExcelToast('برای ثبت اعتراض، آپلود/پیوست حداقل یک تصویر گرافی RVG یا شرح بیمه‌ای الزامی است.');
                             return;
                           }
                           handleSendAppeal(selectedClaimForAppeal.id);
@@ -2556,38 +2660,59 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
               {/* 5. INVOICES ISSUED TODAY METRIC */}
               {activeMetricModal === 'invoices' && (
                 <div className="space-y-3">
-                  <div className="p-3 bg-indigo-50 rounded-xl text-indigo-900 flex items-center justify-between font-bold">
-                    <span>مجموع ارزش کل ۶ فاکتور صادره امروز: 23,250,000 تومان</span>
-                    <span className="text-xs text-indigo-700">شامل ۶ فاکتور درمانی در بخش حسابداری</span>
+                  <div className="p-3 bg-indigo-50 rounded-xl text-indigo-900 flex flex-wrap items-center justify-between gap-2 font-bold">
+                    <span>
+                      مجموع ارزش کل {invoices?.length || 0} فاکتور صادره: {(invoices?.reduce((sum, inv) => sum + (inv.totalAmount || 0), 0) || moneyBoard.totalInvoicedToday).toLocaleString()} تومان
+                    </span>
+                    <span className="text-xs text-indigo-700">شامل کلیه فاکتورهای همگام‌سازی‌شده با پذیرش و پزشکان</span>
                   </div>
 
-                  <div className="divide-y divide-slate-100 dark:divide-slate-800 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
-                    {[
-                      { id: 'INV-1001', patient: 'مریم رضایی', doctor: 'دکتر امینی', service: 'ترمیم دندان 36 و عصب‌کشی', total: 5500000, patientShare: 3500000, insuranceShare: 2000000, time: '09:15' },
-                      { id: 'INV-1002', patient: 'علی احمدی', doctor: 'دکتر صادقی', service: 'جرم‌گیری و بروفیلاکس', total: 1200000, patientShare: 1200000, insuranceShare: 0, time: '10:00' },
-                      { id: 'INV-1003', patient: 'سارا کریمی', doctor: 'دکتر امینی', service: 'طرح درمان کامل ارتودنسی', total: 12000000, patientShare: 3000000, insuranceShare: 0, time: '10:45' },
-                      { id: 'INV-1004', patient: 'رضا محمدی', doctor: 'دکتر رضوی', service: 'جراحی دندان عقل نهفته', total: 1500000, patientShare: 750000, insuranceShare: 750000, time: '11:30' },
-                      { id: 'INV-1005', patient: 'نرگس حسینی', doctor: 'دکتر صادقی', service: 'معاینه تخصصی و PA گرافی', total: 300000, patientShare: 300000, insuranceShare: 0, time: '12:10' },
-                      { id: 'INV-1006', patient: 'کامران شریفی', doctor: 'دکتر امینی', service: 'ترمیم آمالگام ۲ سطحی', total: 2750000, patientShare: 1750000, insuranceShare: 1000000, time: '12:40' },
-                    ].map((inv) => (
-                      <div key={inv.id} className="p-3 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">
-                        <div className="space-y-0.5">
-                          <div className="font-extrabold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                            <span className="font-mono text-indigo-700">{inv.id}</span>
-                            <span>{inv.patient}</span>
-                            <span className="text-slate-400 font-normal">({inv.doctor})</span>
+                  <div className="divide-y divide-slate-100 dark:divide-slate-800 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden max-h-96 overflow-y-auto">
+                    {(invoices && invoices.length > 0
+                      ? invoices
+                      : [
+                          { id: 'INV-1001', patientName: 'مریم رضایی', dentistName: 'دکتر امینی', items: [{ procedureName: 'ترمیم دندان 36 و عصب‌کشی' }], totalAmount: 5500000, patientSharePaid: 3500000, baseInsuranceCovered: 2000000, supplInsuranceCovered: 0, date: '1405/05/13', status: 'paid', paymentMethod: 'pos' },
+                          { id: 'INV-1002', patientName: 'علی احمدی', dentistName: 'دکتر صادقی', items: [{ procedureName: 'جرم‌گیری و بروفیلاکس' }], totalAmount: 1200000, patientSharePaid: 1200000, baseInsuranceCovered: 0, supplInsuranceCovered: 0, date: '1405/05/13', status: 'paid', paymentMethod: 'cash' },
+                          { id: 'INV-1003', patientName: 'سارا کریمی', dentistName: 'دکتر امینی', items: [{ procedureName: 'طرح درمان کامل ارتودنسی' }], totalAmount: 12000000, patientSharePaid: 3000000, baseInsuranceCovered: 0, supplInsuranceCovered: 0, date: '1405/05/13', status: 'partial', paymentMethod: 'pos' },
+                          { id: 'INV-1004', patientName: 'رضا محمدی', dentistName: 'دکتر رضوی', items: [{ procedureName: 'جراحی دندان عقل نهفته' }], totalAmount: 1500000, patientSharePaid: 750000, baseInsuranceCovered: 750000, supplInsuranceCovered: 0, date: '1405/05/13', status: 'paid', paymentMethod: 'pos' },
+                        ]
+                    ).map((inv: any) => {
+                      const patientNet = (inv.totalAmount || 0) - (inv.baseInsuranceCovered || 0) - (inv.supplInsuranceCovered || 0);
+                      const isPaid = inv.status === 'paid';
+                      return (
+                        <div key={inv.id} className="p-3.5 flex flex-wrap items-center justify-between gap-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">
+                          <div className="space-y-1">
+                            <div className="font-extrabold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                              <span className="font-mono text-indigo-700 bg-indigo-50 dark:bg-indigo-950 px-2 py-0.5 rounded text-xs">{inv.id}</span>
+                              <span>{inv.patientName || 'بیمار'}</span>
+                              <span className="text-slate-400 font-normal text-xs">({inv.dentistName || 'پزشک'})</span>
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                                isPaid ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                              }`}>
+                                {isPaid ? 'تسویه‌شده' : 'علی‌الحساب'}
+                              </span>
+                              {inv.paymentMethod && (
+                                <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded">
+                                  {inv.paymentMethod === 'pos' ? 'کارتخوان' : inv.paymentMethod === 'cash' ? 'نقدی' : 'شتاب'}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-slate-600 dark:text-slate-400 text-[11px]">
+                              {inv.items?.[0]?.procedureName || 'خدمات درمانی دندان‌پزشکی'}
+                            </div>
+                            <div className="text-slate-500 text-[10px] flex items-center gap-3">
+                              <span>سهم پرداختی بیمار: <strong className="text-emerald-700 font-mono">{(inv.patientSharePaid || patientNet).toLocaleString()}</strong> ت</span>
+                              <span>سهم بیمه پایه: <strong className="text-cyan-700 font-mono">{(inv.baseInsuranceCovered || 0).toLocaleString()}</strong> ت</span>
+                              <span>سهم بیمه تکمیلی: <strong className="text-[#005581] font-mono">{(inv.supplInsuranceCovered || 0).toLocaleString()}</strong> ت</span>
+                            </div>
                           </div>
-                          <div className="text-slate-600 dark:text-slate-400 text-[11px]">{inv.service}</div>
-                          <div className="text-slate-400 text-[10px]">
-                            سهم بیمار: <strong className="text-slate-700 font-mono">{inv.patientShare.toLocaleString()}</strong> | سهم بیمه: <strong className="text-slate-700 font-mono">{inv.insuranceShare.toLocaleString()}</strong>
+                          <div className="text-left">
+                            <div className="font-mono font-black text-sm text-indigo-900 dark:text-indigo-300">{(inv.totalAmount || 0).toLocaleString()} تومان</div>
+                            <div className="text-[10px] text-slate-400 font-mono">{inv.date || 'امروز'}</div>
                           </div>
                         </div>
-                        <div className="text-left">
-                          <div className="font-mono font-black text-sm text-indigo-900 dark:text-indigo-300">{inv.total.toLocaleString()} تومان</div>
-                          <div className="text-[10px] text-slate-400 font-mono">{inv.time}</div>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -3007,19 +3132,59 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
                 {/* Service & Tooth Info */}
                 <div className="p-4 rounded-xl border bg-white dark:bg-slate-900 space-y-2">
                   <h4 className="font-extrabold text-slate-900 dark:text-slate-100 text-xs border-b pb-1.5 flex items-center justify-between">
-                    <span>مشخصات درمان و دندان:</span>
+                    <span>مشخصات درمان و دندان‌های تحت درمان:</span>
                     <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded font-mono">
-                      FDI: {selectedClaimForDetailModal.toothFdi}
+                      FDI: {selectedClaimForDetailModal.teethFdiList && selectedClaimForDetailModal.teethFdiList.length > 0 ? selectedClaimForDetailModal.teethFdiList.join(' , ') : selectedClaimForDetailModal.toothFdi}
                     </span>
                   </h4>
                   <div className="space-y-1 text-[11px] text-slate-700 dark:text-slate-300">
                     <div>عنوان درمان: <strong className="text-slate-900 dark:text-slate-100">{selectedClaimForDetailModal.treatmentName}</strong></div>
-                    <div>شماره دندان: <strong>دندان شماره {selectedClaimForDetailModal.toothFdi}</strong></div>
+                    <div>
+                      شماره دندان: <strong>
+                        {selectedClaimForDetailModal.teethFdiList && selectedClaimForDetailModal.teethFdiList.length > 1
+                          ? `دندان‌های شماره ${selectedClaimForDetailModal.teethFdiList.join(' و ')}`
+                          : `دندان شماره ${selectedClaimForDetailModal.toothFdi || 16}`}
+                      </strong>
+                    </div>
                     <div>مبلغ ادعاشده: <strong className="font-mono text-emerald-700 font-bold">{selectedClaimForDetailModal.claimedAmount.toLocaleString()} تومان</strong></div>
-                    <div>پزشک معالج: <strong>دکتر رضا حسینی (کد نظام: 10482)</strong></div>
+                    <div>پزشک معالج: <strong className="text-slate-900 dark:text-slate-100">{selectedClaimForDetailModal.dentistName || 'دکتر دندان‌پزشک معالج'}</strong></div>
                   </div>
                 </div>
               </div>
+
+              {/* Multi-Teeth / Items Breakdown if present */}
+              {selectedClaimForDetailModal.items && selectedClaimForDetailModal.items.length > 0 && (
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2">
+                  <div className="text-[11px] font-extrabold text-slate-800 dark:text-slate-200 flex items-center justify-between">
+                    <span>ریز خدمات به تفکیک دندان‌ها و تعرفه:</span>
+                    <span className="text-[10px] text-slate-500 font-mono">{selectedClaimForDetailModal.items.length} ردیف خدمت</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-right text-[10px]">
+                      <thead>
+                        <tr className="border-b border-slate-200 text-slate-500 font-bold bg-white dark:bg-slate-900">
+                          <th className="py-1.5 px-2">شماره دندان (FDI)</th>
+                          <th className="py-1.5 px-2">شرح خدمت</th>
+                          <th className="py-1.5 px-2">تعرفه کل</th>
+                          <th className="py-1.5 px-2 text-blue-700">سهم پایه</th>
+                          <th className="py-1.5 px-2 text-emerald-700">سهم تکمیلی</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {selectedClaimForDetailModal.items.map((it, idx) => (
+                          <tr key={it.id || idx} className="hover:bg-slate-100/60">
+                            <td className="py-1 px-2 font-bold font-mono text-[#005581]">دندان {it.toothNumber}</td>
+                            <td className="py-1 px-2 text-slate-800 dark:text-slate-200">{it.procedureTitle}</td>
+                            <td className="py-1 px-2 font-mono font-bold">{(it.claimedAmount || it.tariffAmount || 0).toLocaleString()} ت</td>
+                            <td className="py-1 px-2 font-mono text-blue-700 font-bold">{(it.baseShare || 0).toLocaleString()} ت</td>
+                            <td className="py-1 px-2 font-mono text-emerald-700 font-bold">{(it.supplementaryShare || 0).toLocaleString()} ت</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
 
               {/* 1. DRAFT SPECIFIC: AUTOMATED FINANCIAL COMPLIANCE CHECKLIST & MANUAL EDIT */}
               {(selectedClaimForDetailModal.status === 'draft' || selectedClaimForDetailModal.status === 'queued') && (
@@ -3091,6 +3256,20 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
                                   : item
                               )
                             );
+                            if (setClaims) {
+                              setClaims((prev) =>
+                                prev.map((item) =>
+                                  item.id === selectedClaimForDetailModal.id
+                                    ? {
+                                        ...item,
+                                        claimedAmount: editClaimedAmount,
+                                        baseApprovedAmount: editBaseApprovedAmount,
+                                        supplApprovedAmount: editSupplApprovedAmount,
+                                      }
+                                    : item
+                                )
+                              );
+                            }
                             setSelectedClaimForDetailModal((prev) =>
                               prev
                                 ? {
@@ -3131,7 +3310,11 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
                         <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                         <div>
                           <strong className="block text-slate-900">۳. تصویر رادیوگرافی RVG:</strong>
-                          <span className="text-slate-600">گرافی دندان {selectedClaimForDetailModal.toothFdi} در پرونده ثبت است.</span>
+                          <span className="text-slate-600">
+                            گرافی {selectedClaimForDetailModal.teethFdiList && selectedClaimForDetailModal.teethFdiList.length > 1
+                              ? `دندان‌های ${selectedClaimForDetailModal.teethFdiList.join(' و ')}`
+                              : `دندان ${selectedClaimForDetailModal.toothFdi || 16}`} در پرونده ثبت است.
+                          </span>
                         </div>
                       </div>
                       <div className="p-2.5 bg-white rounded-xl border border-cyan-100 flex items-center gap-2">
@@ -3148,15 +3331,42 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
                     <button
                       type="button"
                       onClick={() => {
+                        const targetClaimId = selectedClaimForDetailModal.id;
+                        if (onSendClaimToInsurance) {
+                          onSendClaimToInsurance(targetClaimId);
+                        }
+                        if (setClaims) {
+                          setClaims((prev) =>
+                            prev.map((item) =>
+                              item.id === targetClaimId
+                                ? {
+                                    ...item,
+                                    status: 'submitted' as const,
+                                    receptionApproved: true,
+                                    accountantApproved: true,
+                                    submittedDate: 'امروز',
+                                  }
+                                : item
+                            )
+                          );
+                        }
                         setLocalClaims((prev) =>
                           prev.map((item) =>
-                            item.id === selectedClaimForDetailModal.id
-                              ? { ...item, status: 'submitted' as const }
+                            item.id === targetClaimId
+                              ? {
+                                  ...item,
+                                  status: 'submitted' as const,
+                                  receptionApproved: true,
+                                  accountantApproved: true,
+                                  submittedDate: 'امروز',
+                                }
                               : item
                           )
                         );
-                        setSelectedClaimForDetailModal((prev) => prev ? { ...prev, status: 'submitted' as const } : null);
-                        setFixDocSuccessMsg('تطبیق و صحت مالی تایید گردید و ادعا با موفقیت جهت تسویه به بیمه‌گر ارسال شد.');
+                        setSelectedClaimForDetailModal((prev) =>
+                          prev ? { ...prev, status: 'submitted' as const, receptionApproved: true, accountantApproved: true } : null
+                        );
+                        setFixDocSuccessMsg('تطبیق و صحت مالی تایید گردید و ادعا با موفقیت جهت تسویه به بیمه‌گر ارسال شد و در ستون ارسال‌شده قرار گرفت.');
                       }}
                       className="w-full sm:w-auto px-5 py-2.5 bg-[#005581] hover:bg-[#004266] text-white font-extrabold rounded-xl transition cursor-pointer flex items-center justify-center gap-2 shadow-md text-xs"
                     >
@@ -3401,6 +3611,13 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
               </button>
             </div>
           </div>
+        </div>
+      )}
+      {/* Floating Excel Export Notification Toast */}
+      {excelToastMsg && (
+        <div className="fixed bottom-6 left-6 z-50 bg-emerald-700 text-white px-4 py-3 rounded-2xl shadow-xl border-2 border-emerald-400 flex items-center gap-2.5 text-xs font-black animate-slideUp">
+          <CheckCircle2 className="w-5 h-5 text-[#ffd200] shrink-0" />
+          <span>{excelToastMsg}</span>
         </div>
       )}
     </div>

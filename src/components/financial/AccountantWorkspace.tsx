@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import {
   TodayMoneyBoard,
@@ -51,12 +51,15 @@ import {
   Zap,
   Edit3,
   AlertTriangle,
+  Stethoscope,
 } from 'lucide-react';
 
 interface AccountantWorkspaceProps {
   moneyBoard: TodayMoneyBoard;
   invoices: Invoice[];
+  setInvoices?: React.Dispatch<React.SetStateAction<Invoice[]>>;
   installments: InstallmentPlan[];
+  setInstallments?: React.Dispatch<React.SetStateAction<InstallmentPlan[]>>;
   claims?: Claim[];
   setClaims?: React.Dispatch<React.SetStateAction<Claim[]>>;
   greenLane?: GreenLaneStatus;
@@ -71,6 +74,18 @@ interface AccountantWorkspaceProps {
   onToggleConnectionStatus?: () => void;
   isBNPLEnabledForClinic?: boolean;
   onPayInstallment: (planId: string, installmentNo: number) => void;
+  onRecordPayment?: (paymentData: {
+    patientId: string;
+    patientName: string;
+    nationalId?: string;
+    phone?: string;
+    amount: number;
+    paymentMethod: 'pos' | 'cash' | 'transfer';
+    posTerminalName?: string;
+    trackingCode: string;
+    notes?: string;
+    reason?: string;
+  }) => void;
   onSubmitAppeal?: (
     claimId: string,
     appealReason: string,
@@ -98,7 +113,9 @@ type InsuranceSubTab =
 export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
   moneyBoard,
   invoices,
+  setInvoices,
   installments,
+  setInstallments,
   claims = [],
   setClaims,
   greenLane,
@@ -113,6 +130,7 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
   onToggleConnectionStatus,
   isBNPLEnabledForClinic = true,
   onPayInstallment,
+  onRecordPayment,
   onSubmitAppeal,
   onSendClaimToInsurance,
   initialActiveTab = 'cash_flow',
@@ -122,8 +140,9 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
   const [activeTab, setActiveTab] = useState<AccountantNavTab>(initialActiveTab);
   const [activeInsuranceSubTab, setActiveInsuranceSubTab] = useState<InsuranceSubTab>('kanban');
 
-  // Local state for Installments & New Plan Modal
+  // Local state for Installments & Claims & New Plan Modal
   const [localInstallments, setLocalInstallments] = useState<InstallmentPlan[]>(installments);
+  const [localClaims, setLocalClaims] = useState<Claim[]>(claims && claims.length > 0 ? claims : mockClaims);
   const [isNewPlanModalOpen, setIsNewPlanModalOpen] = useState(false);
   const [newPlanPatientName, setNewPlanPatientName] = useState('');
   const [newPlanPhone, setNewPlanPhone] = useState('');
@@ -287,10 +306,146 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
   const [refundAmount, setRefundAmount] = useState<number>(0);
   const [refundSuccessMsg, setRefundSuccessMsg] = useState('');
 
+  // Real-time synchronization of Today's Money Board across all tabs
+  const effectiveMoneyBoard = useMemo<TodayMoneyBoard>(() => {
+    const activeInvoices = invoices && invoices.length > 0 ? invoices : [];
+    const activeInstallments = installments && installments.length > 0 ? installments : localInstallments;
+    const activeClaims = claims && claims.length > 0 ? claims : (localClaims || []);
+
+    // 1. Total received cash/pos
+    const paidInvoicesTotal = activeInvoices
+      .filter((inv) => inv.status === 'paid' || (inv.patientSharePaid || 0) > 0)
+      .reduce((sum, inv) => sum + (inv.patientSharePaid || inv.totalAmount || 0), 0);
+
+    const paidInstallmentsTotal = activeInstallments.reduce((sum, plan) => {
+      const paidSched = plan.schedule.filter((s) => s.status === 'paid');
+      return sum + paidSched.reduce((sub, s) => sub + s.amount, 0);
+    }, 0);
+
+    const totalReceivedCalc = paidInvoicesTotal + paidInstallmentsTotal;
+    const finalReceived = totalReceivedCalc > 0 ? totalReceivedCalc : (moneyBoard?.receivedTodayCashPos || 14250000);
+
+    // 2. Pending Insurance Claims Total
+    const pendingClaimsList = activeClaims.filter(
+      (c) => c.status === 'submitted' || c.status === 'express_review' || c.status === 'standard_review' || c.status === 'deep_review'
+    );
+    const calcPending = pendingClaimsList.reduce((sum, c) => sum + (c.supplApprovedAmount || c.claimedAmount || 0), 0);
+    const finalPending = calcPending > 0 ? calcPending : (moneyBoard?.insurancePendingTotal || 28400000);
+
+    // 3. Installments Due Today
+    const dueTodayCalc = activeInstallments.reduce((sum, plan) => {
+      const dueItems = plan.schedule.filter((s) => s.status !== 'paid' && (s.dueDate?.includes('05/13') || s.isDueToday));
+      return sum + dueItems.reduce((sub, s) => sub + s.amount, 0);
+    }, 0);
+    const finalDueToday = dueTodayCalc > 0 ? dueTodayCalc : (moneyBoard?.installmentsDueToday || 4800000);
+
+    // 4. Installments Overdue
+    const overdueCalc = activeInstallments.reduce((sum, plan) => {
+      const overdueItems = plan.schedule.filter((s) => s.status === 'overdue' || (s.daysOverdue && s.daysOverdue > 0));
+      return sum + overdueItems.reduce((sub, s) => sub + s.amount, 0);
+    }, 0);
+    const finalOverdue = overdueCalc > 0 ? overdueCalc : (moneyBoard?.installmentsOverdueTotal || 3200000);
+
+    // 5. Total Invoiced Today
+    const invoicedCalc = activeInvoices.reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
+    const finalInvoiced = invoicedCalc > 0 ? invoicedCalc : (moneyBoard?.totalInvoicedToday || 42650000);
+
+    // 6. Blocked Claims Count
+    const blockedCalc = activeClaims.filter(
+      (c) => c.status === 'needs_fix' || c.status === 'needs_evidence' || c.status === 'rejected' || c.status === 'partially_rejected'
+    ).length;
+    const finalBlocked = blockedCalc > 0 ? blockedCalc : (moneyBoard?.blockedClaimsCount || 2);
+
+    return {
+      receivedTodayCashPos: finalReceived,
+      insurancePendingTotal: finalPending,
+      installmentsDueToday: finalDueToday,
+      installmentsOverdueTotal: finalOverdue,
+      totalInvoicedToday: finalInvoiced,
+      blockedClaimsCount: finalBlocked,
+      todaysPatientsCount: moneyBoard?.todaysPatientsCount || 14,
+    };
+  }, [invoices, installments, localInstallments, claims, localClaims, moneyBoard]);
+
   // Daily POS Closing / Reconciliation State
-  const [posSystemTotal, setPosSystemTotal] = useState<number>(moneyBoard.receivedTodayCashPos);
-  const [posPhysicalTerminalInput, setPosPhysicalTerminalInput] = useState<number>(moneyBoard.receivedTodayCashPos);
+  const [posSystemTotal, setPosSystemTotal] = useState<number>(() => effectiveMoneyBoard.receivedTodayCashPos);
+  const [posPhysicalTerminalInput, setPosPhysicalTerminalInput] = useState<number>(() => effectiveMoneyBoard.receivedTodayCashPos);
   const [reconciliationStatus, setReconciliationStatus] = useState<'idle' | 'matched' | 'mismatch'>('idle');
+
+  // Manual Cash / POS Payment Modal State
+  const [isManualPaymentModalOpen, setIsManualPaymentModalOpen] = useState<boolean>(false);
+  const [manualPatientName, setManualPatientName] = useState<string>('');
+  const [manualNationalId, setManualNationalId] = useState<string>('');
+  const [manualAmount, setManualAmount] = useState<number>(1500000);
+  const [manualMethod, setManualMethod] = useState<'pos' | 'cash' | 'transfer'>('pos');
+  const [manualPosName, setManualPosName] = useState<string>('دستگاه ۱ - کارتخوان صندوق');
+  const [manualDentistName, setManualDentistName] = useState<string>('دکتر کاویانی');
+  const [manualProcedureName, setManualProcedureName] = useState<string>('ترمیم کامپوزیت و پرداخت نقدی مطب');
+  const [manualTrackingCode, setManualTrackingCode] = useState<string>('');
+  const [manualNotes, setManualNotes] = useState<string>('');
+
+  const handleCreateManualPayment = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualPatientName.trim() || manualAmount <= 0) {
+      showExcelToast('لطفاً نام بیمار و مبلغ معتبر را وارد فرمایید.');
+      return;
+    }
+
+    const todayFa = new Date().toLocaleDateString('fa-IR');
+    const timeFa = new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+    const finalTracking = manualTrackingCode.trim() || `POS-MAN-${Math.floor(100000 + Math.random() * 900000)}`;
+
+    if (onRecordPayment) {
+      onRecordPayment({
+        patientId: `pat-${Date.now()}`,
+        patientName: manualPatientName,
+        nationalId: manualNationalId,
+        amount: manualAmount,
+        paymentMethod: manualMethod,
+        posTerminalName: manualPosName,
+        trackingCode: finalTracking,
+        notes: manualNotes,
+        reason: manualProcedureName,
+      });
+    } else if (setInvoices) {
+      const newInv: Invoice = {
+        id: `INV-MAN-${Math.floor(1000 + Math.random() * 9000)}`,
+        patientId: `pat-${Date.now()}`,
+        patientName: manualPatientName,
+        patientNationalId: manualNationalId,
+        dentistId: 'u-dentist1',
+        dentistName: manualDentistName,
+        date: todayFa,
+        totalAmount: manualAmount,
+        baseInsuranceCovered: 0,
+        supplInsuranceCovered: 0,
+        patientSharePaid: manualAmount,
+        paymentMethod: manualMethod,
+        posTerminalName: manualPosName,
+        trackingCode: finalTracking,
+        paidAt: `${todayFa} ${timeFa}`,
+        status: 'paid',
+        doctorCommissionAmount: Math.round(manualAmount * 0.45),
+        items: [
+          {
+            procedureName: manualProcedureName,
+            toothFdi: 16,
+            amount: manualAmount,
+          },
+        ],
+        paymentNotes: manualNotes || 'ثبت دستی توسط حسابدار',
+      };
+      setInvoices((prev) => [newInv, ...prev]);
+    }
+
+    setIsManualPaymentModalOpen(false);
+    setManualPatientName('');
+    setManualNationalId('');
+    setManualAmount(1500000);
+    setManualTrackingCode('');
+    setManualNotes('');
+    showExcelToast(`دریافت مبلغ ${manualAmount.toLocaleString()} تومان با موفقیت در فاکتورها، صندوق و تابلوی روز ثبت و سینک شد.`);
+  };
 
   // Appeal Submission Modal State
   const [selectedClaimForAppeal, setSelectedClaimForAppeal] = useState<Claim | null>(null);
@@ -327,9 +482,6 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
     date: string;
     refCode: string;
   } | null>(null);
-
-  // Kanban Claims State (local copy for drag/move/status updates)
-  const [localClaims, setLocalClaims] = useState<Claim[]>(claims && claims.length > 0 ? claims : mockClaims);
 
   React.useEffect(() => {
     if (claims && claims.length > 0) {
@@ -403,6 +555,9 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
     };
 
     setLocalInstallments([newPlanObj, ...localInstallments]);
+    if (setInstallments) {
+      setInstallments((prev) => [newPlanObj, ...prev]);
+    }
     setIsNewPlanModalOpen(false);
     setNewPlanPatientName('');
     setNewPlanPhone('');
@@ -548,10 +703,7 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
     const imageUrls = appealAttachedImages
       .map((img) => img.url)
       .filter(Boolean) as string[];
-    const finalImages =
-      imageUrls.length > 0
-        ? imageUrls
-        : ['https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?w=600&auto=format&fit=crop&q=80'];
+    const finalImages = imageUrls;
 
     if (onSubmitAppeal) {
       onSubmitAppeal(
@@ -636,19 +788,19 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
       id: 'cash_flow',
       label: 'تابلوی پول امروز و نقدینگی',
       icon: TrendingUp,
-      badge: `${moneyBoard.receivedTodayCashPos.toLocaleString()} ت`,
+      badge: `${effectiveMoneyBoard.receivedTodayCashPos.toLocaleString()} ت`,
     },
     {
       id: 'installments',
       label: 'مدیریت اقساط و بدهی',
       icon: CreditCard,
-      badge: `${installments.length} پرونده`,
+      badge: `${(installments || localInstallments).length} پرونده`,
     },
     {
       id: 'invoices',
       label: 'فاکتورها و سهم بیمار',
       icon: FileText,
-      badge: `${invoices.length}`,
+      badge: `${(invoices || []).length}`,
     },
     {
       id: 'daily_reports',
@@ -870,12 +1022,6 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
                     پایش ۶ شاخص اصلی جریان نقدی: دریافت‌شدهٔ امروز، وابسته به بیمه، اقساطی، سررسیدگذشته، پرونده‌های مانع نقدینگی و فاکتورشده
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="px-3 py-1 bg-[#005581] text-[#ffd200] font-mono text-xs font-bold rounded-xl flex items-center gap-1 shadow-xs">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-[#ffd200]" />
-                    <span>صندوق مطب: آنلاین و منطبق با POS</span>
-                  </span>
-                </div>
               </div>
 
               {/* Grid Metrics using Baltc Blue, Baby Blue, Gold, Mustard Palette */}
@@ -890,9 +1036,9 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
                     <CheckCircle2 className="w-4 h-4 text-[#ffd200] group-hover:scale-110 transition-transform" />
                   </div>
                   <div className="text-2xl font-black text-[#ffd200] font-mono">
-                    {moneyBoard.receivedTodayCashPos.toLocaleString()} <span className="text-xs font-normal text-[#fffffa]">تومان</span>
+                    {effectiveMoneyBoard.receivedTodayCashPos.toLocaleString()} <span className="text-xs font-normal text-[#fffffa]">تومان</span>
                   </div>
-                  <p className="text-[11px] text-[#fffffa]/80">تراکنش‌های تأییدشده دستگاه کارتخوان مطب</p>
+                  <p className="text-[11px] text-[#fffffa]/80">تراکنش‌های تأییدشده دستگاه کارتخوان و دریافت‌های نقدی مطب</p>
                   <div className="flex items-center justify-between pt-2 border-t border-[#72cdf4]/20 text-[10px] font-extrabold text-[#72cdf4] group-hover:text-[#ffd200]">
                     <span>مشاهده جزئیات ریز تراکنش‌ها</span>
                     <Search className="w-3.5 h-3.5 text-[#ffd200]" />
@@ -921,7 +1067,7 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
                       ? '۰ تومان (خدمات آزاد)'
                       : !isInsuranceContracted
                       ? '۰ تومان (غیر طرف قرارداد)'
-                      : `${moneyBoard.insurancePendingTotal.toLocaleString()} تومان`}
+                      : `${effectiveMoneyBoard.insurancePendingTotal.toLocaleString()} تومان`}
                   </div>
                   <p className="text-[11px] text-slate-600">
                     {isInsuranceContracted
@@ -948,7 +1094,7 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
                     <Calendar className="w-4 h-4 text-[#005581] group-hover:scale-110 transition-transform" />
                   </div>
                   <div className="text-2xl font-black text-[#005581] font-mono">
-                    {moneyBoard.installmentsDueToday.toLocaleString()} <span className="text-xs font-normal text-slate-700">تومان</span>
+                    {effectiveMoneyBoard.installmentsDueToday.toLocaleString()} <span className="text-xs font-normal text-slate-700">تومان</span>
                   </div>
                   <p className="text-[11px] text-slate-700">پیامک یادآوری خودکار برای مراجعین ارسال گردید</p>
                   <div className="flex items-center justify-between pt-2 border-t border-[#ffd200]/80 text-[10px] font-extrabold text-[#005581]">
@@ -967,7 +1113,7 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
                     <AlertOctagon className="w-4 h-4 text-[#ffe552] group-hover:scale-110 transition-transform" />
                   </div>
                   <div className="text-2xl font-black text-[#ffd200] font-mono">
-                    {moneyBoard.installmentsOverdueTotal.toLocaleString()} <span className="text-xs font-normal text-slate-300">تومان</span>
+                    {effectiveMoneyBoard.installmentsOverdueTotal.toLocaleString()} <span className="text-xs font-normal text-slate-300">تومان</span>
                   </div>
                   <p className="text-[11px] text-[#72cdf4]">نیازمند پیگیری تلفنی و وصول وجه توسط حسابدار</p>
                   <div className="flex items-center justify-between pt-2 border-t border-[#004266] text-[10px] font-extrabold text-[#ffe552]">
@@ -986,15 +1132,12 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
                     <TrendingUp className="w-4 h-4 text-[#005581] group-hover:scale-110 transition-transform" />
                   </div>
                   <div className="text-2xl font-black text-[#005581] font-mono">
-                    {(invoices && invoices.length > 0
-                      ? invoices.reduce((sum, inv) => sum + (inv.totalAmount || 0), 0)
-                      : moneyBoard.totalInvoicedToday
-                    ).toLocaleString()}{' '}
+                    {effectiveMoneyBoard.totalInvoicedToday.toLocaleString()}{' '}
                     <span className="text-xs font-normal text-slate-700">تومان</span>
                   </div>
                   <p className="text-[11px] text-slate-700">مجموع ارزش خدمات درمانی ثبت‌شده</p>
                   <div className="flex items-center justify-between pt-2 border-t border-[#72cdf4]/60 text-[10px] font-extrabold text-[#005581]">
-                    <span>مشاهده لیست {invoices?.length || 6} فاکتور امروز</span>
+                    <span>مشاهده لیست فاکتورهای همگام</span>
                     <Search className="w-3.5 h-3.5 text-[#005581]" />
                   </div>
                 </div>
@@ -1009,11 +1152,11 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
                     <AlertOctagon className="w-4 h-4 text-[#ffe552] group-hover:scale-110 transition-transform" />
                   </div>
                   <div className="text-2xl font-black text-[#ffd200] font-mono">
-                    {moneyBoard.blockedClaimsCount} <span className="text-xs font-normal text-slate-200">پرونده</span>
+                    {effectiveMoneyBoard.blockedClaimsCount} <span className="text-xs font-normal text-slate-200">پرونده</span>
                   </div>
                   <p className="text-[11px] text-[#72cdf4]">علت: نقص مالی یا نیازمند استعلام و اصلاحیه</p>
                   <div className="flex items-center justify-between pt-2 border-t border-[#004266] text-[10px] font-extrabold text-[#ffe552] group-hover:text-[#ffd200]">
-                    <span>بررسی ۲ پرونده مانع مالی</span>
+                    <span>بررسی پرونده‌های مانع مالی</span>
                     <Search className="w-3.5 h-3.5 text-[#ffd200]" />
                   </div>
                 </div>
@@ -1373,11 +1516,19 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
                   <span>مدیریت فاکتورها، سهم بیمار و اصلاحیه / استرداد وجه</span>
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  صدور فاکتور مراجعین آزاد، ثبت ابطال طرح درمان و مدیریت اصلاحیه مالی
+                  صدور فاکتور مراجعین آزاد و بیمه، ثبت دریافت‌های نقدی و پوز و مدیریت اصلاحیه مالی
                 </p>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsManualPaymentModalOpen(true)}
+                  className="px-3 py-1.5 bg-[#005581] hover:bg-[#004266] text-[#ffd200] text-xs font-black rounded-xl flex items-center gap-1.5 shadow-sm transition cursor-pointer"
+                >
+                  <Plus className="w-4 h-4 text-[#ffd200]" />
+                  <span>ثبت دریافت نقدی / کارتخوان جدید</span>
+                </button>
                 <input
                   type="text"
                   placeholder="جستجوی بیمار یا شماره فاکتور..."
@@ -2165,38 +2316,63 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
                           </span>
                         </div>
 
-                        {/* Sample Attachment Selector Buttons */}
+                        {/* Attachment Selector & Upload Buttons */}
                         <div className="flex flex-wrap gap-2 pt-1">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const newAtt = {
-                                id: `att-${Date.now()}`,
-                                name: 'عکس گرافی RVG پری‌آپیکال قبل/بعد از درمان',
-                                type: 'xray',
-                                url: 'https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?w=300&auto=format&fit=crop&q=60',
-                              };
-                              setAppealAttachedImages((prev) => [...prev, newAtt]);
-                            }}
-                            className="px-2.5 py-1.5 bg-white border border-slate-300 hover:border-[#005581] text-slate-800 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer shadow-2xs"
-                          >
-                            <span>+ افزودن عکس گرافی RVG دندان</span>
-                          </button>
+                          <label className="px-2.5 py-1.5 bg-[#005581] hover:bg-[#003d5c] text-white rounded-lg text-[11px] font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors">
+                            <Upload className="w-3.5 h-3.5" />
+                            <span>آپلود فایل / تصویر جدید از سیستم</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              multiple
+                              className="hidden"
+                              onChange={(e) => {
+                                const files = e.target.files;
+                                if (!files || files.length === 0) return;
+                                Array.from(files).forEach((file: File) => {
+                                  const reader = new FileReader();
+                                  reader.onload = (event) => {
+                                    const base64Url = event.target?.result as string;
+                                    setAppealAttachedImages((prev) => [
+                                      ...prev,
+                                      {
+                                        id: `att-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+                                        name: file.name || 'تصویر مدارک بالینی',
+                                        type: 'uploaded_image',
+                                        url: base64Url,
+                                      },
+                                    ]);
+                                  };
+                                  reader.readAsDataURL(file);
+                                });
+                              }}
+                            />
+                          </label>
 
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const newAtt = {
-                                id: `att-${Date.now()}`,
-                                name: 'برگه شرح بالینی و تاییدیه پزشک معتمد',
-                                type: 'clinical_note',
-                              };
-                              setAppealAttachedImages((prev) => [...prev, newAtt]);
-                            }}
-                            className="px-2.5 py-1.5 bg-white border border-slate-300 hover:border-[#005581] text-slate-800 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer shadow-2xs"
-                          >
-                            <span>+ افزودن شرح بالینی دندان‌پزشک</span>
-                          </button>
+                          {selectedClaimForAppeal?.radiographyUrl && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const exists = appealAttachedImages.some(
+                                  (img) => img.url === selectedClaimForAppeal.radiographyUrl
+                                );
+                                if (!exists) {
+                                  setAppealAttachedImages((prev) => [
+                                    ...prev,
+                                    {
+                                      id: `att-rad-${Date.now()}`,
+                                      name: `گرافی ثبت‌شده پرونده (${selectedClaimForAppeal.patientName})`,
+                                      type: 'xray',
+                                      url: selectedClaimForAppeal.radiographyUrl,
+                                    },
+                                  ]);
+                                }
+                              }}
+                              className="px-2.5 py-1.5 bg-white border border-slate-300 hover:border-[#005581] text-slate-800 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer shadow-2xs"
+                            >
+                              <span>+ پیوست گرافی اصلی پرونده</span>
+                            </button>
+                          )}
                         </div>
 
                         {/* List of Attached Files */}
@@ -3486,12 +3662,33 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
                     </span>
                   </div>
 
-                  <p className="text-[11px] text-rose-900 font-medium">
-                    <strong>علت اعلام کسورات:</strong> {selectedClaimForDetailModal.deductionReason || 'عدم انطباق گرافی با تعرفه انفرادی'}
-                  </p>
+                  <div className="p-3 bg-white rounded-xl border border-rose-200 space-y-2">
+                    <p className="text-[11px] text-rose-900 font-medium leading-relaxed">
+                      <strong>علت اعلام کسورات و رد پرونده:</strong>{' '}
+                      <span className="font-bold text-rose-950">
+                        {selectedClaimForDetailModal.deductionReason ||
+                          selectedClaimForDetailModal.rejectionReason ||
+                          'عدم تطابق شواهد رادیوگرافی با شرح خدمت تعرفه‌ای'}
+                      </span>
+                    </p>
+                    {selectedClaimForDetailModal.doctorReviewerDiagnosis && (
+                      <div className="p-2.5 bg-blue-50/70 rounded-lg border border-blue-200 text-[11px] text-[#005581] space-y-1">
+                        <div className="font-bold flex items-center gap-1.5">
+                          <Stethoscope className="w-3.5 h-3.5 text-[#005581]" />
+                          <span>
+                            توضیحات و نظر کارشناسی بازبین پزشک معتمد (
+                            {selectedClaimForDetailModal.doctorReviewerName || 'دکتر معتمد بیمه'}):
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-700 leading-relaxed font-normal bg-white p-2 rounded border border-blue-100">
+                          «{selectedClaimForDetailModal.doctorReviewerDiagnosis}»
+                        </p>
+                      </div>
+                    )}
+                  </div>
 
-                  <div className="p-3 bg-white rounded-xl border border-rose-200 space-y-1">
-                    <div className="font-bold text-slate-800 text-[11px]">راهنمای ثبت اعتراض رسمی:</div>
+                  <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200 space-y-1">
+                    <div className="font-bold text-amber-950 text-[11px]">راهنمای ثبت اعتراض رسمی:</div>
                     <p className="text-[10px] text-slate-600 leading-relaxed">
                       طبق ماده ۴ آیین‌نامه شورای عالی بیمه، کلینیک تا ۲۰ روز کاری مهلت اعتراض رسمی و ارائه شواهد بالینی تکمیلی دارد.
                     </p>
@@ -3613,6 +3810,198 @@ export const AccountantWorkspace: React.FC<AccountantWorkspaceProps> = ({
           </div>
         </div>
       )}
+
+      {/* Manual Payment & POS Receipt Registration Modal */}
+      {isManualPaymentModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 border-2 border-[#005581] rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-5 animate-scaleUp dir-rtl">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-2 text-slate-900 dark:text-slate-100 font-black text-sm">
+                <div className="p-2 bg-[#005581] text-[#ffd200] rounded-xl shadow-xs">
+                  <CreditCard className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base text-slate-900 dark:text-slate-100">
+                    ثبت دریافت دستی (نقدی / کارتخوان POS)
+                  </h3>
+                  <p className="text-xs text-slate-500 font-normal mt-0.5">
+                    ثبت همزمان واریزی در صندوق، همگام‌سازی با تابلوی روز و صدور فاکتور
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsManualPaymentModalOpen(false)}
+                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateManualPayment} className="space-y-4 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-extrabold text-slate-700 dark:text-slate-300">
+                    نام و نام خانوادگی بیمار <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="مثال: مریم احمدی"
+                    value={manualPatientName}
+                    onChange={(e) => setManualPatientName(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:border-[#005581] outline-none font-bold"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-700 dark:text-slate-300">
+                    کد ملی بیمار (اختیاری)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="مثال: 0019283746"
+                    value={manualNationalId}
+                    onChange={(e) => setManualNationalId(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:border-[#005581] outline-none font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-extrabold text-slate-700 dark:text-slate-300">
+                    مبلغ دریافتی (تومان) <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    min={1000}
+                    step={10000}
+                    required
+                    value={manualAmount}
+                    onChange={(e) => setManualAmount(Number(e.target.value))}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:border-[#005581] outline-none font-mono font-black text-sm text-[#005581] dark:text-[#72cdf4]"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-700 dark:text-slate-300">
+                    روش پرداخت <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={manualMethod}
+                    onChange={(e) => setManualMethod(e.target.value as any)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:border-[#005581] outline-none font-bold"
+                  >
+                    <option value="pos">دستگاه پوز مطب (کارتخوان)</option>
+                    <option value="cash">وجه نقد (اسکناس دریافتی در صندوق)</option>
+                    <option value="transfer">انتقال بانکی / کارت به کارت / پایا</option>
+                  </select>
+                </div>
+              </div>
+
+              {manualMethod === 'pos' && (
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-700 dark:text-slate-300">
+                    انتخاب دستگاه پوز متصل
+                  </label>
+                  <select
+                    value={manualPosName}
+                    onChange={(e) => setManualPosName(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:border-[#005581] outline-none"
+                  >
+                    <option value="دستگاه ۱ - کارتخوان صندوق (بانک ملت)">دستگاه ۱ - کارتخوان صندوق (بانک ملت)</option>
+                    <option value="دستگاه ۲ - کارتخوان پذیرش (بانک سامان)">دستگاه ۲ - کارتخوان پذیرش (بانک سامان)</option>
+                    <option value="دستگاه ۳ - کارتخوان اتاق پزشکان (بانک پاسارگاد)">دستگاه ۳ - کارتخوان اتاق پزشکان (بانک پاسارگاد)</option>
+                  </select>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-700 dark:text-slate-300">
+                    پزشک معالج
+                  </label>
+                  <select
+                    value={manualDentistName}
+                    onChange={(e) => setManualDentistName(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:border-[#005581] outline-none font-bold"
+                  >
+                    <option value="دکتر کاویانی">دکتر کاویانی</option>
+                    <option value="دکتر سهرابی">دکتر سهرابی</option>
+                    <option value="دکتر امینی">دکتر امینی</option>
+                    <option value="دکتر رضوی">دکتر رضوی</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-700 dark:text-slate-300">
+                    کد پیگیری تراکنش / شماره فیش
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="مثال: 948271 یا خالی جهت تولید خودکار"
+                    value={manualTrackingCode}
+                    onChange={(e) => setManualTrackingCode(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:border-[#005581] outline-none font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-bold text-slate-700 dark:text-slate-300">
+                  شرح خدمت / درمان
+                </label>
+                <input
+                  type="text"
+                  placeholder="مثال: ترمیم کامپوزیت ۲ سطحی دندان ۱۶"
+                  value={manualProcedureName}
+                  onChange={(e) => setManualProcedureName(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:border-[#005581] outline-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-bold text-slate-700 dark:text-slate-300">
+                  توضیحات و یادداشت حسابداری (اختیاری)
+                </label>
+                <input
+                  type="text"
+                  placeholder="یادداشت تکمیلی جهت درج در صورت‌حساب..."
+                  value={manualNotes}
+                  onChange={(e) => setManualNotes(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:border-[#005581] outline-none"
+                />
+              </div>
+
+              <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-emerald-900 text-[11px] flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>
+                  مبلغ <strong>{manualAmount.toLocaleString()} تومان</strong> بلافاصله در دریافتی‌های صندوق، فاکتورهای حسابداری و تابلوی پول امروز منعکس می‌گردد.
+                </span>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setIsManualPaymentModalOpen(false)}
+                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 font-bold rounded-xl transition cursor-pointer"
+                >
+                  انصراف
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-[#005581] hover:bg-[#004266] text-[#ffd200] font-black rounded-xl transition shadow-md cursor-pointer flex items-center gap-1.5"
+                >
+                  <Check className="w-4 h-4 text-[#ffd200]" />
+                  <span>تأیید و ثبت دریافت</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Floating Excel Export Notification Toast */}
       {excelToastMsg && (
         <div className="fixed bottom-6 left-6 z-50 bg-emerald-700 text-white px-4 py-3 rounded-2xl shadow-xl border-2 border-emerald-400 flex items-center gap-2.5 text-xs font-black animate-slideUp">

@@ -1051,7 +1051,7 @@ export const ManagerWorkspace: React.FC<ManagerWorkspaceProps> = ({
                     <div className="p-3 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-1.5 shadow-xs">
                       <div className="font-bold text-slate-900 dark:text-slate-100">ترمیم کامپوزیت - زهرا رضایی</div>
                       <div className="text-[#005581] dark:text-[#72cdf4] font-mono font-bold text-[11px]">{formatPricePersian(4500000)}</div>
-                      <div className="text-[10px] text-slate-400">بیمه ایران - در انتظار امضای WORM</div>
+                      <div className="text-[10px] text-slate-400">بیمه ایران - در انتظار امضای دیجیتال معتمد</div>
                     </div>
                   </div>
 
@@ -1218,7 +1218,7 @@ export const ManagerWorkspace: React.FC<ManagerWorkspaceProps> = ({
                     <span>علت تخصیص سطح L4 و تسویه سریع ۴۹:۳۰ ساعته برای کلینیک شما:</span>
                   </div>
                   <p className="text-slate-700 dark:text-slate-300 leading-relaxed">
-                    کلینیک شما به دلیل رعایت ۱۰۰٪ ضوابط پنج‌گانه شفافیت مالی (احراز هویت آنلاین، ثبت کد FDI دندان، آپلود گرافی RVG قبل/بعد درمان، انطباق کامل POS و امضای دیجیتال WORM پزشک) در بالاترین سطح اعتماد قرار دارد. واریز وجه مستقیم به شماره شبای کلینیک ظرف ۴۹:۳۰ ساعت بدون نیاز به ارسال فیزیکی مدارک انجام می‌شود.
+                    کلینیک شما به دلیل رعایت ۱۰۰٪ ضوابط پنج‌گانه شفافیت مالی (احراز هویت آنلاین، ثبت کد FDI دندان، آپلود گرافی RVG قبل/بعد درمان، انطباق کامل POS و امضای دیجیتال امن پزشک) در بالاترین سطح اعتماد قرار دارد. واریز وجه مستقیم به شماره شبای کلینیک ظرف ۴۹:۳۰ ساعت بدون نیاز به ارسال فیزیکی مدارک انجام می‌شود.
                   </p>
                 </div>
 

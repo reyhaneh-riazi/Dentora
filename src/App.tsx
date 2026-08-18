@@ -1477,14 +1477,23 @@ export default function App() {
 
   // Financial Handlers
   const handlePayInstallment = (planId: string, installmentNo: number) => {
+    const todayFa = new Date().toLocaleDateString('fa-IR');
+    const timeFa = new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+
+    let collectedAmount = 0;
+    let targetPlan: InstallmentPlan | undefined;
+
     setInstallments((prev) =>
       prev.map((plan) => {
         if (plan.id !== planId) return plan;
-        const updatedSchedule = plan.schedule.map((inst) =>
-          inst.installmentNo === installmentNo
-            ? { ...inst, status: 'paid' as const, paidAt: '۱۴۰۵/۰۵/۱۳' }
-            : inst
-        );
+        targetPlan = plan;
+        const updatedSchedule = plan.schedule.map((inst) => {
+          if (inst.installmentNo === installmentNo) {
+            collectedAmount = inst.amount;
+            return { ...inst, status: 'paid' as const, paidAt: todayFa };
+          }
+          return inst;
+        });
         const remaining = updatedSchedule
           .filter((i) => i.status !== 'paid')
           .reduce((sum, i) => sum + i.amount, 0);
@@ -1496,6 +1505,58 @@ export default function App() {
         };
       })
     );
+
+    if (collectedAmount > 0 && targetPlan) {
+      // 1. Update Today's Money Board
+      setTodayMoneyBoard((prev) => ({
+        ...prev,
+        receivedTodayCashPos: prev.receivedTodayCashPos + collectedAmount,
+        installmentsDueToday: Math.max(0, prev.installmentsDueToday - collectedAmount),
+        installmentsOverdueTotal: Math.max(0, prev.installmentsOverdueTotal - collectedAmount),
+      }));
+
+      // 2. Generate a paid invoice entry for the collected installment
+      const newInvoice: Invoice = {
+        id: `inv-inst-${Date.now()}`,
+        patientId: targetPlan.patientId,
+        patientName: targetPlan.patientName,
+        dentistId: 'u-dentist1',
+        dentistName: 'دکتر کاویانی',
+        date: todayFa,
+        totalAmount: collectedAmount,
+        baseInsuranceCovered: 0,
+        supplInsuranceCovered: 0,
+        patientSharePaid: collectedAmount,
+        paymentMethod: 'pos',
+        posTerminalName: 'دستگاه پوز ۱ - صندوق مطب',
+        trackingCode: `POS-INST-${Math.floor(100000 + Math.random() * 900000)}`,
+        paidAt: `${todayFa} ${timeFa}`,
+        status: 'paid',
+        doctorCommissionAmount: Math.round(collectedAmount * 0.45),
+        items: [
+          {
+            procedureName: `وصول قسط شماره ${installmentNo} - پرونده درمانی ${targetPlan.patientName}`,
+            toothFdi: 16,
+            amount: collectedAmount,
+          },
+        ],
+        paymentNotes: `دریافت وجه قسط شماره ${installmentNo} به مبلغ ${collectedAmount.toLocaleString()} تومان با کارتخوان مطب`,
+      };
+      setInvoices((prev) => [newInvoice, ...prev]);
+
+      // 3. Add WORM audit log
+      const newLog: AuditLog = {
+        id: `log-${Date.now()}`,
+        timestamp: `${todayFa} ${timeFa}`,
+        actorName: currentUserName,
+        actorRole: currentRole,
+        action: 'INSTALLMENT_PAID',
+        entityName: 'InstallmentPlan',
+        entityId: planId,
+        hashWORM: `WORM-INST-${Math.random().toString(36).substring(2, 10).toUpperCase()}`,
+      };
+      setAuditLogs((prev) => [newLog, ...prev]);
+    }
   };
 
   // Insurance Bridge Handlers
@@ -1895,7 +1956,9 @@ export default function App() {
           <AccountantWorkspace
             moneyBoard={todayMoneyBoard}
             invoices={invoices}
+            setInvoices={setInvoices}
             installments={installments}
+            setInstallments={setInstallments}
             claims={claims}
             setClaims={setClaims}
             greenLane={greenLane}
@@ -1909,6 +1972,7 @@ export default function App() {
             connectionStatus={connectionStatus}
             onToggleConnectionStatus={handleToggleConnectionStatus}
             onPayInstallment={handlePayInstallment}
+            onRecordPayment={handleRegisterPatientPayment}
             onSubmitAppeal={handleSubmitAppeal}
             onSendClaimToInsurance={handleSendClaimToInsurance}
           />

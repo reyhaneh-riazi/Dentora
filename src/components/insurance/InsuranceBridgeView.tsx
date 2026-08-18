@@ -329,11 +329,11 @@ export const InsuranceBridgeView: React.FC = () => {
                     </span>
                   </div>
 
-                  {/* Green Lane status pill */}
+                  {/* Evaluation route status pill */}
                   <div className="mt-2.5 flex items-center justify-between pt-2 border-t border-slate-100 text-[10px]">
                     <span className="text-slate-500">مسیر ارزیابی:</span>
                     <span className="text-[#005581] font-bold">
-                      {claim.reviewRoute === 'express' || claim.greenLaneEligible ? '⚡ رسیدگی سریع Express' : '🔍 بررسی استاندارد'}
+                      {claim.reviewRoute === 'express' || claim.greenLaneEligible ? 'رسیدگی مستقیم و سریع' : 'بررسی استاندارد'}
                     </span>
                   </div>
                 </div>
@@ -341,7 +341,7 @@ export const InsuranceBridgeView: React.FC = () => {
             </div>
           </div>
 
-          {/* Claim Detail & Green Lane 5 Modules Checker */}
+          {/* Claim Detail & 5 Modules Checker */}
           {selectedClaim && (
             <div className="lg:col-span-2 bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
@@ -368,12 +368,12 @@ export const InsuranceBridgeView: React.FC = () => {
                 )}
               </div>
 
-              {/* Green Lane 5 Modules Checklist Card */}
+              {/* 5 Modules Checklist Card */}
               <div className="bg-sky-50/50 p-4 rounded-xl border border-sky-100 space-y-3">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-bold text-[#005581] flex items-center gap-2">
                     <ShieldCheck className="w-4 h-4 text-[#005581]" />
-                    <span>بررسی ۵ ماژول الزامی تسویه سریع (Green Lane L4)</span>
+                    <span>بررسی ۵ شاخص الزامی تسویه مستقیم و تأیید فوری</span>
                   </h3>
                   <span
                     className={`text-[11px] px-2.5 py-0.5 rounded-full font-bold ${
@@ -382,13 +382,13 @@ export const InsuranceBridgeView: React.FC = () => {
                         : 'bg-amber-100 text-amber-800 border border-amber-200'
                     }`}
                   >
-                    {selectedClaim.greenLaneEligible ? 'واجد تسویه ۴۸ ساعته (L4)' : 'نیازمند تکمیل مدارک'}
+                    {selectedClaim.greenLaneEligible ? 'واجد شرایط تسویه مستقیم فوری' : 'نیازمند تکمیل مدارک'}
                   </span>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
                   <div className="flex items-center justify-between p-2.5 rounded-lg bg-white border border-slate-200/80">
-                    <span className="text-slate-700 font-medium">GL-M1: هویت، پوشش و رضایت</span>
+                    <span className="text-slate-700 font-medium">شاخص ۱: احراز هویت، استعلام برخط و رضایت‌نامه</span>
                     {greenChecklist.m1_identityConsent ? (
                       <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                     ) : (
@@ -397,7 +397,7 @@ export const InsuranceBridgeView: React.FC = () => {
                   </div>
 
                   <div className="flex items-center justify-between p-2.5 rounded-lg bg-white border border-slate-200/80">
-                    <span className="text-slate-700 font-medium">GL-M2: چارت دندان دیداری FDI</span>
+                    <span className="text-slate-700 font-medium">شاخص ۲: ثبت دقیق کد دندان و شرح درمان استاندارد</span>
                     {greenChecklist.m2_dentalChartStructured ? (
                       <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                     ) : (
@@ -406,7 +406,7 @@ export const InsuranceBridgeView: React.FC = () => {
                   </div>
 
                   <div className="flex items-center justify-between p-2.5 rounded-lg bg-white border border-slate-200/80">
-                    <span className="text-slate-700 font-medium">GL-M3: شواهد تصویری رادیوگرافی</span>
+                    <span className="text-slate-700 font-medium">شاخص ۳: شواهد تصویری رادیوگرافی معتبر</span>
                     {greenChecklist.m3_visualEvidenceAttached ? (
                       <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                     ) : (
@@ -415,7 +415,7 @@ export const InsuranceBridgeView: React.FC = () => {
                   </div>
 
                   <div className="flex items-center justify-between p-2.5 rounded-lg bg-white border border-slate-200/80">
-                    <span className="text-slate-700 font-medium">GL-M4: صورت‌حساب پاک‌سازی شده</span>
+                    <span className="text-slate-700 font-medium">شاخص ۴: انطباق صورت‌حساب مالی و پرداخت کارتخوان</span>
                     {greenChecklist.m4_financialSanitised ? (
                       <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                     ) : (
@@ -424,7 +424,7 @@ export const InsuranceBridgeView: React.FC = () => {
                   </div>
 
                   <div className="flex items-center justify-between p-2.5 rounded-lg bg-white border border-slate-200/80 md:col-span-2">
-                    <span className="text-slate-700 font-medium">GL-M5: توکن دسترسی بیمار و حسابرسی غیرقابل تغییر (WORM)</span>
+                    <span className="text-slate-700 font-medium">شاخص ۵: امضای دیجیتال معتبر و ثبت امن غیرقابل تغییر</span>
                     {greenChecklist.m5_consentRecordAccess ? (
                       <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                     ) : (
@@ -436,7 +436,7 @@ export const InsuranceBridgeView: React.FC = () => {
 
               {/* Items Table */}
               <div className="space-y-3">
-                <h3 className="text-xs font-bold text-slate-800">اقلام ادعاشده و سهم‌بندی Waterfall</h3>
+                <h3 className="text-xs font-bold text-slate-800">اقلام ادعاشده و تسهیم سهم بیمه و بیمار</h3>
                 <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-xs">
                   <table className="w-full text-right text-xs">
                     <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { ToothIcon } from '../common/ToothIcon';
 import {
   Building2,
   ShieldCheck,
@@ -128,8 +129,8 @@ export const DentoraLandingPage: React.FC<DentoraLandingPageProps> = ({
           
           {/* Brand */}
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#005581] to-[#0073a8] text-[#fffffa] flex items-center justify-center font-black text-2xl shadow-md ring-2 ring-[#ffd200]/50">
-              د
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#005581] to-[#0073a8] text-[#fffffa] flex items-center justify-center shadow-md ring-2 ring-[#ffd200]/50">
+              <ToothIcon className="w-7 h-7 text-[#ffd200]" />
             </div>
             <div>
               <div className="flex items-center gap-2">

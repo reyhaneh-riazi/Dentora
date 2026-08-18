@@ -31,6 +31,8 @@ import {
   ArrowRight,
   Check,
   Edit3,
+  X,
+  Search,
 } from 'lucide-react';
 import { mockClaims, mockAuditLogs } from '../../data/mockData';
 import { Claim, DeductionReasonCode, ReviewRoute, AuditLogItem } from '../../types';
@@ -406,7 +408,7 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
       entityType: 'Claim',
       entityId: selectedClaim.claimNumber,
       details: `ثبت تشخیص کارشناسی بازبین برای «${selectedDiscrepancy.title}»: ${editingDiagnosisText} (اقدام: ${editingActionProposed === 'deduct_excess' ? 'کسر مازاد تعرفه' : editingActionProposed === 'refer_to_medical' ? 'ارجاع به پزشک معتمد' : editingActionProposed === 'deduct_full' ? 'کسر کامل' : 'تأیید مشروط'}) ${
-        calculatedQueue === 'deep_review' ? '• امضا شده با توکن دیجیتال امنیتی WORM' : isAiOverridden ? '• امضای دیجیتال تغییر نظر AI' : '• ثبت خودکار بدون نیاز به امضا'
+        calculatedQueue === 'deep_review' ? '• امضا شده با توکن دیجیتال امنیتی' : isAiOverridden ? '• امضای دیجیتال تغییر نظر AI' : '• ثبت خودکار بدون نیاز به امضا'
       }`,
       wormVerifiedHash: '0x' + Math.random().toString(16).substring(2, 10),
       ruleVersion: 'v2.1-2026',
@@ -417,10 +419,10 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
     setSelectedDiscrepancy(null);
     setDiscrepancySuccessToast(
       calculatedQueue === 'deep_review'
-        ? '✓ تشخیص کارشناسی با امضای دیجیتال معتبر ثبت و در پرونده اعمال شد.'
+        ? 'تشخیص کارشناسی با امضای دیجیتال معتبر ثبت و در پرونده اعمال شد.'
         : isAiOverridden
-        ? '✓ تغییر نظر هوش مصنوعی با موفقیت امضا و در پرونده ثبت شد.'
-        : '✓ تشخیص کارشناسی ثبت و در پرونده اعمال شد.'
+        ? 'تغییر نظر هوش مصنوعی با موفقیت امضا و در پرونده ثبت شد.'
+        : 'تشخیص کارشناسی ثبت و در پرونده اعمال شد.'
     );
     setTimeout(() => setDiscrepancySuccessToast(''), 3500);
   };
@@ -617,6 +619,19 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
         ? 'مدارک و کلیشه‌های ارسالی مورد تأیید اولیه است و جهت بررسی رادیولوژی و بالینی به پزشک معتمد ارجاع گردید.'
         : 'مدارک دارای کسورات جزئی بوده و جهت تعیین تکلیف نهایی رادیولوژی به پزشک معتمد ارجاع گردید.');
 
+    const updatedAppeals = (selectedClaim.appeals || []).map((a, idx) =>
+      idx === 0
+        ? {
+            ...a,
+            status: 'accepted' as const,
+            claimReviewerName: activeReviewerName,
+            reviewedBy: activeReviewerName,
+            claimReviewerNote: actualHandoverNote,
+            responseNotes: actualHandoverNote,
+          }
+        : a
+    );
+
     const updatedClaim: Claim = {
       ...selectedClaim,
       status: 'submitted', // Stays in Column 2 (ارسال‌شده به بیمه / در انتظار بررسی بازبین پزشکی)
@@ -629,7 +644,10 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
         note: actualHandoverNote,
         date: new Date().toLocaleDateString('fa-IR'),
       },
+      reviewerDiagnosis: actualHandoverNote,
+      reviewerNotes: actualHandoverNote,
       doctorReviewerDiagnosis: `ارجاع توسط ${activeReviewerName} با نظر ${medicalHandoverDecision === 'approved' ? 'تأیید کامل اولیه' : 'تأیید جزئی اولیه'}: ${actualHandoverNote}`,
+      appeals: updatedAppeals,
       aiFlags: [
         ...(selectedClaim.aiFlags || []),
         {
@@ -1430,8 +1448,9 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
 
                         {/* Reviewer Diagnosis Preview snippet */}
                         <div className="bg-[#72cdf4]/15 border border-[#72cdf4]/50 rounded-lg p-2 text-[11px] text-[#005581] w-full flex items-center justify-between gap-2">
-                          <span className="truncate font-bold">
-                            🔍 تشخیص کارشناس: {item.reviewerDiagnosis ? item.reviewerDiagnosis.slice(0, 45) + '...' : 'هنوز نظری ثبت نشده (کلیک جهت ثبت)'}
+                          <span className="truncate font-bold flex items-center gap-1">
+                            <Search className="w-3 h-3 text-[#005581] shrink-0" />
+                            <span>تشخیص کارشناس: {item.reviewerDiagnosis ? item.reviewerDiagnosis.slice(0, 45) + '...' : 'هنوز نظری ثبت نشده (کلیک جهت ثبت)'}</span>
                           </span>
                           <span className="text-[10px] text-[#005581] font-black underline shrink-0">
                             ویرایش و جزئیات
@@ -2192,7 +2211,7 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
                         {log.details}
                       </div>
 
-                      {/* Full Metadata Grid (ورژن قاعده، ورژن مدل، نام بازبین، هش WORM) */}
+                      {/* Full Metadata Grid (ورژن قاعده، ورژن مدل، نام بازبین، هش امنیتی) */}
                       <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 pt-2 border-t border-[#72cdf4]/50 text-[10px] font-bold">
                         <div className="bg-[#fffffa] p-2 rounded-lg border border-[#72cdf4]/50">
                           <span className="text-[#005581]/70 block">بازبین ثبت‌کننده:</span>
@@ -2210,7 +2229,7 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
                         </div>
 
                         <div className="bg-[#fffffa] p-2 rounded-lg border border-[#72cdf4]/50 flex flex-col justify-center">
-                          <span className="text-[#005581]/70 block">هش امضای غیرقابل تغییر:</span>
+                          <span className="text-[#005581]/70 block">هش امضای امنیتی:</span>
                           <span className="font-mono text-[#005581] text-[9px] truncate">
                             {log.wormVerifiedHash || (log as any).hashWORM || '0x8f2a9d12e84c9103'}
                           </span>
@@ -2247,9 +2266,9 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
               <button
                 type="button"
                 onClick={() => setShowPreAuthModal(false)}
-                className="bg-[#72cdf4]/20 hover:bg-[#72cdf4]/40 text-[#005581] p-2 rounded-xl transition-colors font-bold text-sm cursor-pointer"
+                className="bg-[#72cdf4]/20 hover:bg-[#72cdf4]/40 text-[#005581] p-2 rounded-xl transition-colors font-bold text-sm cursor-pointer flex items-center justify-center"
               >
-                ✕
+                <X className="w-5 h-5" />
               </button>
             </div>
 
@@ -2430,9 +2449,9 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
               </div>
               <button
                 onClick={() => setShowSignatureModal(false)}
-                className="text-[#005581] hover:bg-[#72cdf4]/20 p-1.5 rounded-lg transition-colors font-bold cursor-pointer"
+                className="text-[#005581] hover:bg-[#72cdf4]/20 p-1.5 rounded-lg transition-colors font-bold cursor-pointer flex items-center justify-center"
               >
-                ✕
+                <X className="w-5 h-5" />
               </button>
             </div>
 
@@ -2525,9 +2544,9 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
               <button
                 type="button"
                 onClick={() => setSelectedDiscrepancy(null)}
-                className="bg-[#72cdf4]/20 hover:bg-[#72cdf4]/40 text-[#005581] p-2 rounded-xl transition-colors font-bold text-sm cursor-pointer"
+                className="bg-[#72cdf4]/20 hover:bg-[#72cdf4]/40 text-[#005581] p-2 rounded-xl transition-colors font-bold text-sm cursor-pointer flex items-center justify-center"
               >
-                ✕
+                <X className="w-5 h-5" />
               </button>
             </div>
 
@@ -2670,7 +2689,7 @@ export const InsuranceReviewerWorkspace: React.FC<InsuranceReviewerWorkspaceProp
                         </span>
                       </div>
                       <span className="font-mono text-[10px] bg-amber-200 text-amber-950 px-2 py-0.5 rounded font-bold self-start sm:self-auto">
-                        CERT-984021-IR (WORM)
+                        CERT-984021-IR
                       </span>
                     </div>
 

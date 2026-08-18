@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { ToothIcon } from '../common/ToothIcon';
 import { ClinicRegistration, LabOrder, DentalLab, LabStaffAccount } from '../../types';
 import {
   getStoredLabs,
@@ -802,8 +803,8 @@ export const LabPortalView: React.FC<LabPortalViewProps> = ({
         <header className="flex flex-wrap items-center justify-between gap-3 bg-[#005581] text-[#fffffa] p-3 sm:p-4 rounded-2xl shadow-md border-2 border-[#72cdf4]/40">
           <div className="flex items-center gap-3 flex-wrap">
             {/* Dentora OS Brand Logo Box */}
-            <div className="w-10 h-10 rounded-xl bg-[#ffd200] text-[#005581] flex items-center justify-center font-black text-xl border border-[#ffe552] shadow-xs">
-              <span>د</span>
+            <div className="w-10 h-10 rounded-xl bg-[#ffd200] text-[#005581] flex items-center justify-center border border-[#ffe552] shadow-xs">
+              <ToothIcon className="w-6 h-6 text-[#005581]" />
             </div>
 
             <div className="space-y-0.5">

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { UserRole, Branch, ClinicRegistration } from '../types';
+import { ToothIcon } from './common/ToothIcon';
 import {
   Activity,
   Building2,
@@ -108,6 +109,7 @@ export const Header: React.FC<HeaderProps> = ({
     };
   }, []);
 
+  const isInsuranceRole = ['reviewer', 'medical_inspector', 'insurance_manager', 'insurer_admin'].includes(currentRole);
   const currentBranch = branches.find((b) => b.id === activeBranchId) || branches[0];
 
   return (
@@ -115,37 +117,55 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5">
         <div className="flex flex-col lg:flex-row items-center justify-between gap-3.5">
           
-          {/* Zone 1: Logo & Clinic Brand & Current User Identity */}
+          {/* Zone 1: Logo & Brand & Current User Identity */}
           <div className="flex items-center gap-3 w-full lg:w-auto justify-between lg:justify-start">
             <div className="flex items-center gap-3">
               <button
                 onClick={onGoToDentoraLanding}
-                className="w-10 h-10 rounded-xl bg-[#ffd200] text-[#005581] flex items-center justify-center shadow-md font-black text-2xl ring-2 ring-white/30 cursor-pointer hover:bg-[#ffe552] transition shrink-0"
+                className="w-10 h-10 rounded-xl bg-[#ffd200] text-[#005581] flex items-center justify-center shadow-md ring-2 ring-white/30 cursor-pointer hover:bg-[#ffe552] transition shrink-0"
                 title="بازگشت به لندینگ اصلی دنتورا"
               >
-                د
+                <ToothIcon className="w-6 h-6 text-[#005581]" />
               </button>
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h1 className="text-lg sm:text-xl font-black tracking-tight text-[#fffffa]">
-                    {currentClinic?.name || clinicName}
-                  </h1>
-                  <span className="text-[#72cdf4] text-xs font-semibold px-2 py-0.5 rounded-md bg-[#004266] border border-[#72cdf4]/30 hidden sm:inline-block">
-                    Dentora OS
-                  </span>
-                  {isOwner && (
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#ffd200] text-[#005581] font-extrabold font-mono shadow-xs shrink-0">
-                      دسترسی مالک (Owner)
-                    </span>
+                  {isInsuranceRole ? (
+                    <>
+                      <h1 className="text-lg sm:text-xl font-black tracking-tight text-[#fffffa]">
+                        سامانه نظارت و رسیدگی به اسناد بیمه دنتورا
+                      </h1>
+                      <span className="text-[#ffd200] text-xs font-bold px-2 py-0.5 rounded-md bg-[#003858] border border-[#ffd200]/40">
+                        Insurer Portal
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <h1 className="text-lg sm:text-xl font-black tracking-tight text-[#fffffa]">
+                        {currentClinic?.name || clinicName}
+                      </h1>
+                      <span className="text-[#72cdf4] text-xs font-semibold px-2 py-0.5 rounded-md bg-[#004266] border border-[#72cdf4]/30 hidden sm:inline-block">
+                        Dentora OS
+                      </span>
+                      {isOwner && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#ffd200] text-[#005581] font-extrabold font-mono shadow-xs shrink-0">
+                          دسترسی مالک (Owner)
+                        </span>
+                      )}
+                    </>
                   )}
                 </div>
                 <div className="text-xs text-[#72cdf4]/90 font-medium flex items-center gap-2 mt-0.5 flex-wrap">
                   <span className="text-slate-100 font-bold">
                     {currentUserName} <span className="text-[#72cdf4] font-normal">({roleLabels[currentRole]?.title || currentRole})</span>
                   </span>
-                  {currentClinic?.ownerName && (
+                  {!isInsuranceRole && currentClinic?.ownerName && (
                     <span className="bg-[#003858] text-[#ffe552] px-2 py-0.5 rounded-md text-[10px] font-bold border border-[#72cdf4]/30">
                       مالک: {currentClinic.ownerName} ({currentClinic.ownerRole === 'dentist' ? 'دندان‌پزشک' : 'مدیر کلینیک'})
+                    </span>
+                  )}
+                  {isInsuranceRole && (
+                    <span className="bg-[#003858] text-[#72cdf4] px-2 py-0.5 rounded-md text-[10px] font-bold border border-[#72cdf4]/30">
+                      مرکز تخصصی ممیزی، کارشناسی و داوری اسناد دندان‌پزشکی
                     </span>
                   )}
                 </div>
@@ -173,7 +193,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <>
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                   <Wifi className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>سیستم: <strong className="text-emerald-300">آنلاین</strong></span>
+                  <span>{isInsuranceRole ? 'هسته بیمه:' : 'سیستم:'} <strong className="text-emerald-300">آنلاین</strong></span>
                 </>
               )}
               {connectionStatus === 'syncing' && (
@@ -185,13 +205,21 @@ export const Header: React.FC<HeaderProps> = ({
               {connectionStatus === 'offline' && (
                 <>
                   <WifiOff className="w-3.5 h-3.5 text-amber-300" />
-                  <span>سیستم: <strong className="text-amber-300">آفلاین</strong></span>
+                  <span>{isInsuranceRole ? 'هسته بیمه:' : 'سیستم:'} <strong className="text-amber-300">آفلاین</strong></span>
                 </>
               )}
             </button>
 
-            {/* Contracted Insurance Status Toggle */}
-            {insuranceModuleActive && onToggleInsuranceContracted && (
+            {/* Insurance Role Protocol Badge */}
+            {isInsuranceRole && (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#005581] border border-[#72cdf4]/30 text-cyan-200 shadow-xs whitespace-nowrap">
+                <ShieldCheck className="w-3.5 h-3.5 text-[#ffd200]" />
+                <span className="text-[11px] font-bold">شبکه تبادل امن اسناد بیمه دنتورا</span>
+              </div>
+            )}
+
+            {/* Contracted Insurance Status Toggle (Clinic roles only) */}
+            {!isInsuranceRole && insuranceModuleActive && onToggleInsuranceContracted && (
               <button
                 type="button"
                 onClick={onToggleInsuranceContracted}
@@ -209,8 +237,8 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             )}
 
-            {/* Accountant Role Presence Toggle Button */}
-            {currentRole !== 'patient' && onToggleHasAccountantRole && (
+            {/* Accountant Role Presence Toggle Button (Clinic roles only) */}
+            {!isInsuranceRole && currentRole !== 'patient' && onToggleHasAccountantRole && (
               <button
                 type="button"
                 onClick={onToggleHasAccountantRole}
@@ -241,8 +269,8 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Zone 3: Navigation, Clinic/Branch Switchers, Roles & Controls */}
           <div className="flex flex-wrap items-center justify-center lg:justify-end gap-2 w-full lg:w-auto">
             
-            {/* Owner Settings Quick Access Button */}
-            {isOwner && (
+            {/* Owner Settings Quick Access Button (Clinic Only) */}
+            {!isInsuranceRole && isOwner && (
               <button
                 type="button"
                 onClick={() => onRoleChange('owner')}
@@ -258,8 +286,8 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             )}
 
-            {/* Clinic Dropdown Switcher */}
-            {clinics.length > 0 && onClinicSelect && (
+            {/* Clinic Dropdown Switcher (Clinic Only) */}
+            {!isInsuranceRole && clinics.length > 0 && onClinicSelect && (
               <div className="relative" ref={clinicMenuRef}>
                 <button
                   type="button"
@@ -302,42 +330,44 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
             )}
 
-            {/* Branch Dropdown */}
-            <div className="relative" ref={branchMenuRef}>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsBranchDropdownOpen((prev) => !prev);
-                  setIsClinicDropdownOpen(false);
-                  setIsRoleDropdownOpen(false);
-                }}
-                className="flex items-center gap-1.5 bg-[#004266] border border-[#72cdf4]/40 text-[#fffffa] px-3 py-1.5 rounded-xl text-xs font-bold cursor-pointer hover:bg-[#003858] transition shadow-xs whitespace-nowrap"
-              >
-                <Building2 className="w-3.5 h-3.5 text-[#ffe552]" />
-                <span className="max-w-[110px] truncate">{currentBranch.name}</span>
-                <ChevronDown className="w-3.5 h-3.5 text-[#72cdf4]" />
-              </button>
-              {isBranchDropdownOpen && (
-                <div className="absolute left-0 md:right-0 mt-1.5 w-52 bg-[#004266] border border-[#72cdf4]/40 rounded-2xl shadow-xl py-1.5 z-50">
-                  <div className="px-3 py-1 text-[11px] text-[#72cdf4] font-semibold border-b border-[#003350]">انتخاب شعبه فعال</div>
-                  {branches.map((b) => (
-                    <button
-                      key={b.id}
-                      onClick={() => {
-                        onBranchChange(b.id);
-                        setIsBranchDropdownOpen(false);
-                      }}
-                      className={`w-full text-right px-3 py-2 text-xs flex items-center justify-between hover:bg-[#003350] transition ${
-                        b.id === activeBranchId ? 'text-[#ffd200] font-bold bg-[#003350]/80' : 'text-[#fffffa]'
-                      }`}
-                    >
-                      <span>{b.name}</span>
-                      <span className="text-[10px] text-[#72cdf4] font-mono">{b.code}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            {/* Branch Dropdown (Clinic Only) */}
+            {!isInsuranceRole && (
+              <div className="relative" ref={branchMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsBranchDropdownOpen((prev) => !prev);
+                    setIsClinicDropdownOpen(false);
+                    setIsRoleDropdownOpen(false);
+                  }}
+                  className="flex items-center gap-1.5 bg-[#004266] border border-[#72cdf4]/40 text-[#fffffa] px-3 py-1.5 rounded-xl text-xs font-bold cursor-pointer hover:bg-[#003858] transition shadow-xs whitespace-nowrap"
+                >
+                  <Building2 className="w-3.5 h-3.5 text-[#ffe552]" />
+                  <span className="max-w-[110px] truncate">{currentBranch.name}</span>
+                  <ChevronDown className="w-3.5 h-3.5 text-[#72cdf4]" />
+                </button>
+                {isBranchDropdownOpen && (
+                  <div className="absolute left-0 md:right-0 mt-1.5 w-52 bg-[#004266] border border-[#72cdf4]/40 rounded-2xl shadow-xl py-1.5 z-50">
+                    <div className="px-3 py-1 text-[11px] text-[#72cdf4] font-semibold border-b border-[#003350]">انتخاب شعبه فعال</div>
+                    {branches.map((b) => (
+                      <button
+                        key={b.id}
+                        onClick={() => {
+                          onBranchChange(b.id);
+                          setIsBranchDropdownOpen(false);
+                        }}
+                        className={`w-full text-right px-3 py-2 text-xs flex items-center justify-between hover:bg-[#003350] transition ${
+                          b.id === activeBranchId ? 'text-[#ffd200] font-bold bg-[#003350]/80' : 'text-[#fffffa]'
+                        }`}
+                      >
+                        <span>{b.name}</span>
+                        <span className="text-[10px] text-[#72cdf4] font-mono">{b.code}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Role Switcher (RBAC testing menu) */}
             <div className="relative" ref={roleMenuRef}>

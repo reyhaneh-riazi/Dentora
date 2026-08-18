@@ -36,6 +36,7 @@ import {
   History,
   Calendar,
   LayoutGrid,
+  Star,
 } from 'lucide-react';
 import {
   BarChart,
@@ -391,7 +392,7 @@ const mockUnifiedClaimAuditTrails: UnifiedClaimAuditTrail[] = [
         userName: 'دکتر کاوه نوری',
         userRole: 'پزشک معتمد جراحی فک و دهان (کد ۳۳۴۱2-ن)',
         actionTitle: 'ارزیابی تراکم استخوان CBCT و امضای دیجیتال',
-        details: 'تراکم و ارتفاع استخوان فک پایین در سی‌بی‌سی‌تی برای جای‌گذاری فیکسچر ۴.۵mm احراز گردید. صدور امضای دیجیتال WORM.',
+        details: 'تراکم و ارتفاع استخوان فک پایین در سی‌بی‌سی‌تی برای جای‌گذاری فیکسچر ۴.۵mm احراز گردید. صدور امضای دیجیتال امن.',
         wormVerifiedHash: '0x7b11a90e3f88c1229a44018283eb9111824',
         aiModelVersion: 'Dental-Vision-v3.4.2',
       },
@@ -465,7 +466,7 @@ const mockUnifiedClaimAuditTrails: UnifiedClaimAuditTrail[] = [
         stageTitle: 'پزشک معتمد',
         userName: 'دکتر کاوه نوری',
         userRole: 'پزشک معتمد (کد ۳۳۴۱2-ن)',
-        actionTitle: 'رد قطعی ادعا به دلیل فقدان گرافی و امضای WORM',
+        actionTitle: 'رد قطعی ادعا به دلیل فقدان گرافی و امضای دیجیتال معتمد',
         details: 'ثبت رای قطعی رد ادعا به دلیل عدم ارائه کلیشه رادیوگرافی قبل از درمان طبق ماده ۴ آیین‌نامه ارزیابی با امضای دیجیتال غیرقابل تغییر.',
         wormVerifiedHash: '0x3c99a80b1277f981022e331190458821933',
         aiModelVersion: 'Dental-Vision-v3.4.2',
@@ -504,8 +505,8 @@ const mockUnifiedClaimAuditTrails: UnifiedClaimAuditTrail[] = [
         stageTitle: 'هوش مصنوعی & موتور قواعد',
         userName: 'Dentura Copilot AI',
         userRole: 'سیستم پایش خودکار',
-        actionTitle: 'احراز کامل تسویه سریع L4 Green Lane',
-        details: 'انطباق ۱۰۰٪، عدم وجود سابقه همپوشانی ۶ ماهه و احراز کامل ۵ ماژول الزامی مرکز آتیه.',
+        actionTitle: 'احراز کامل تسویه مستقیم سریع',
+        details: 'انطباق ۱۰۰٪، عدم وجود سابقه همپوشانی ۶ ماهه و احراز کامل ۵ شاخص الزامی مرکز آتیه.',
         wormVerifiedHash: '0x4d88e21a0091823901a1828391012931',
         ruleVersion: 'v2.1-2026',
         aiModelVersion: 'Dentura-AI-v3.4',
@@ -515,7 +516,7 @@ const mockUnifiedClaimAuditTrails: UnifiedClaimAuditTrail[] = [
         timestamp: '1405/05/14 - 10:01:30',
         stage: 'claim_reviewer',
         stageTitle: 'بازبین ادعا',
-        userName: 'سامانه خودکار Green Lane',
+        userName: 'سامانه پردازش مستقیم اسناد',
         userRole: 'کارشناس ادعا (خودکار)',
         actionTitle: 'تایید خودکار مالی بدون کسورات',
         details: 'تایید فوری مبلغ ۱۲,۰۰۰,۰۰۰ ریال بر اساس اعتبار L4 مرکز.',
@@ -1023,7 +1024,12 @@ export const InsuranceManagerWorkspace: React.FC<InsuranceManagerWorkspaceProps>
                       <td className="p-3">{rev.avgHandlingMinutes} دقیقه</td>
                       <td className="p-3 text-rose-700">{rev.rejectionRate}٪</td>
                       <td className="p-3 text-amber-700">{rev.overrideRate}٪</td>
-                      <td className="p-3 text-emerald-700">⭐ {rev.accuracyRating} / ۵</td>
+                      <td className="p-3 text-emerald-700">
+                        <span className="flex items-center gap-1 font-bold">
+                          <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
+                          <span>{rev.accuracyRating} / ۵</span>
+                        </span>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -2144,7 +2150,7 @@ export const InsuranceManagerWorkspace: React.FC<InsuranceManagerWorkspaceProps>
             {selectedTrustLevelModal === 'L4' && (
               <div className="space-y-3 text-xs text-[#005581]">
                 <div className="bg-[#ffe552]/40 p-3 rounded-xl border-2 border-[#ffd200] font-bold text-[#005581]">
-                  عنوان: سطح L4 - دنتورا تسویه سریع (Green Lane)
+                  عنوان: سطح L4 - تسویه مستقیم و تأیید فوری اسناد
                 </div>
                 <div className="space-y-2 leading-relaxed">
                   <p><strong>روش ارزیابی:</strong> بالاترین درجه اعتماد، نرخ ادعای تمیز بالای ۹۰٪، ارزیابی خودکار بدون مداخله انسانی.</p>

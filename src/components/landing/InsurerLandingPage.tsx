@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { ToothIcon } from '../common/ToothIcon';
 import {
   ShieldCheck,
   X,
@@ -114,10 +115,10 @@ export const InsurerLandingPage: React.FC<InsurerLandingPageProps> = ({
           <div className="flex items-center gap-3">
             <button
               onClick={onBackToDentora}
-              className="w-10 h-10 rounded-xl bg-[#005581] text-[#fffffa] flex items-center justify-center font-black text-2xl shadow-md ring-2 ring-[#ffd200]/50 hover:bg-[#004266] transition cursor-pointer"
+              className="w-10 h-10 rounded-xl bg-[#005581] text-[#fffffa] flex items-center justify-center shadow-md ring-2 ring-[#ffd200]/50 hover:bg-[#004266] transition cursor-pointer"
               title="بازگشت به صفحه اصلی دنتورا"
             >
-              د
+              <ToothIcon className="w-6 h-6 text-[#ffd200]" />
             </button>
             <div>
               <div className="flex items-center gap-2">

@@ -640,11 +640,15 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
     const reviewerName =
       selectedClaim?.claimReviewerName ||
       selectedClaim?.medicalHandover?.reviewerName ||
+      (selectedClaim?.appeals && selectedClaim.appeals[0]?.claimReviewerName) ||
+      (selectedClaim?.appeals && selectedClaim.appeals[0]?.reviewedBy) ||
       'زهرا صادقی (بازبین ارشد ادعا)';
 
     const reviewerNote =
       selectedClaim?.claimReviewerHandoverNote ||
       selectedClaim?.medicalHandover?.note ||
+      (selectedClaim?.appeals && selectedClaim.appeals[0]?.responseNotes) ||
+      (selectedClaim?.appeals && selectedClaim.appeals[0]?.claimReviewerNote) ||
       selectedClaim?.reviewerDiagnosis ||
       selectedClaim?.reviewerNotes ||
       selectedClaim?.doctorReviewerDiagnosis ||
@@ -659,8 +663,22 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
 
   const activeLineItems = React.useMemo(() => {
     if (!selectedClaim) return [];
+
+    const reviewerNotes =
+      selectedClaim.claimReviewerHandoverNote ||
+      selectedClaim.medicalHandover?.note ||
+      (selectedClaim.appeals && selectedClaim.appeals[0]?.responseNotes) ||
+      (selectedClaim.appeals && selectedClaim.appeals[0]?.claimReviewerNote) ||
+      selectedClaim.reviewerDiagnosis ||
+      selectedClaim.reviewerNotes ||
+      selectedClaim.doctorReviewerDiagnosis ||
+      claimReviewerInfo.note;
+
     if (claimLineItemsMap[selectedClaim.id] && claimLineItemsMap[selectedClaim.id].length > 0) {
-      return claimLineItemsMap[selectedClaim.id];
+      return claimLineItemsMap[selectedClaim.id].map((item) => ({
+        ...item,
+        initialReviewerNote: reviewerNotes || item.initialReviewerNote,
+      }));
     }
 
     // Dynamically derive from selectedClaim's actual patient and clinical data
@@ -668,7 +686,6 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
     const claimAmountInRials = rawAmt < 50000000 ? rawAmt * 10 : rawAmt;
     const toothNum = selectedClaim.toothFdi || (selectedClaim.items && selectedClaim.items[0]?.toothNumber) || 16;
     const treatName = selectedClaim.treatmentName || (selectedClaim.items && selectedClaim.items[0]?.procedureTitle) || 'درمان ریشه (عصب‌کشی تخصصی)';
-    const reviewerNotes = (selectedClaim as any).reviewerDiagnosis || (selectedClaim as any).reviewerNotes || (selectedClaim as any).narrativeText || 'پرونده از نظر سقف تعهدات و مدارک مالی احراز گردیده و جهت ارزیابی رادیولوژی و بالینی ارجاع شد.';
 
     if (selectedClaim.items && selectedClaim.items.length > 0) {
       return selectedClaim.items.map((item, idx) => ({
@@ -803,6 +820,16 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
   const activeAppeal = React.useMemo(() => {
     if (!selectedClaim || !isClaimAppealed) return null;
     const firstAppeal = selectedClaim.appeals?.[0];
+    const realEvidenceUrls = firstAppeal?.additionalEvidenceUrls || selectedClaim.additionalEvidenceUrls || [];
+    const reviewerNoteText =
+      selectedClaim.claimReviewerHandoverNote ||
+      selectedClaim.medicalHandover?.note ||
+      firstAppeal?.responseNotes ||
+      (firstAppeal as any)?.claimReviewerNote ||
+      selectedClaim.reviewerDiagnosis ||
+      selectedClaim.reviewerNotes ||
+      'اعتراض کلینیک مورد تأیید اولیه بازبین ادعا قرار گرفت و جهت تأیید کارشناسی نهایی رادیولوژی به پزشک معتمد ارجاع شد.';
+
     return {
       id: firstAppeal?.id || `app-${selectedClaim.id}`,
       createdAt: firstAppeal?.createdAt || '۱۴۰۵/۰۵/۲۰',
@@ -811,10 +838,8 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
       dentistName: firstAppeal?.dentistName || selectedClaim.dentistName || 'دکتر کاویانی',
       category: (firstAppeal as any)?.category || 'کسورات غیرمجاز تعرفه‌ای و تقاضای بازبینی رادیولوژی RVG',
       ruleCitation: (firstAppeal as any)?.ruleCitation || 'بند ۱۲ آیین‌نامه تعرفه درمان شورای عالی بیمه',
-      additionalEvidenceUrls: firstAppeal?.additionalEvidenceUrls || selectedClaim.additionalEvidenceUrls || [
-        'https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?w=600&auto=format&fit=crop&q=80',
-      ],
-      responseNotes: firstAppeal?.responseNotes || selectedClaim.reviewerDiagnosis || selectedClaim.reviewerNotes || 'اعتراض کلینیک مورد تأیید اولیه بازبین ادعا قرار گرفت و جهت تأیید کارشناسی نهایی رادیولوژی به پزشک معتمد ارجاع شد.',
+      additionalEvidenceUrls: realEvidenceUrls,
+      responseNotes: reviewerNoteText,
     };
   }, [selectedClaim, isClaimAppealed]);
 
@@ -823,18 +848,37 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
     if (!selectedClaim) return [];
     const list: { id: string; title: string; url: string; uploader: string; date: string }[] = [];
     
+    // 1. Images attached directly to the appeal by the accountant
     if (activeAppeal?.additionalEvidenceUrls && activeAppeal.additionalEvidenceUrls.length > 0) {
       activeAppeal.additionalEvidenceUrls.forEach((url, i) => {
-        list.push({
-          id: `app-img-${i + 1}`,
-          title: `کلیشه رادیوگرافی RVG دندان ${toFa(selectedClaim.toothFdi || 16)} (پیوست لایحه اعتراض)`,
-          url,
-          uploader: 'حسابدار کلینیک',
-          date: activeAppeal.createdAt || '۱۴۰۵/۰۵/۲۰',
-        });
+        if (url && typeof url === 'string' && url.trim()) {
+          list.push({
+            id: `app-img-${i + 1}`,
+            title: `کلیشه رادیوگرافی RVG دندان ${toFa(selectedClaim.toothFdi || 16)} (پیوست لایحه اعتراض ثبت‌شده توسط حسابدار)`,
+            url,
+            uploader: activeAppeal.submittedBy || 'حسابدار کلینیک',
+            date: activeAppeal.createdAt || '۱۴۰۵/۰۵/۲۰',
+          });
+        }
       });
     }
 
+    // 2. Images in selectedClaim.additionalEvidenceUrls
+    if (selectedClaim.additionalEvidenceUrls && selectedClaim.additionalEvidenceUrls.length > 0) {
+      selectedClaim.additionalEvidenceUrls.forEach((url, i) => {
+        if (url && typeof url === 'string' && url.trim() && !list.some((img) => img.url === url)) {
+          list.push({
+            id: `claim-att-${i + 1}`,
+            title: `تصویر رادیولوژی/مدرک ثبت‌شده توسط حسابدار دندان ${toFa(selectedClaim.toothFdi || 16)}`,
+            url,
+            uploader: 'حسابدار کلینیک',
+            date: activeAppeal?.createdAt || '۱۴۰۵/۰۵/۲۰',
+          });
+        }
+      });
+    }
+
+    // 3. Images in selectedClaim.evidences
     if (selectedClaim.evidences && selectedClaim.evidences.length > 0) {
       selectedClaim.evidences.forEach((ev, i) => {
         if (ev.fileUrl && !list.some((img) => img.url === ev.fileUrl)) {
@@ -846,16 +890,6 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
             date: '۱۴۰۵/۰۵/۲۰',
           });
         }
-      });
-    }
-
-    if (isClaimAppealed && list.length === 0) {
-      list.push({
-        id: 'app-default-rvg',
-        title: `گرافی RVG پری‌اپیکال ضمیمه‌شده به لایحه اعتراض دندان ${toFa(selectedClaim.toothFdi || 16)}`,
-        url: 'https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?w=600&auto=format&fit=crop&q=80',
-        uploader: 'حسابدار کلینیک',
-        date: '۱۴۰۵/۰۵/۲۰',
       });
     }
 
@@ -1151,11 +1185,7 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
   };
 
   const handleSubmitSection3FinalVerdict = () => {
-    if (reviewMethod === 'deep') {
-      setShowDeepReviewSignatureModal(true);
-    } else {
-      executeSaveAuditRecord(false);
-    }
+    executeSaveAuditRecord(true);
   };
 
   const executeSaveAuditRecord = (isSigned: boolean) => {
@@ -1825,30 +1855,6 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
                 <div className="font-black">۴. تاریخچه حسابرسی</div>
                 <div className={`text-[10px] mt-0.5 ${activeStep === 4 ? 'text-[#72cdf4]' : 'text-[#005581]/70'}`}>
                   ثبت وقایع حقوقی و آیین‌نامه
-                </div>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveStep(5)}
-              className={`w-full text-right p-3.5 rounded-xl text-xs transition-all flex items-start gap-3 border ${
-                activeStep === 5
-                  ? 'bg-[#005581] text-white border-[#005581] shadow-md font-black'
-                  : 'bg-white text-[#005581] border-[#72cdf4] hover:bg-[#72cdf4]/10 font-bold'
-              }`}
-            >
-              <div
-                className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 font-black text-xs ${
-                  activeStep === 5 ? 'bg-[#ffd200] text-[#005581]' : 'bg-[#72cdf4]/30 text-[#005581]'
-                }`}
-              >
-                ۵
-              </div>
-              <div>
-                <div className="font-black">۵. نسخه الکترونیک & پیگیری</div>
-                <div className={`text-[10px] mt-0.5 ${activeStep === 5 ? 'text-[#72cdf4]' : 'text-[#005581]/70'}`}>
-                  ارسال به سامانه سپام و پیام منشی
                 </div>
               </div>
             </button>
@@ -3348,24 +3354,11 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
                   <div className="flex flex-wrap items-center gap-3">
                     <button
                       type="button"
-                      onClick={() => setActiveStep(5)}
-                      className="bg-emerald-700 hover:bg-emerald-800 text-white font-black text-xs px-5 py-3.5 rounded-2xl shadow-md transition-all flex items-center gap-2 hover:scale-105 cursor-pointer"
-                    >
-                      <Send className="w-4 h-4 text-emerald-200" />
-                      <span>انتقال به مرحله ۵ (ارسال نسخه الکترونیک)</span>
-                    </button>
-
-                    <button
-                      type="button"
                       onClick={handleSubmitSection3FinalVerdict}
                       className="bg-[#005581] hover:bg-[#003d5c] text-white font-black text-xs px-8 py-3.5 rounded-2xl shadow-lg transition-all flex items-center gap-2 hover:scale-105 cursor-pointer"
                     >
                       <ShieldCheck className="w-5 h-5 text-[#ffd200]" />
-                      <span>
-                        {reviewMethod === 'deep'
-                          ? 'ثبت رای نهایی و ورود به کادر امضای دیجیتال'
-                          : 'ثبت مستقیم رای نهایی و انتقال به تاریخچه'}
-                      </span>
+                      <span>ثبت نهایی رأی کارشناسی و انتقال به تاریخچه</span>
                     </button>
                   </div>
                 </div>
@@ -3523,263 +3516,6 @@ export const MedicalReviewerWorkspace: React.FC<MedicalReviewerWorkspaceProps> =
                       ))}
                     </tbody>
                   </table>
-                </div>
-              </div>
-
-              {/* Action Button to Step 5 */}
-              <div className="flex justify-end pt-2">
-                <button
-                  type="button"
-                  onClick={() => setActiveStep(5)}
-                  className="bg-emerald-700 hover:bg-emerald-800 text-white font-black text-xs px-6 py-3 rounded-xl shadow-md transition-all flex items-center gap-2 hover:scale-105 cursor-pointer"
-                >
-                  <Send className="w-4 h-4 text-emerald-200" />
-                  <span>انتقال به مرحله ۵ (ارسال به سامانه نسخه الکترونیک)</span>
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* STEP 5: ELECTRONIC PRESCRIPTION & SECRETARY FOLLOW-UP */}
-          {activeStep === 5 && (
-            <div className="space-y-6 animate-fadeIn">
-              {/* Header Box */}
-              <div className="bg-[#fffffa] rounded-2xl p-6 border-2 border-[#005581] space-y-4 shadow-sm">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-[#72cdf4] gap-2">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-xl bg-emerald-700 text-white flex items-center justify-center shadow">
-                      <Send className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h2 className="text-sm font-black text-[#005581]">
-                        مرحله ۵: ارسال به سامانه نسخه الکترونیک و پیگیری پذیرش
-                      </h2>
-                      <div className="text-[11px] text-[#005581]/80 font-bold">
-                        سامانه یکپارچه سپام، بیمه سلامت و سازمان تأمین اجتماعی
-                      </div>
-                    </div>
-                  </div>
-                  <span className="bg-emerald-50 text-emerald-900 border border-emerald-300 text-[11px] font-black px-3 py-1 rounded-full self-start sm:self-auto">
-                    پروتکل SEPAM-FHIR v4.2
-                  </span>
-                </div>
-
-                {/* Patient / Claim Info summary */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                  <div className="bg-[#72cdf4]/15 p-3 rounded-xl border border-[#72cdf4]">
-                    <span className="text-[10px] text-[#005581]/70 block font-bold">بیمار:</span>
-                    <span className="font-black text-[#005581]">{selectedClaim.patientName}</span>
-                    <span className="text-[10px] block font-mono text-[#005581]/80">کد ملی: {selectedClaim.patientNationalId || '۰۰۱۸۲۳۴۹۱۲'}</span>
-                  </div>
-
-                  <div className="bg-[#72cdf4]/15 p-3 rounded-xl border border-[#72cdf4]">
-                    <span className="text-[10px] text-[#005581]/70 block font-bold">پزشک معالج / صادرکننده:</span>
-                    <span className="font-black text-[#005581]">{trustedDoctor.name}</span>
-                    <span className="text-[10px] block font-mono text-[#005581]/80">نظام‌پزشکی: {trustedDoctor.medicalCode}</span>
-                  </div>
-
-                  <div className="bg-[#72cdf4]/15 p-3 rounded-xl border border-[#72cdf4]">
-                    <span className="text-[10px] text-[#005581]/70 block font-bold">سازمان بیمه‌گر:</span>
-                    <span className="font-black text-[#005581]">{selectedClaim.primaryInsurerName || 'بیمه پایه سلامت / تأمین اجتماعی'}</span>
-                    <span className="text-[10px] block text-emerald-800 font-bold">پوشش آنلاین فعال</span>
-                  </div>
-
-                  <div className="bg-[#72cdf4]/15 p-3 rounded-xl border border-[#72cdf4]">
-                    <span className="text-[10px] text-[#005581]/70 block font-bold">شماره پرونده درمانی:</span>
-                    <span className="font-black text-[#005581] font-mono">{selectedClaim.claimNumber}</span>
-                    <span className="text-[10px] block text-[#005581]/80 font-bold">{selectedClaim.clinicName}</span>
-                  </div>
-                </div>
-
-                {/* Primary Action Button: Send to E-Prescription */}
-                <div className="bg-gradient-to-l from-emerald-50 via-teal-50 to-emerald-50 dark:from-emerald-950/30 dark:to-teal-950/20 p-5 rounded-2xl border-2 border-emerald-300 space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div>
-                      <h3 className="text-xs font-black text-emerald-950 dark:text-emerald-100 flex items-center gap-2">
-                        <Sparkles className="w-4 h-4 text-emerald-700" />
-                        <span>ارسال اقلام و خدمات پرونده به سامانه الکترونیک نسخه‌نویسی</span>
-                      </h3>
-                      <p className="text-[11px] text-emerald-800 dark:text-emerald-300 font-medium mt-0.5">
-                        ارسال داده‌های بالینی و خدمات صحه‌گذاری‌شده دندان‌پزشکی به گیت‌وی سلامت
-                      </p>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={handleSendToElectronicPrescription}
-                      disabled={isSendingPrescription}
-                      className="bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 text-white font-black text-xs px-6 py-3 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer hover:scale-105 active:scale-95"
-                    >
-                      {isSendingPrescription ? (
-                        <>
-                          <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                          <span>در حال ارسال به سامانه...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Send className="w-4 h-4 text-[#ffd200]" />
-                          <span>ارسال به سامانه نسخه الکترونیک</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-
-                  {/* SUCCESS MESSAGE DISPLAY AS SPECIFIED */}
-                  {prescriptionSent && (
-                    <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border-2 border-emerald-500 shadow-md space-y-2 animate-fadeIn">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                        <div className="flex items-center gap-2.5 text-emerald-800 dark:text-emerald-300 font-black text-sm">
-                          <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0" />
-                          <span className="font-extrabold text-base">✓ ارسال شد — کد پیگیری: {prescriptionTrackingCode}</span>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard?.writeText(prescriptionTrackingCode);
-                            setCopiedTrackingCode(true);
-                            setTimeout(() => setCopiedTrackingCode(false), 2000);
-                          }}
-                          className="bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-200 border border-emerald-300 px-3 py-1.5 rounded-lg text-xs font-black flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
-                        >
-                          {copiedTrackingCode ? (
-                            <>
-                              <CheckCheck className="w-4 h-4 text-emerald-700" />
-                              <span>کپی شد!</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-4 h-4" />
-                              <span>کپی کد پیگیری</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-4 text-[11px] text-slate-600 dark:text-slate-400 pt-1 border-t border-emerald-100 dark:border-slate-800 font-medium">
-                        <span>زمان ثبت در وب‌سرویس: {new Date().toLocaleTimeString('fa-IR')}</span>
-                        <span>•</span>
-                        <span>کد رهگیری ملی: <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{prescriptionTrackingCode}</span></span>
-                        <span>•</span>
-                        <span>وضعیت استعلام: <span className="text-emerald-700 font-bold">تأییدشده و فعال در داروخانه/مرکز</span></span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* OPTIONAL FIELDS: TIME LOGGING & SECRETARY FOLLOW-UP */}
-                <div className="bg-white p-5 rounded-2xl border border-[#72cdf4] space-y-4">
-                  <div className="border-b border-[#72cdf4]/40 pb-2 flex items-center justify-between">
-                    <h3 className="text-xs font-black text-[#005581] flex items-center gap-2">
-                      <Clock className="w-4 h-4 text-[#005581]" />
-                      <span>تنظیمات اختیاری و ارسال پیام پیگیری به منشی</span>
-                    </h3>
-                    <span className="text-[10px] text-[#005581]/70 font-bold bg-[#72cdf4]/20 px-2 py-0.5 rounded">
-                      تکمیل این بخش کاملاً اختیاری است
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Optional Field 1: ثبت زمان */}
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-black text-[#005581] flex items-center gap-1.5">
-                        <Clock className="w-3.5 h-3.5 text-[#005581]" />
-                        <span>ثبت زمان ویزیت / ارسال (اختیاری):</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={optionalVisitTime}
-                        onChange={(e) => setOptionalVisitTime(e.target.value)}
-                        placeholder="مثال: ساعت ۱۱:۴۵ یا نوبت عصر"
-                        className="w-full bg-white text-xs font-bold text-[#005581] p-3 rounded-xl border border-[#72cdf4] focus:ring-2 focus:ring-[#ffd200] focus:outline-none"
-                      />
-                      <span className="text-[10px] text-[#005581]/60 font-medium block">
-                        در صورت خالی گذاشتن، زمان جاری سرور به‌صورت سیستمی لحاظ می‌گردد.
-                      </span>
-                    </div>
-
-                    {/* Optional Field 2: ارسال پیام به منشی */}
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-black text-[#005581] flex items-center gap-1.5">
-                        <MessageSquare className="w-3.5 h-3.5 text-[#005581]" />
-                        <span>ارسال پیام پیگیری به منشی و پذیرش (اختیاری):</span>
-                      </label>
-                      <textarea
-                        value={optionalSecretaryMsg}
-                        onChange={(e) => setOptionalSecretaryMsg(e.target.value)}
-                        rows={2}
-                        placeholder="متن یادداشت جهت اطلاع یا هماهنگی نوبت بعدی بیمار توسط منشی پذیرش..."
-                        className="w-full bg-white text-xs font-bold text-[#005581] p-3 rounded-xl border border-[#72cdf4] focus:ring-2 focus:ring-[#ffd200] focus:outline-none resize-none"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Quick Chips for Secretary message */}
-                  <div className="flex flex-wrap gap-1.5 items-center pt-1">
-                    <span className="text-[10px] font-bold text-[#005581]/70">نمونه پیام‌های آماده:</span>
-                    <button
-                      type="button"
-                      onClick={() => setOptionalSecretaryMsg('نسخه الکترونیک در سامانه صادر گردید. کد پیگیری به بیمار تحویل شود.')}
-                      className="text-[10px] bg-[#72cdf4]/20 hover:bg-[#72cdf4]/40 text-[#005581] px-2 py-1 rounded-lg font-bold border border-[#72cdf4] transition cursor-pointer"
-                    >
-                      + تحویل کد رهگیری به بیمار
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setOptionalSecretaryMsg('نوبت ویزیت و قالب‌گیری روکش برای ۱۰ روز آینده تنظیم گردد.')}
-                      className="text-[10px] bg-[#72cdf4]/20 hover:bg-[#72cdf4]/40 text-[#005581] px-2 py-1 rounded-lg font-bold border border-[#72cdf4] transition cursor-pointer"
-                    >
-                      + رزرو نوبت قالب‌گیری روکش
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setOptionalSecretaryMsg('گرافی کنترل بعد از پرکردگی کانال‌ها در سامانه ضمیمه شد.')}
-                      className="text-[10px] bg-[#72cdf4]/20 hover:bg-[#72cdf4]/40 text-[#005581] px-2 py-1 rounded-lg font-bold border border-[#72cdf4] transition cursor-pointer"
-                    >
-                      + ثبت گرافی کنترل
-                    </button>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-2 border-t border-[#72cdf4]/40">
-                    <div>
-                      {secretaryMsgSent && (
-                        <span className="text-xs font-black text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-300 inline-flex items-center gap-1.5 animate-fadeIn">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                          <span>✓ پیام پیگیری با موفقیت در کارتابل منشی ثبت شد.</span>
-                        </span>
-                      )}
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={handleSendSecretaryMessage}
-                      className="bg-[#005581] hover:bg-[#003d5c] text-white font-black text-xs px-5 py-2.5 rounded-xl shadow-md transition flex items-center gap-2 cursor-pointer"
-                    >
-                      <Send className="w-4 h-4 text-[#ffd200]" />
-                      <span>ثبت زمان و ارسال یادداشت به منشی</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Bottom Navigation */}
-                <div className="flex items-center justify-between pt-3 border-t border-[#72cdf4]">
-                  <button
-                    type="button"
-                    onClick={() => setActiveStep(4)}
-                    className="bg-[#72cdf4]/20 hover:bg-[#72cdf4]/40 text-[#005581] font-black text-xs px-4 py-2.5 rounded-xl border border-[#72cdf4] transition flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                    <span>بازگشت به تاریخچه حسابرسی (مرحله ۴)</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setActiveStep(1)}
-                    className="bg-[#005581] hover:bg-[#003d5c] text-white font-black text-xs px-6 py-2.5 rounded-xl shadow-md transition flex items-center gap-2 cursor-pointer"
-                  >
-                    <span>بازگشت به فهرست پرونده‌ها (مرحله ۱)</span>
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
                 </div>
               </div>
             </div>

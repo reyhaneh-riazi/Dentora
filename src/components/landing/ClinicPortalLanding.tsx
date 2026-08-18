@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { ToothIcon } from '../common/ToothIcon';
 import {
   User,
   UserCheck,
@@ -341,8 +342,8 @@ export const ClinicPortalLanding: React.FC<ClinicPortalLandingProps> = ({
           
           {/* Logo & Clinic Title */}
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[#ffd200] text-[#005581] flex items-center justify-center font-black text-2xl shadow-md ring-2 ring-[#005581]/20">
-              ب
+            <div className="w-10 h-10 rounded-xl bg-[#ffd200] text-[#005581] flex items-center justify-center shadow-md ring-2 ring-[#005581]/20">
+              <ToothIcon className="w-6 h-6 text-[#005581]" />
             </div>
             <div>
               <h1 className="text-xl font-black text-[#005581] tracking-tight">{clinic.name}</h1>

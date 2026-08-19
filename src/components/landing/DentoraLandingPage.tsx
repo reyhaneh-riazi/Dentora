@@ -21,9 +21,12 @@ import {
   Flame,
   Truck,
   Layers,
+  Download,
+  Search,
 } from 'lucide-react';
 import { ClinicRegistration, UserRole } from '../../types';
 import { isValidMobile, isValidNationalId, isValidPassword, toEnglishDigits } from '../../utils/validators';
+import { DemoRequestModal } from './DemoRequestModal';
 
 interface DentoraLandingPageProps {
   registeredClinics: ClinicRegistration[];
@@ -41,6 +44,8 @@ export const DentoraLandingPage: React.FC<DentoraLandingPageProps> = ({
   onGoToLabPortal,
 }) => {
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
+  const [isDemoModalOpen, setIsDemoModalOpen] = useState(false);
+  const [clinicSearchQuery, setClinicSearchQuery] = useState('');
 
   // Form state for Clinic Signup
   const [clinicName, setClinicName] = useState('');
@@ -175,6 +180,17 @@ export const DentoraLandingPage: React.FC<DentoraLandingPageProps> = ({
               </button>
             </div>
 
+            {/* Demo Request Button */}
+            <button
+              type="button"
+              onClick={() => setIsDemoModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-[#005581] hover:bg-[#004266] text-white font-extrabold text-xs shadow-md transition cursor-pointer transform hover:-translate-y-0.5 shrink-0"
+              title="دریافت دموی دنتورا و مشاهده تصاویر سیستم"
+            >
+              <Download className="w-4 h-4 text-[#ffd200]" />
+              <span>دریافت دمو</span>
+            </button>
+
             {/* Main Registration Button */}
             <button
               type="button"
@@ -208,6 +224,14 @@ export const DentoraLandingPage: React.FC<DentoraLandingPageProps> = ({
 
           <div className="flex flex-wrap items-center justify-center gap-4 pt-4">
             <button
+              onClick={() => setIsDemoModalOpen(true)}
+              className="px-8 py-3.5 rounded-2xl bg-[#ffd200] hover:bg-[#ffe552] text-[#005581] font-black text-sm shadow-lg transition cursor-pointer flex items-center gap-2 transform hover:-translate-y-0.5"
+            >
+              <Download className="w-5 h-5 text-[#005581]" />
+              <span>دریافت دموی نرم‌افزار</span>
+            </button>
+
+            <button
               onClick={() => setIsRegisterModalOpen(true)}
               className="px-8 py-3.5 rounded-2xl bg-[#005581] hover:bg-[#004266] text-[#fffffa] font-extrabold text-sm shadow-lg transition cursor-pointer flex items-center gap-2"
             >
@@ -217,7 +241,7 @@ export const DentoraLandingPage: React.FC<DentoraLandingPageProps> = ({
 
             <a
               href="#registered-clinics"
-              className="px-8 py-3.5 rounded-2xl bg-white hover:bg-slate-50 text-[#005581] font-bold text-sm border-2 border-[#005581]/20 shadow-xs transition cursor-pointer flex items-center gap-2"
+              className="px-6 py-3.5 rounded-2xl bg-white hover:bg-slate-50 text-[#005581] font-bold text-sm border-2 border-[#005581]/20 shadow-xs transition cursor-pointer flex items-center gap-2"
             >
               <span>مشاهده کلینیک‌های فعال</span>
               <ChevronLeft className="w-4 h-4" />
@@ -230,94 +254,191 @@ export const DentoraLandingPage: React.FC<DentoraLandingPageProps> = ({
       <section id="registered-clinics" className="py-16 bg-slate-50 border-t border-slate-200/80">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
           
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-4">
             <div>
               <span className="text-xs font-bold text-[#005581] tracking-wider uppercase">کلینیک‌های عضو دنتورا</span>
               <h2 className="text-2xl font-black text-slate-900 mt-1">
                 انتخاب کلینیک جهت ورود به پورتال
               </h2>
             </div>
-            <button
-              onClick={() => setIsRegisterModalOpen(true)}
-              className="px-4 py-2 rounded-xl bg-[#ffd200] hover:bg-[#ffe552] text-[#005581] font-bold text-xs shadow-xs transition cursor-pointer flex items-center gap-1.5"
-            >
-              <PlusCircle className="w-4 h-4" />
-              <span>کلینیک جدید</span>
-            </button>
+
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              {/* Live Clinic Search Box */}
+              <div className="relative min-w-[280px] sm:min-w-[340px]">
+                <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={clinicSearchQuery}
+                  onChange={(e) => setClinicSearchQuery(e.target.value)}
+                  placeholder="جستجوی نام کلینیک، پزشک، شناسه ثبتی..."
+                  className="w-full pr-10 pl-9 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#005581] focus:border-[#005581] shadow-xs"
+                />
+                {clinicSearchQuery && (
+                  <button
+                    onClick={() => setClinicSearchQuery('')}
+                    className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full cursor-pointer"
+                    title="پاک کردن جستجو"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              <button
+                onClick={() => setIsRegisterModalOpen(true)}
+                className="px-4 py-2.5 rounded-xl bg-[#ffd200] hover:bg-[#ffe552] text-[#005581] font-bold text-xs shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
+              >
+                <PlusCircle className="w-4 h-4" />
+                <span>کلینیک جدید</span>
+              </button>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {registeredClinics.map((clinic) => (
-              <div
-                key={clinic.id}
-                className="bg-white rounded-3xl border-2 border-slate-200 hover:border-[#005581] p-6 shadow-sm hover:shadow-md transition space-y-5 flex flex-col justify-between"
+          {/* Search Result Counter (if searching) */}
+          {clinicSearchQuery.trim() && (
+            <div className="flex items-center justify-between text-xs font-bold bg-blue-50 text-[#005581] px-4 py-2.5 rounded-xl border border-blue-200">
+              <div className="flex items-center gap-2">
+                <Search className="w-4 h-4 text-[#005581]" />
+                <span>
+                  نتیجه جستجو برای «<strong className="text-slate-900">{clinicSearchQuery}</strong>»:
+                </span>
+                <span className="px-2 py-0.5 rounded-md bg-white border border-blue-200 text-xs font-black">
+                  {registeredClinics.filter((c) =>
+                    c.name.toLowerCase().includes(clinicSearchQuery.toLowerCase()) ||
+                    c.ownerName.toLowerCase().includes(clinicSearchQuery.toLowerCase()) ||
+                    c.nationalCode.includes(clinicSearchQuery) ||
+                    c.ownerMobile.includes(clinicSearchQuery)
+                  ).length} کلینیک
+                </span>
+              </div>
+              <button
+                onClick={() => setClinicSearchQuery('')}
+                className="text-xs text-blue-700 hover:underline cursor-pointer"
               >
-                <div className="space-y-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="w-12 h-12 rounded-2xl bg-[#005581]/10 text-[#005581] flex items-center justify-center font-black text-xl">
-                      <Building2 className="w-6 h-6 text-[#005581]" />
-                    </div>
-                    <span className="text-[11px] px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 font-bold">
-                      فعال در دنتورا
-                    </span>
-                  </div>
+                نمایش همه کلینیک‌ها
+              </button>
+            </div>
+          )}
 
+          {/* Clinics Grid */}
+          {(() => {
+            const filteredClinics = registeredClinics.filter((c) => {
+              if (!clinicSearchQuery.trim()) return true;
+              const q = clinicSearchQuery.toLowerCase();
+              return (
+                c.name.toLowerCase().includes(q) ||
+                c.ownerName.toLowerCase().includes(q) ||
+                c.nationalCode.includes(q) ||
+                c.ownerMobile.includes(q)
+              );
+            });
+
+            if (filteredClinics.length === 0) {
+              return (
+                <div className="bg-white rounded-3xl border-2 border-dashed border-slate-300 p-12 text-center space-y-4 max-w-lg mx-auto">
+                  <div className="w-14 h-14 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
+                    <Search className="w-7 h-7" />
+                  </div>
                   <div>
-                    <h3 className="text-lg font-black text-slate-900">{clinic.name}</h3>
-                    <p className="text-xs text-slate-500 mt-0.5">شناسه ثبتی: {clinic.nationalCode}</p>
+                    <h3 className="font-black text-slate-800 text-base">کلینیکی با این مشخصات یافت نشد</h3>
+                    <p className="text-xs text-slate-500 mt-1">
+                      عبارت جستجوی «{clinicSearchQuery}» در بین کلینیک‌های ثبت‌شده موجود نیست.
+                    </p>
                   </div>
-
-                  <div className="pt-2 space-y-1.5 text-xs text-slate-600">
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-slate-400">مالک کلینیک:</span>
-                      <strong className="text-slate-800">{clinic.ownerName} ({clinic.ownerRole === 'dentist' ? 'پزشک' : 'مدیر'})</strong>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-slate-400">شماره تماس:</span>
-                      <span className="font-mono">{clinic.ownerMobile}</span>
-                    </div>
-                  </div>
-
-                  {/* Active Roles Badges */}
-                  <div className="pt-3 border-t border-slate-100">
-                    <span className="text-[11px] font-bold text-slate-400 block mb-2">نقش‌های فعال در این کلینیک:</span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {clinic.activeRoles.map((role) => {
-                        const labels: Record<string, string> = {
-                          receptionist: 'منشی',
-                          dentist: 'پزشک',
-                          accountant: 'حسابدار',
-                          manager: 'مدیر',
-                          owner: 'مالک',
-                        };
-                        const isMandatory = role === 'receptionist' || role === 'dentist';
-                        return (
-                          <span
-                            key={role}
-                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold ${
-                              isMandatory
-                                ? 'bg-[#005581] text-white'
-                                : 'bg-slate-100 text-slate-700'
-                            }`}
-                          >
-                            {labels[role] || role} {isMandatory && '(اجباری)'}
-                          </span>
-                        );
-                      })}
-                    </div>
+                  <div className="flex justify-center gap-3 pt-2">
+                    <button
+                      onClick={() => setClinicSearchQuery('')}
+                      className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold cursor-pointer transition"
+                    >
+                      پاک کردن فیلتر جستجو
+                    </button>
+                    <button
+                      onClick={() => setIsRegisterModalOpen(true)}
+                      className="px-4 py-2 rounded-xl bg-[#005581] hover:bg-[#004266] text-white text-xs font-bold cursor-pointer transition flex items-center gap-1.5"
+                    >
+                      <PlusCircle className="w-4 h-4 text-[#ffd200]" />
+                      <span>ثبت کلینیک جدید</span>
+                    </button>
                   </div>
                 </div>
+              );
+            }
 
-                <button
-                  onClick={() => onSelectClinic(clinic)}
-                  className="w-full py-3 rounded-2xl bg-[#005581] hover:bg-[#004266] text-[#fffffa] font-extrabold text-xs shadow-xs transition cursor-pointer flex items-center justify-center gap-2"
-                >
-                  <span>ورود به صفحه کلینیک</span>
-                  <ArrowLeft className="w-4 h-4 text-[#ffd200]" />
-                </button>
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredClinics.map((clinic) => (
+                  <div
+                    key={clinic.id}
+                    className="bg-white rounded-3xl border-2 border-slate-200 hover:border-[#005581] p-6 shadow-sm hover:shadow-md transition space-y-5 flex flex-col justify-between"
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="w-12 h-12 rounded-2xl bg-[#005581]/10 text-[#005581] flex items-center justify-center font-black text-xl">
+                          <Building2 className="w-6 h-6 text-[#005581]" />
+                        </div>
+                        <span className="text-[11px] px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 font-bold">
+                          فعال در دنتورا
+                        </span>
+                      </div>
+
+                      <div>
+                        <h3 className="text-lg font-black text-slate-900">{clinic.name}</h3>
+                        <p className="text-xs text-slate-500 mt-0.5">شناسه ثبتی: {clinic.nationalCode}</p>
+                      </div>
+
+                      <div className="pt-2 space-y-1.5 text-xs text-slate-600">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-slate-400">مالک کلینیک:</span>
+                          <strong className="text-slate-800">{clinic.ownerName} ({clinic.ownerRole === 'dentist' ? 'پزشک' : 'مدیر'})</strong>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-slate-400">شماره تماس:</span>
+                          <span className="font-mono">{clinic.ownerMobile}</span>
+                        </div>
+                      </div>
+
+                      {/* Active Roles Badges */}
+                      <div className="pt-3 border-t border-slate-100">
+                        <span className="text-[11px] font-bold text-slate-400 block mb-2">نقش‌های فعال در این کلینیک:</span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {clinic.activeRoles.map((role) => {
+                            const labels: Record<string, string> = {
+                              receptionist: 'منشی',
+                              dentist: 'پزشک',
+                              accountant: 'حسابدار',
+                              manager: 'مدیر',
+                              owner: 'مالک',
+                            };
+                            const isMandatory = role === 'receptionist' || role === 'dentist';
+                            return (
+                              <span
+                                key={role}
+                                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold ${
+                                  isMandatory
+                                    ? 'bg-[#005581] text-white'
+                                    : 'bg-slate-100 text-slate-700'
+                                }`}
+                              >
+                                {labels[role] || role} {isMandatory && '(اجباری)'}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => onSelectClinic(clinic)}
+                      className="w-full py-3 rounded-2xl bg-[#005581] hover:bg-[#004266] text-[#fffffa] font-extrabold text-xs shadow-xs transition cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <span>ورود به صفحه کلینیک</span>
+                      <ArrowLeft className="w-4 h-4 text-[#ffd200]" />
+                    </button>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            );
+          })()}
 
         </div>
       </section>
@@ -539,6 +660,12 @@ export const DentoraLandingPage: React.FC<DentoraLandingPageProps> = ({
           </div>
         </div>
       )}
+
+      {/* DEMO REQUEST MODAL */}
+      <DemoRequestModal
+        isOpen={isDemoModalOpen}
+        onClose={() => setIsDemoModalOpen(false)}
+      />
 
     </div>
   );

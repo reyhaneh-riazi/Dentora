@@ -1948,6 +1948,7 @@ export default function App() {
             onUpdateLabOrderStatus={handleUpdateLabOrderStatus}
             patientQuestions={patientQuestions}
             onReplyQuestion={handleReplyQuestion}
+            invoices={invoices}
           />
         )}
 

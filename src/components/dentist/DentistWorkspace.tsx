@@ -12,15 +12,18 @@ import {
   DentalLab,
   PatientQuestion,
   PatientImageRecord,
+  Invoice,
+  RadiologyImagingLink,
 } from '../../types';
 import { mockPatients } from '../../data/mockData';
 import { Odontogram } from './Odontogram';
 import { ImageXrayViewer } from './ImageXrayViewer';
 import { DoctorCalendarView } from './DoctorCalendarView';
 import { PatientRecordsView } from './PatientRecordsView';
+import { DoctorFinancialView } from './DoctorFinancialView';
 import { OwnerWorkspace } from '../owner/OwnerWorkspace';
 import { getStoredLabAccounts } from '../../services/authService';
-import { getStoredLabs } from '../../services/clinicDataStore';
+import { getStoredLabs, loadClinicData, addRadiologyLinkToStore } from '../../services/clinicDataStore';
 import { getClinicalProfileByReason } from '../../utils/clinicalReasonMapping';
 import {
   Stethoscope,
@@ -63,6 +66,10 @@ import {
   Loader2,
   ShieldCheck,
   CheckCheck,
+  Link as LinkIcon,
+  ExternalLink,
+  Copy,
+  ImageIcon,
 } from 'lucide-react';
 
 interface DentistWorkspaceProps {
@@ -135,14 +142,17 @@ interface DentistWorkspaceProps {
   onToggleSupplementaryInsuranceContracted?: (id: string) => void;
   onToggleSupplementaryFastSettlement?: (id: string) => void;
   onUpdateSupplementaryMaxCoverage?: (id: string, maxCoverage: number) => void;
+  invoices?: Invoice[];
 }
 
 type DentistNavTab =
   | 'clinical_workbench'
   | 'patient_records'
   | 'my_schedule'
+  | 'radiology_pacs_links'
   | 'lab_section'
   | 'patient_qa'
+  | 'doctor_finances'
   | 'owner_settings';
 
 // Sequential Steps for Clinical Workbench
@@ -189,6 +199,7 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
   onUpdateLabOrderStatus,
   patientQuestions = [],
   onReplyQuestion,
+  invoices = [],
 }) => {
   // Main Navigation Tab
   const [activeNavTab, setActiveNavTab] = useState<DentistNavTab>(initialTab || 'clinical_workbench');
@@ -682,6 +693,74 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
     onUpdatePatientTeeth(updatedMap);
   };
 
+  // Radiology & PACS External Links State
+  const [radiologyLinksList, setRadiologyLinksList] = useState<RadiologyImagingLink[]>(() => {
+    const clinicId = currentClinic?.id || 'main_clinic';
+    const store = loadClinicData(clinicId);
+    return store.radiologyLinks || [];
+  });
+  const [radiologySearchQuery, setRadiologySearchQuery] = useState('');
+  const [radiologyTypeFilter, setRadiologyTypeFilter] = useState<string>('all');
+  const [copiedRadiologyId, setCopiedRadiologyId] = useState<string | null>(null);
+  const [isDoctorNewRadModalOpen, setIsDoctorNewRadModalOpen] = useState(false);
+  const [newRadPatientName, setNewRadPatientName] = useState(activePatient.fullName);
+  const [newRadCenterName, setNewRadCenterName] = useState('');
+  const [newRadUrl, setNewRadUrl] = useState('');
+  const [newRadStudyType, setNewRadStudyType] = useState('CBCT سه بعدی فک و صورت');
+  const [newRadAccessCode, setNewRadAccessCode] = useState('');
+  const [newRadNotes, setNewRadNotes] = useState('');
+
+  // Keep synced with store
+  React.useEffect(() => {
+    const clinicId = currentClinic?.id || 'main_clinic';
+    const store = loadClinicData(clinicId);
+    if (store.radiologyLinks && store.radiologyLinks.length > 0) {
+      setRadiologyLinksList(store.radiologyLinks);
+    }
+  }, [currentClinic?.id]);
+
+  const handleCopyRadiologyLink = (link: RadiologyImagingLink) => {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(link.url);
+    }
+    setCopiedRadiologyId(link.id);
+    setTimeout(() => {
+      setCopiedRadiologyId(null);
+    }, 3000);
+  };
+
+  const handleDoctorAddRadiologyLink = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newRadUrl || !newRadCenterName) return;
+
+    const clinicId = currentClinic?.id || 'main_clinic';
+    const todayFa = new Date().toLocaleDateString('fa-IR');
+    const timeFa = new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+
+    const newLink: RadiologyImagingLink = {
+      id: `rad-link-${Date.now()}`,
+      patientId: activePatient.id,
+      patientName: newRadPatientName || activePatient.fullName,
+      patientPhone: activePatient.phone,
+      patientNationalId: activePatient.nationalId,
+      centerName: newRadCenterName,
+      url: newRadUrl.trim(),
+      studyType: newRadStudyType,
+      accessCode: newRadAccessCode.trim() || undefined,
+      description: newRadNotes.trim() || undefined,
+      createdAt: `${todayFa} - ${timeFa}`,
+    };
+
+    addRadiologyLinkToStore(clinicId, newLink);
+    setRadiologyLinksList((prev) => [newLink, ...prev]);
+    setIsDoctorNewRadModalOpen(false);
+    setNewRadCenterName('');
+    setNewRadUrl('');
+    setNewRadAccessCode('');
+    setNewRadNotes('');
+    alert(`لینک سامانه تصویربرداری ${newRadCenterName} برای بیمار ${newLink.patientName} با موفقیت ثبت شد.`);
+  };
+
   // Step 2: Voice Dictation & Auto-AI Proposal Generation upon completion
   const handleToggleRecording = () => {
     if (isRecording) {
@@ -853,24 +932,75 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
 
   // Sidebar Menu Items
   const pendingClinicalCount = combinedQaList.filter((q) => q.status === 'pending').length;
+
+  // Multi-Doctor & Manager-Determined Commission Detection
+  const dentistUsers = React.useMemo(() => {
+    return (users || []).filter((u) => u.role === 'dentist');
+  }, [users]);
+
+  const hasMultipleDoctors = dentistUsers.length > 1;
+
+  const hasManager = React.useMemo(() => {
+    return (
+      (users || []).some((u) => u.role === 'manager') ||
+      currentClinic?.activeRoles?.includes('manager') ||
+      currentClinic?.ownerRole === 'manager'
+    );
+  }, [users, currentClinic]);
+
+  // Find the current doctor user profile
+  const currentDoctorUser = React.useMemo(() => {
+    if (!users || users.length === 0) return null;
+    return (
+      users.find(
+        (u) =>
+          u.role === 'dentist' &&
+          (u.name === currentUserName ||
+            (currentUserName && u.name.includes(currentUserName)) ||
+            (currentUserName && currentUserName.includes(u.name.split(' ')[0])))
+      ) ||
+      users.find((u) => u.role === 'dentist') ||
+      null
+    );
+  }, [users, currentUserName]);
+
+  // Manager determined commission rate
+  const managerDeterminedRate = currentDoctorUser?.commissionRate;
+  const hasManagerSetRate = typeof managerDeterminedRate === 'number' && managerDeterminedRate > 0;
+
+  // Condition: Clinic has multiple doctors, has a manager, and manager has set a revenue share percentage
+  const isMultiDoctorClinicWithCommission = hasMultipleDoctors && hasManager && hasManagerSetRate;
+  const effectiveCommissionRate = hasManagerSetRate ? managerDeterminedRate : dentistCommissionRate;
+
   const menuItems = [
-    { id: 'clinical_workbench', label: 'میز کار بالینی (۷ مرحله)', icon: Stethoscope, badge: 'مرحله ۱۲.۲' },
-    { id: 'patient_records', label: 'پرونده بیماران', icon: FolderOpen, badge: 'UDR' },
-    { id: 'my_schedule', label: 'برنامه زمانی من', icon: Calendar, badge: 'تقویم' },
-    { id: 'lab_section', label: 'بخش لابراتوار', icon: FlaskConical, badge: 'سفارشات' },
+    { id: 'clinical_workbench' as DentistNavTab, label: 'میز کار بالینی (۷ مرحله)', icon: Stethoscope, badge: 'مرحله ۱۲.۲' },
+    { id: 'patient_records' as DentistNavTab, label: 'پرونده بیماران', icon: FolderOpen, badge: 'UDR' },
+    { id: 'my_schedule' as DentistNavTab, label: 'برنامه زمانی من', icon: Calendar, badge: 'تقویم' },
+    { id: 'radiology_pacs_links' as DentistNavTab, label: 'لینک‌های تصویربرداری و PACS', icon: ImageIcon, badge: 'رادیولوژی' },
+    { id: 'lab_section' as DentistNavTab, label: 'بخش لابراتوار', icon: FlaskConical, badge: 'سفارشات' },
     {
-      id: 'patient_qa',
+      id: 'patient_qa' as DentistNavTab,
       label: 'پرسش‌های بالینی بیماران',
       icon: HelpCircle,
       badge: pendingClinicalCount > 0 ? `${pendingClinicalCount} نیاز به پاسخ` : 'مشاوره',
     },
+    ...(isMultiDoctorClinicWithCommission
+      ? [
+          {
+            id: 'doctor_finances' as DentistNavTab,
+            label: 'گزارش مالی و کارکرد پزشک',
+            icon: DollarSign,
+            badge: `${effectiveCommissionRate}٪ سهم پزشک`,
+          },
+        ]
+      : []),
     ...(isOwner
-      ? [{ id: 'owner_settings', label: 'تنظیمات مالک کلینیک', icon: Crown, badge: 'Owner' }]
+      ? [{ id: 'owner_settings' as DentistNavTab, label: 'تنظیمات مالک کلینیک', icon: Crown, badge: 'Owner' }]
       : []),
   ];
 
   // Calculate Cash Splits for Contracted Dentist
-  const dentistShareAmount = Math.round((treatmentCostTotal * dentistCommissionRate) / 100);
+  const dentistShareAmount = Math.round((treatmentCostTotal * effectiveCommissionRate) / 100);
   const centerShareAmount = treatmentCostTotal - dentistShareAmount;
 
   // Step metadata for sequential flow
@@ -880,7 +1010,13 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
     { key: 3, title: '۳. اودنتوگرام و مشاوره AI', subtitle: 'ثبت ۶ سطح دندان و چت با Copilot' },
     { key: 4, title: '۴. رادیوگرافی و تصویربرداری', subtitle: 'Web-PACS، علامت‌گذاری هوشمند و ارجاع' },
     { key: 5, title: '۵. نسخه و زمان مراجعه بعدی', subtitle: 'تنظیم نسخه دارویی و ارسال پیگیری به منشی' },
-    { key: 6, title: '۶. بازبینی پرونده و مالی', subtitle: 'بررسی کل و سهم نقدی دندان‌پزشک' },
+    {
+      key: 6,
+      title: isMultiDoctorClinicWithCommission ? '۶. بازبینی پرونده بالینی' : '۶. بازبینی پرونده و مالی',
+      subtitle: isMultiDoctorClinicWithCommission
+        ? 'بررسی طرح درمان و نسخه مصوب'
+        : 'بررسی کل و سهم نقدی دندان‌پزشک',
+    },
     { key: 7, title: '۷. شرح بیمه و ارسال به منشی', subtitle: 'تأیید نهایی و ارسال کامل پرونده به منشی' },
   ];
 
@@ -1941,24 +2077,38 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
                     onClick={() => setWorkbenchStep(6)}
                     className="flex items-center gap-2 px-5 py-2.5 bg-[#005581] hover:bg-[#004266] text-white font-bold text-xs rounded-xl shadow cursor-pointer"
                   >
-                    <span>ادامه به مرحله ۶: بازبینی پرونده و محاسبه مالی</span>
+                    <span>
+                      {isMultiDoctorClinicWithCommission
+                        ? 'ادامه به مرحله ۶: بازبینی پرونده بالینی'
+                        : 'ادامه به مرحله ۶: بازبینی پرونده و محاسبه مالی'}
+                    </span>
                     <ArrowLeft className="w-4 h-4 text-[#ffd200]" />
                   </button>
                 </div>
               </div>
             )}
 
-            {/* STEP 6: بازبینی پرونده و محاسبه سهم نقدی */}
+            {/* STEP 6: بازبینی پرونده و طرح درمان */}
             {workbenchStep === 6 && (
               <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-5">
                 <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
                   <div>
                     <h3 className="font-bold text-slate-900 dark:text-slate-100 text-base flex items-center gap-2">
-                      <DollarSign className="w-5 h-5 text-[#005581]" />
-                      <span>مرحله ۶: بازبینی پرونده بالینی و سهم نقدی دندان‌پزشک</span>
+                      {isMultiDoctorClinicWithCommission ? (
+                        <FileText className="w-5 h-5 text-[#005581]" />
+                      ) : (
+                        <DollarSign className="w-5 h-5 text-[#005581]" />
+                      )}
+                      <span>
+                        {isMultiDoctorClinicWithCommission
+                          ? 'مرحله ۶: بازبینی نهایی پرونده بالینی و طرح درمان'
+                          : 'مرحله ۶: بازبینی پرونده بالینی و سهم نقدی دندان‌پزشک'}
+                      </span>
                     </h3>
                     <p className="text-xs text-slate-500">
-                      محاسبه تفکیکی سهم مرکز / دندان‌پزشک بر اساس درصد تعیین‌شده مدیر کلینیک
+                      {isMultiDoctorClinicWithCommission
+                        ? 'بررسی جامع نهایی طرح درمان، شرح دیکته صوتی پزشک و اقدامات ثبت‌شده اودنتوگرام'
+                        : 'محاسبه تفکیکی سهم مرکز / دندان‌پزشک بر اساس درصد تعیین‌شده مدیر کلینیک'}
                     </p>
                   </div>
                   <span className="px-3 py-1 bg-[#005581] text-white font-bold text-xs rounded-lg">گام ۶ از ۷</span>
@@ -1972,7 +2122,9 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
                       <span>خلاصه پرونده درمانی و طرح درمان مصوب:</span>
                     </h4>
                     <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-[#005581]/10 text-[#005581] dark:text-[#72cdf4] font-bold">
-                      مرحله ۶: بازبینی نهایی بالینی و مالی
+                      {isMultiDoctorClinicWithCommission
+                        ? 'مرحله ۶: بازبینی نهایی پرونده بالینی'
+                        : 'مرحله ۶: بازبینی نهایی بالینی و مالی'}
                     </span>
                   </div>
 
@@ -2066,45 +2218,47 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
                   </div>
                 </div>
 
-                {/* Contracted Dentist Cash Breakdown */}
-                <div className="p-4 rounded-xl bg-[#005581]/5 border border-[#005581]/30 space-y-3 text-xs">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-bold text-[#005581] dark:text-[#72cdf4] flex items-center gap-2 text-sm">
-                      <DollarSign className="w-4 h-4 text-[#ffd200]" />
-                      <span>محاسبه سهم نقدی دندان‌پزشک قراردادی:</span>
-                    </h4>
-                    <span className="text-xs px-2.5 py-1 rounded bg-[#005581] text-white font-mono font-bold">
-                      درصد مدیر: {dentistCommissionRate}٪ پزشک / {100 - dentistCommissionRate}٪ کلینیک
-                    </span>
+                {/* Contracted Dentist Cash Breakdown - ONLY when NOT multi-doctor with manager commission */}
+                {!isMultiDoctorClinicWithCommission && (
+                  <div className="p-4 rounded-xl bg-[#005581]/5 border border-[#005581]/30 space-y-3 text-xs">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-bold text-[#005581] dark:text-[#72cdf4] flex items-center gap-2 text-sm">
+                        <DollarSign className="w-4 h-4 text-[#ffd200]" />
+                        <span>محاسبه سهم نقدی دندان‌پزشک قراردادی:</span>
+                      </h4>
+                      <span className="text-xs px-2.5 py-1 rounded bg-[#005581] text-white font-mono font-bold">
+                        درصد مدیر: {dentistCommissionRate}٪ پزشک / {100 - dentistCommissionRate}٪ کلینیک
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="p-3 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                        <div className="text-slate-500 text-[11px]">مبلغ کل خدمات درمان:</div>
+                        <div className="text-base font-black text-slate-900 dark:text-slate-100 mt-0.5">
+                          {treatmentCostTotal.toLocaleString()} تومان
+                        </div>
+                      </div>
+
+                      <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800">
+                        <div className="text-emerald-700 dark:text-emerald-400 text-[11px] font-bold">
+                          سهم نقدی دندان‌پزشک ({dentistCommissionRate}٪):
+                        </div>
+                        <div className="text-base font-black text-emerald-800 dark:text-emerald-300 mt-0.5">
+                          {dentistShareAmount.toLocaleString()} تومان
+                        </div>
+                      </div>
+
+                      <div className="p-3 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700">
+                        <div className="text-slate-600 dark:text-slate-400 text-[11px] font-bold">
+                          سهم مرکز / کلینیک ({100 - dentistCommissionRate}٪):
+                        </div>
+                        <div className="text-base font-black text-slate-800 dark:text-slate-200 mt-0.5">
+                          {centerShareAmount.toLocaleString()} تومان
+                        </div>
+                      </div>
+                    </div>
                   </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="p-3 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-                      <div className="text-slate-500 text-[11px]">مبلغ کل خدمات درمان:</div>
-                      <div className="text-base font-black text-slate-900 dark:text-slate-100 mt-0.5">
-                        {treatmentCostTotal.toLocaleString()} تومان
-                      </div>
-                    </div>
-
-                    <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800">
-                      <div className="text-emerald-700 dark:text-emerald-400 text-[11px] font-bold">
-                        سهم نقدی دندان‌پزشک ({dentistCommissionRate}٪):
-                      </div>
-                      <div className="text-base font-black text-emerald-800 dark:text-emerald-300 mt-0.5">
-                        {dentistShareAmount.toLocaleString()} تومان
-                      </div>
-                    </div>
-
-                    <div className="p-3 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700">
-                      <div className="text-slate-600 dark:text-slate-400 text-[11px] font-bold">
-                        سهم مرکز / کلینیک ({100 - dentistCommissionRate}٪):
-                      </div>
-                      <div className="text-base font-black text-slate-800 dark:text-slate-200 mt-0.5">
-                        {centerShareAmount.toLocaleString()} تومان
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                )}
 
                 {/* Bottom Navigation */}
                 <div className="flex justify-between items-center pt-3 border-t border-slate-100 dark:border-slate-800">
@@ -2190,7 +2344,11 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
                     </div>
                     <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400 font-bold">
                       <CheckCircle2 className="w-4 h-4" />
-                      <span>۴. سهم نقدی دندان‌پزشک ({dentistShareAmount.toLocaleString()} تومان) محاسبه گردید.</span>
+                      <span>
+                        {isMultiDoctorClinicWithCommission
+                          ? `۴. سهم پزشک با نرخ ${effectiveCommissionRate}٪ مصوب مدیریت در بخش مالی محاسبه و ثبت می‌گردد.`
+                          : `۴. سهم نقدی دندان‌پزشک (${dentistShareAmount.toLocaleString()} تومان) محاسبه گردید.`}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -2242,7 +2400,11 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
                     className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl hover:bg-slate-200 cursor-pointer"
                   >
                     <ArrowRight className="w-4 h-4" />
-                    <span>مرحله قبلی (بازبینی پرونده و مالی)</span>
+                    <span>
+                      {isMultiDoctorClinicWithCommission
+                        ? 'مرحله قبلی (بازبینی پرونده بالینی)'
+                        : 'مرحله قبلی (بازبینی پرونده و مالی)'}
+                    </span>
                   </button>
                 </div>
               </div>
@@ -2273,6 +2435,198 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
               setWorkbenchStep(1);
             }}
           />
+        )}
+
+        {/* 4.5 Radiology PACS & Online Imaging Links View (کارتابل لینک‌های تصویربرداری آنلاین و رادیولوژی) */}
+        {activeNavTab === 'radiology_pacs_links' && (
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-5">
+            <div className="border-b border-slate-100 dark:border-slate-800 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="font-bold text-[#005581] dark:text-[#72cdf4] text-base flex items-center gap-2">
+                  <ImageIcon className="w-5 h-5 text-[#005581]" />
+                  <span>کارتابل لینک‌های تصویربرداری و رادیولوژی آنلاین (PACS Links)</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  مشاهده و کپی کلیپ‌بورد لینک‌های ارسال‌شده توسط بیمار یا مراکز تصویربرداری با جستجوی نام بیمار
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setNewRadPatientName(activePatient.fullName);
+                  setIsDoctorNewRadModalOpen(true);
+                }}
+                className="px-4 py-2.5 rounded-xl bg-[#005581] hover:bg-[#004266] text-white font-bold text-xs shadow transition cursor-pointer flex items-center gap-2 shrink-0"
+              >
+                <Plus className="w-4 h-4 text-[#ffd200]" />
+                <span>ثبت لینک رادیولوژی جدید</span>
+              </button>
+            </div>
+
+            {/* Search Bar and Filters */}
+            <div className="flex flex-col sm:flex-row items-center gap-3">
+              <div className="relative flex-1 w-full">
+                <Search className="w-4 h-4 absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={radiologySearchQuery}
+                  onChange={(e) => setRadiologySearchQuery(e.target.value)}
+                  placeholder="جستجوی نام بیمار، کد ملی، شماره پرونده، یا نام مرکز رادیولوژی..."
+                  className="w-full pl-3 pr-10 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#005581]"
+                />
+                {radiologySearchQuery && (
+                  <button
+                    onClick={() => setRadiologySearchQuery('')}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1.5 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
+                {['all', 'OPG', 'CBCT', 'RVG', 'بایت‌وینگ'].map((type) => (
+                  <button
+                    key={type}
+                    onClick={() => setRadiologyTypeFilter(type)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
+                      radiologyTypeFilter === type
+                        ? 'bg-[#005581] text-white shadow-xs'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'
+                    }`}
+                  >
+                    {type === 'all' ? 'همه گرافی‌ها' : type}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Links List / Cards */}
+            <div className="space-y-3">
+              {(() => {
+                const filtered = radiologyLinksList.filter((item) => {
+                  const matchesSearch =
+                    !radiologySearchQuery ||
+                    (item.patientName && item.patientName.includes(radiologySearchQuery)) ||
+                    (item.patientNationalId && item.patientNationalId.includes(radiologySearchQuery)) ||
+                    (item.patientPhone && item.patientPhone.includes(radiologySearchQuery)) ||
+                    (item.centerName && item.centerName.includes(radiologySearchQuery)) ||
+                    (item.accessCode && item.accessCode.includes(radiologySearchQuery));
+
+                  const matchesType =
+                    radiologyTypeFilter === 'all' ||
+                    (item.studyType && item.studyType.includes(radiologyTypeFilter));
+
+                  return matchesSearch && matchesType;
+                });
+
+                if (filtered.length === 0) {
+                  return (
+                    <div className="p-8 text-center bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 text-slate-500 text-xs space-y-2">
+                      <ImageIcon className="w-8 h-8 mx-auto text-slate-400" />
+                      <p className="font-bold text-slate-700 dark:text-slate-300">
+                        هیچ لینک تصویربرداری با این مشخصات یافت نشد.
+                      </p>
+                      <p className="text-[11px] text-slate-400">
+                        بیماران می‌توانند از طریق پورتال بیمار لینک‌های PACS را ثبت کنند یا می‌توانید از دکمه بالا برای ثبت دستی اقدام کنید.
+                      </p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="grid grid-cols-1 gap-3.5">
+                    {filtered.map((item) => (
+                      <div
+                        key={item.id}
+                        className="p-4 rounded-2xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/60 dark:bg-slate-800/30 hover:border-blue-300 transition space-y-3 text-xs"
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-700 pb-2.5">
+                          <div className="flex items-center gap-2.5 flex-wrap">
+                            <span className="font-extrabold text-sm text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                              <UserCheck className="w-4 h-4 text-[#005581]" />
+                              <span>نام بیمار: {item.patientName}</span>
+                            </span>
+                            {item.patientNationalId && (
+                              <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                                کدملی: {item.patientNationalId}
+                              </span>
+                            )}
+                            <span className="px-2.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-900 dark:text-blue-200 font-bold text-[11px]">
+                              {item.studyType}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2 text-slate-500 text-[11px]">
+                            <Clock className="w-3.5 h-3.5" />
+                            <span>تاریخ ثبت: <strong className="font-mono text-slate-700 dark:text-slate-300">{item.createdAt || item.registeredAt}</strong></span>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-slate-600 dark:text-slate-400">
+                          <div>
+                            <strong>مرکز تصویربرداری:</strong> {item.centerName || item.imagingCenterName || 'مرکز تخصصی رادیولوژی فک و صورت'}
+                          </div>
+                          {item.accessCode && (
+                            <div>
+                              <strong>شناسه / کد دسترسی:</strong> <span className="font-mono font-bold text-slate-900 dark:text-slate-100">{item.accessCode}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {item.description && (
+                          <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px] text-slate-700 dark:text-slate-300">
+                            <strong>یادداشت و شرح تشخیصی:</strong> {item.description}
+                          </div>
+                        )}
+
+                        {/* URL Display Box and Actions */}
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700">
+                          <div className="font-mono text-[11px] text-slate-700 dark:text-slate-300 truncate max-w-full sm:max-w-md dir-ltr text-left">
+                            {item.url}
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              onClick={() => handleCopyRadiologyLink(item)}
+                              className={`px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition cursor-pointer shadow-xs ${
+                                copiedRadiologyId === item.id
+                                  ? 'bg-emerald-600 text-white'
+                                  : 'bg-[#005581] hover:bg-[#004266] text-white'
+                              }`}
+                            >
+                              {copiedRadiologyId === item.id ? (
+                                <>
+                                  <CheckCheck className="w-3.5 h-3.5 text-[#ffd200]" />
+                                  <span>لینک کپی شد!</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3.5 h-3.5 text-[#ffd200]" />
+                                  <span>کپی لینک در کلیپ‌بورد</span>
+                                </>
+                              )}
+                            </button>
+
+                            <a
+                              href={item.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-3 py-1.5 rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 text-slate-800 dark:text-slate-200 font-bold text-xs flex items-center gap-1.5 transition"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                              <span>مشاهده تصویر</span>
+                            </a>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
         )}
 
         {/* 5. Lab Section (بخش لابراتوار) */}
@@ -2554,6 +2908,18 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
           </div>
         )}
 
+        {/* 6. Doctor Financial View (بخش مالی پزشک - سهم درمان و کارکرد) */}
+        {activeNavTab === 'doctor_finances' && (
+          <DoctorFinancialView
+            invoices={invoices}
+            appointments={appointmentsList}
+            patients={patientsList}
+            doctorName={currentDoctorUser?.name || currentUserName || 'دکتر کاویانی'}
+            commissionRate={effectiveCommissionRate}
+            clinicName={currentClinic?.name || 'کلینیک دنتورا'}
+          />
+        )}
+
         {/* 7. OWNER SETTINGS (تنظیمات ویژه مالک) */}
         {activeNavTab === 'owner_settings' && (
           <div className="space-y-4">
@@ -2814,6 +3180,141 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
                 >
                   <FlaskConical className="w-4 h-4" />
                   <span>ثبت سفارش و ارسال به لابراتوار</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* DOCTOR REGISTER NEW RADIOLOGY / PACS LINK MODAL */}
+      {isDoctorNewRadModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full border border-slate-200 dark:border-slate-800 shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-[#005581] text-white flex items-center justify-center font-black">
+                  <ImageIcon className="w-5 h-5 text-[#ffd200]" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-900 dark:text-slate-100">
+                    ثبت لینک جدید تصویربرداری و رادیولوژی
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    ثبت مستقیم لینک PACS رادیولوژی در پرونده بیمار
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsDoctorNewRadModalOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleDoctorAddRadiologyLink} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  نام بیمار: <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newRadPatientName}
+                  onChange={(e) => setNewRadPatientName(e.target.value)}
+                  placeholder="نام و نام خانوادگی بیمار"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  نام مرکز تصویربرداری / رادیولوژی: <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newRadCenterName}
+                  onChange={(e) => setNewRadCenterName(e.target.value)}
+                  placeholder="مثلاً: رادیولوژی فک و صورت دکتر پرتو"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    نوع تصویربرداری:
+                  </label>
+                  <select
+                    value={newRadStudyType}
+                    onChange={(e) => setNewRadStudyType(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold"
+                  >
+                    <option value="CBCT سه بعدی فک و صورت">CBCT سه بعدی فک و صورت</option>
+                    <option value="OPG پانورامیک دیجیتال">OPG پانورامیک دیجیتال</option>
+                    <option value="تک‌دندان RVG / پری‌اپیکال">تک‌دندان RVG / پری‌اپیکال</option>
+                    <option value="بایت‌وینگ (Bitewing)">بایت‌وینگ (Bitewing)</option>
+                    <option value="سفالومتری لترال">سفالومتری لترال</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    شناسه / کد دسترسی یا شماره پذیرش:
+                  </label>
+                  <input
+                    type="text"
+                    value={newRadAccessCode}
+                    onChange={(e) => setNewRadAccessCode(e.target.value)}
+                    placeholder="مثلاً: PRT-9824"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-mono font-bold"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  آدرس اینترنتی یا لینک دسترسی به سامانه PACS: <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="url"
+                  required
+                  value={newRadUrl}
+                  onChange={(e) => setNewRadUrl(e.target.value)}
+                  placeholder="https://pacs.example-radiology.ir/viewer?studyId=..."
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-mono dir-ltr text-left"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  شرح و یادداشت تشخیصی:
+                </label>
+                <textarea
+                  rows={2}
+                  value={newRadNotes}
+                  onChange={(e) => setNewRadNotes(e.target.value)}
+                  placeholder="بررسی ضخامت استخوان کرستال، موقعیت کانال مندیبولار..."
+                  className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setIsDoctorNewRadModalOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold"
+                >
+                  انصراف
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2 rounded-xl bg-[#005581] hover:bg-[#004266] text-[#ffd200] font-black shadow-md flex items-center gap-2 cursor-pointer"
+                >
+                  <ImageIcon className="w-4 h-4" />
+                  <span>ثبت و ذخیره لینک</span>
                 </button>
               </div>
             </form>

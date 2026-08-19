@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { toPersianDigits } from '../../utils/persianDigits';
 import { PersianBirthDatePicker } from '../common/PersianBirthDatePicker';
 import {
@@ -16,6 +16,9 @@ import {
   ArrowRight,
   UserPlus,
   Lock,
+  Scissors,
+  Stethoscope,
+  Sparkles,
 } from 'lucide-react';
 import { SimulatedPaymentGatewayModal } from './SimulatedPaymentGatewayModal';
 import { UserProfile, SavedBankCard, ClinicRegistration } from '../../types';
@@ -23,6 +26,11 @@ import {
   SUGGESTED_BASE_INSURANCES,
   SUGGESTED_SUPPLEMENTARY_INSURANCES,
 } from '../../data/insuranceConstants';
+import {
+  getAppointmentDuration,
+  generateDynamicSlots,
+  checkIsSurgicalReason,
+} from '../../utils/appointmentUtils';
 
 interface OnlineBookingModalProps {
   isOpen: boolean;
@@ -133,6 +141,35 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
   const [dentistName, setDentistName] = useState(availableDentists[0]?.name || 'دکتر کاویانی');
   const [visitReason, setVisitReason] = useState('');
 
+  // Dynamic Duration and Category Information Derived from Reason for Visit
+  const durationInfo = useMemo(() => {
+    return getAppointmentDuration(visitReason);
+  }, [visitReason]);
+
+  // Dynamically Generated Slots for Morning & Evening based on Duration
+  const dynamicMorningSlots = useMemo(() => {
+    return generateDynamicSlots(durationInfo.durationMinutes, 'morning');
+  }, [durationInfo.durationMinutes]);
+
+  const dynamicEveningSlots = useMemo(() => {
+    return generateDynamicSlots(durationInfo.durationMinutes, 'evening');
+  }, [durationInfo.durationMinutes]);
+
+  // Photo Calendar Selection State
+  const [selectionType, setSelectionType] = useState<'fastest' | 'custom'>('custom');
+  const [selectedDay, setSelectedDay] = useState('امروز ۲۰ مرداد');
+  const [selectedShift, setSelectedShift] = useState<'morning' | 'evening'>('morning');
+  const [selectedSlot, setSelectedSlot] = useState(dynamicMorningSlots[0]?.label || '۰۸:۳۰ تا ۰۹:۰۰');
+
+  // Keep selected slot valid if duration changes
+  useEffect(() => {
+    const currentSlots = selectedShift === 'morning' ? dynamicMorningSlots : dynamicEveningSlots;
+    const exists = currentSlots.some((s) => s.label === selectedSlot);
+    if (!exists && currentSlots.length > 0) {
+      setSelectedSlot(currentSlots[0].label);
+    }
+  }, [dynamicMorningSlots, dynamicEveningSlots, selectedShift, selectedSlot]);
+
   // Keep dentist selection synced if list updates
   useEffect(() => {
     if (availableDentists.length > 0 && !availableDentists.some((d) => d.id === dentistId)) {
@@ -140,12 +177,6 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
       setDentistName(availableDentists[0].name);
     }
   }, [dentistId, availableDentists]);
-
-  // Photo Calendar Selection State
-  const [selectionType, setSelectionType] = useState<'fastest' | 'custom'>('custom');
-  const [selectedDay, setSelectedDay] = useState('امروز ۲۰ مرداد');
-  const [selectedShift, setSelectedShift] = useState<'morning' | 'evening'>('morning');
-  const [selectedSlot, setSelectedSlot] = useState('۱۰:۳۰');
 
   // 15-Minute Slot Lock Timer
   const [lockTimer, setLockTimer] = useState(900); // 15 mins = 900s
@@ -440,20 +471,65 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
                       required
                       value={visitReason}
                       onChange={(e) => setVisitReason(e.target.value)}
-                      placeholder="مثلاً معاینه دوره‌ای، عصب‌کشی دندان ۶، جرم‌گیری، پرکردن یا روکش"
+                      placeholder="مثلاً معاینه دوره‌ای، عصب‌کشی دندان ۶، جرم‌گیری، پرکردن، جراحی دندان عقل یا عمل ایمپلنت"
                       className="w-full px-4 py-3 rounded-2xl border-2 border-slate-200 focus:border-[#005581] text-xs font-bold outline-none bg-slate-50 focus:bg-white transition"
                     />
 
+                    {/* Dynamic Duration Live Calculation Feedback Banner */}
+                    {visitReason.trim() && (
+                      <div
+                        className={`mt-2.5 p-3 rounded-2xl border transition text-xs flex items-start gap-2.5 ${
+                          durationInfo.isSurgical
+                            ? 'bg-rose-50/90 border-rose-200 text-rose-900 dark:bg-rose-950/30 dark:text-rose-200'
+                            : 'bg-blue-50/90 border-blue-200 text-blue-900 dark:bg-blue-950/30 dark:text-blue-200'
+                        }`}
+                      >
+                        <div className="mt-0.5 shrink-0">
+                          {durationInfo.isSurgical ? (
+                            <div className="w-7 h-7 rounded-xl bg-rose-200 text-rose-800 flex items-center justify-center font-black shadow-xs">
+                              <Scissors className="w-4 h-4 text-rose-700" />
+                            </div>
+                          ) : (
+                            <div className="w-7 h-7 rounded-xl bg-blue-200 text-blue-800 flex items-center justify-center font-black shadow-xs">
+                              <Clock className="w-4 h-4 text-blue-700" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="space-y-1 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-slate-700 dark:text-slate-300">بازه زمانی برآوردشده:</span>
+                              <strong className="font-black text-sm text-[#005581] dark:text-[#72cdf4]">
+                                {toPersianDigits(durationInfo.durationLabel)}
+                              </strong>
+                            </div>
+                            <span
+                              className={`text-[10px] px-2 py-0.5 rounded-md font-bold ${
+                                durationInfo.isSurgical
+                                  ? 'bg-indigo-100 text-indigo-900 font-black border border-indigo-200'
+                                  : 'bg-blue-200 text-blue-900 font-black'
+                              }`}
+                            >
+                              {durationInfo.categoryTitle}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                            {durationInfo.explanation}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Quick reason suggestions chips */}
-                    <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                    <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
                       <span className="text-[11px] text-slate-500 font-bold">پیشنهادهای متداول:</span>
                       {[
                         'عصب‌کشی و درمان ریشه (RCT)',
                         'ترمیم و پرکردن کامپوزیت',
                         'جرم‌گیری و بروساژ لثه',
-                        'قالب‌گیری و روکش زیرکونیا',
-                        'جراحی دندان عقل و کشیدن',
-                        'مشاوره و کاشت ایمپلنت',
+                        'قالب‌گیری و روکش دندان',
+                        'جراحی دندان عقل نهفته',
+                        'جراحی و کاشت ایمپلنت',
                         'معاینه کلی و چکاپ دوره‌ای',
                       ].map((item) => (
                         <button
@@ -462,7 +538,7 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
                           onClick={() => setVisitReason(item)}
                           className={`text-[11px] px-2.5 py-1 rounded-lg border font-bold transition cursor-pointer ${
                             visitReason === item
-                              ? 'bg-[#005581] text-white border-[#005581]'
+                              ? 'bg-[#005581] text-white border-[#005581] shadow-xs'
                               : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
                           }`}
                         >
@@ -517,15 +593,55 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
             {step === 'calendar_select' && (
               <div className="space-y-4 text-xs dir-rtl">
                 <div className="text-center font-black text-slate-800 text-sm">
-                  انتخاب زمان نوبت برای {dentistName}
+                  انتخاب بازه زمانی نوبت برای {dentistName}
                 </div>
 
-                {/* Top Option 1: Fastest Available Slot */}
+                {/* Reason & Dynamic Duration Notice Banner */}
+                <div
+                  className={`p-3.5 rounded-2xl border text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
+                    durationInfo.isSurgical
+                      ? 'bg-indigo-50/90 border-indigo-200 text-indigo-950'
+                      : 'bg-blue-50/90 border-blue-200 text-blue-900'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div
+                      className={`w-8 h-8 rounded-xl flex items-center justify-center font-black shadow-xs shrink-0 ${
+                        durationInfo.isSurgical ? 'bg-indigo-200 text-indigo-800' : 'bg-[#005581] text-[#ffd200]'
+                      }`}
+                    >
+                      {durationInfo.isSurgical ? <Scissors className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-700">بازه زمانی هر نوبت:</span>
+                        <strong className="font-black text-sm text-[#005581]">
+                          {toPersianDigits(durationInfo.durationLabel)}
+                        </strong>
+                      </div>
+                      <span className="text-[11px] text-slate-600 block mt-0.5">
+                        بر اساس علت مراجعه: <strong className="text-slate-900">{visitReason}</strong>
+                      </span>
+                    </div>
+                  </div>
+
+                  <span
+                    className={`text-[10px] px-2.5 py-1 rounded-xl font-black shrink-0 ${
+                      durationInfo.isSurgical
+                        ? 'bg-indigo-100 text-indigo-900 border border-indigo-300'
+                        : 'bg-[#005581]/15 text-[#005581] border border-[#005581]/30'
+                    }`}
+                  >
+                    {durationInfo.isSurgical ? 'فیلتر هوشمند: بازه‌های جراحی/عمل' : 'فیلتر هوشمند: کارهای عمومی'}
+                  </span>
+                </div>
+
+                {/* Top Option 1: Fastest Available Slot with Dynamic Range */}
                 <div
                   onClick={() => {
                     setSelectionType('fastest');
                     setSelectedDay('امروز ۲۰ مرداد');
-                    setSelectedSlot('۱۰:۳۰');
+                    setSelectedSlot(dynamicMorningSlots[0]?.label || '۰۸:۳۰ تا ۰۹:۰۰');
                   }}
                   className={`p-4 rounded-2xl border-2 cursor-pointer transition flex items-center justify-between ${
                     selectionType === 'fastest'
@@ -534,8 +650,10 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
                   }`}
                 >
                   <div>
-                    <span className="text-slate-500 font-bold block">زودترین زمان نوبت خالی:</span>
-                    <strong className="text-slate-900 font-black text-sm">امروز (سه شنبه) - ساعت ۱۰:۳۰</strong>
+                    <span className="text-slate-500 font-bold block">زودترین بازه زمانی خالی پیشنهادی:</span>
+                    <strong className="text-slate-900 font-black text-sm">
+                      امروز (سه‌شنبه) - بازه {toPersianDigits(dynamicMorningSlots[0]?.label || '۰۸:۳۰ تا ۰۹:۰۰')} ({toPersianDigits(durationInfo.durationLabel)})
+                    </strong>
                   </div>
                   <div
                     className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
@@ -555,7 +673,7 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
                       : 'border-slate-200 hover:border-slate-300'
                   }`}
                 >
-                  <span className="font-black text-slate-800 text-sm">انتخاب زمان دیگر</span>
+                  <span className="font-black text-slate-800 text-sm">انتخاب سایر بازه‌های زمانی خالی</span>
                   <div
                     className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
                       selectionType === 'custom' ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-300'
@@ -568,7 +686,7 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
                 {/* Main Calendar Picker Box (Matching User Image Structure) */}
                 <div className="border-2 border-slate-200 rounded-2xl overflow-hidden flex flex-col md:flex-row min-h-[260px]">
                   
-                  {/* Left Main Area: Morning/Evening Tabs & Time Slots */}
+                  {/* Left Main Area: Morning/Evening Tabs & Dynamic Time Slots */}
                   <div className="flex-1 p-4 space-y-4 bg-white">
                     {/* Shift Tabs (Morning / Evening) */}
                     <div className="flex border-b border-slate-200 text-center font-bold">
@@ -576,43 +694,48 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
                         onClick={() => setSelectedShift('morning')}
                         className={`flex-1 pb-2 border-b-2 transition cursor-pointer ${
                           selectedShift === 'morning'
-                            ? 'border-blue-600 text-blue-600 font-black'
+                            ? 'border-[#005581] text-[#005581] font-black'
                             : 'border-transparent text-slate-400 hover:text-slate-600'
                         }`}
                       >
-                        صبح
+                        شیفت صبح ({toPersianDigits(dynamicMorningSlots.length)} بازه)
                       </button>
                       <button
                         onClick={() => setSelectedShift('evening')}
                         className={`flex-1 pb-2 border-b-2 transition cursor-pointer ${
                           selectedShift === 'evening'
-                            ? 'border-blue-600 text-blue-600 font-black'
+                            ? 'border-[#005581] text-[#005581] font-black'
                             : 'border-transparent text-slate-400 hover:text-slate-600'
                         }`}
                       >
-                        عصر
+                        شیفت عصر ({toPersianDigits(dynamicEveningSlots.length)} بازه)
                       </button>
                     </div>
 
-                    {/* Time Slots Grid */}
-                    <div className="grid grid-cols-3 sm:grid-cols-3 gap-2.5 pt-2">
-                      {(selectedShift === 'morning' ? morningSlots : eveningSlots).map((slot) => {
-                        const isSelected = selectedSlot === slot;
+                    {/* Dynamic Time Slots Grid with Start-End Ranges */}
+                    <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 gap-2.5 pt-2 max-h-64 overflow-y-auto p-1">
+                      {(selectedShift === 'morning' ? dynamicMorningSlots : dynamicEveningSlots).map((slotObj) => {
+                        const isSelected = selectedSlot === slotObj.label;
                         return (
                           <button
-                            key={slot}
+                            key={slotObj.id}
                             type="button"
                             onClick={() => {
-                              setSelectedSlot(slot);
+                              setSelectedSlot(slotObj.label);
                               setSelectionType('custom');
                             }}
-                            className={`py-3 rounded-xl border font-mono font-black text-sm transition cursor-pointer ${
+                            className={`p-3 rounded-xl border transition cursor-pointer flex flex-col items-center justify-center gap-1 ${
                               isSelected
-                                ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-sm ring-2 ring-blue-500/20'
+                                ? 'border-[#005581] bg-[#005581]/10 text-[#005581] shadow-xs ring-2 ring-[#005581]/30 font-black'
                                 : 'border-slate-200 hover:border-slate-400 text-slate-800 bg-slate-50/50'
                             }`}
                           >
-                            {slot}
+                            <span className="font-mono text-xs font-black text-slate-900">
+                              {toPersianDigits(slotObj.label)}
+                            </span>
+                            <span className="text-[10px] text-slate-500 font-bold">
+                              مدت: {toPersianDigits(slotObj.durationLabel)}
+                            </span>
                           </button>
                         );
                       })}
@@ -634,12 +757,12 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
                           }}
                           className={`w-full p-2.5 rounded-xl border text-center transition cursor-pointer ${
                             isSelected
-                              ? 'border-blue-500 bg-white text-blue-700 font-extrabold shadow-sm'
+                              ? 'border-[#005581] bg-white text-[#005581] font-extrabold shadow-sm'
                               : 'border-slate-200 text-slate-700 hover:bg-slate-100'
                           }`}
                         >
                           <span className="block text-xs font-bold">{d.title}</span>
-                          <span className="block text-[11px] font-mono text-slate-500">{d.dateStr}</span>
+                          <span className="block text-[11px] font-mono text-slate-500">{toPersianDigits(d.dateStr)}</span>
                         </button>
                       );
                     })}
@@ -658,10 +781,10 @@ export const OnlineBookingModal: React.FC<OnlineBookingModalProps> = ({
 
                   <button
                     onClick={handleLockSlotAndProceed}
-                    className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black text-xs shadow-md transition cursor-pointer flex items-center gap-2"
+                    className="px-8 py-3 bg-[#005581] hover:bg-[#004266] text-white rounded-xl font-black text-xs shadow-md transition cursor-pointer flex items-center gap-2"
                   >
-                    <span>قفل اسلات و ادامه</span>
-                    <ArrowRight className="w-4 h-4" />
+                    <span>قفل اسلات ({toPersianDigits(selectedSlot)}) و ادامه</span>
+                    <ArrowRight className="w-4 h-4 text-[#ffd200]" />
                   </button>
                 </div>
               </div>

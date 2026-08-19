@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Appointment, Patient } from '../../types';
+import { DoctorSlotCategory } from '../../utils/appointmentUtils';
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -20,6 +21,8 @@ import {
   Check,
   Lock,
   Unlock,
+  Activity,
+  Scissors,
 } from 'lucide-react';
 
 interface DoctorCalendarViewProps {
@@ -54,19 +57,19 @@ export const DoctorCalendarView: React.FC<DoctorCalendarViewProps> = ({
   const currentDay = weekDays[selectedDateIndex];
 
   // Doctor Availability Time Slots state (Keyed by time slot string)
-  // Status: 'available' (آزاد جهت وقت‌دهی منشی) | 'unavailable' (مسدود/مرخصی پزشک)
-  const [slotAvailability, setSlotAvailability] = useState<Record<string, 'available' | 'unavailable'>>({
-    '08:00 - 08:45': 'available',
-    '08:45 - 09:30': 'available',
-    '09:30 - 10:15': 'available',
-    '10:15 - 11:00': 'available',
-    '11:00 - 11:45': 'available',
-    '11:45 - 12:30': 'available',
-    '13:30 - 14:15': 'available',
-    '14:15 - 15:00': 'available',
+  // Category: 'general' (کارهای عمومی و ترمیمی) | 'surgery' (جراحی و عمل) | 'all' (همه موارد) | 'unavailable' (مسدود/مرخصی)
+  const [slotAvailability, setSlotAvailability] = useState<Record<string, DoctorSlotCategory>>({
+    '08:00 - 08:45': 'surgery',
+    '08:45 - 09:30': 'surgery',
+    '09:30 - 10:15': 'surgery',
+    '10:15 - 11:00': 'surgery',
+    '11:00 - 11:45': 'general',
+    '11:45 - 12:30': 'general',
+    '13:30 - 14:15': 'general',
+    '14:15 - 15:00': 'general',
     '15:00 - 15:45': 'unavailable',
-    '15:45 - 16:30': 'available',
-    '16:30 - 17:15': 'available',
+    '15:45 - 16:30': 'all',
+    '16:30 - 17:15': 'all',
     '17:15 - 18:00': 'unavailable',
   });
 
@@ -87,23 +90,36 @@ export const DoctorCalendarView: React.FC<DoctorCalendarViewProps> = ({
     '17:15 - 18:00',
   ];
 
-  const handleToggleSlotAvailability = (slot: string) => {
+  const handleSetSlotCategory = (slot: string, category: DoctorSlotCategory) => {
     setSlotAvailability((prev) => ({
       ...prev,
-      [slot]: prev[slot] === 'available' ? 'unavailable' : 'available',
+      [slot]: category,
     }));
   };
 
-  const handleEnableAllSlots = () => {
-    const updated: Record<string, 'available' | 'unavailable'> = {};
+  const handleSetMorningSurgeryEveningGeneral = () => {
+    const updated: Record<string, DoctorSlotCategory> = {};
     timeGrid.forEach((s) => {
-      if (!s.includes('12:30')) updated[s] = 'available';
+      if (s.includes('12:30')) return;
+      if (s.startsWith('08:') || s.startsWith('09:') || s.startsWith('10:') || s.startsWith('11:')) {
+        updated[s] = 'surgery';
+      } else {
+        updated[s] = 'general';
+      }
+    });
+    setSlotAvailability(updated);
+  };
+
+  const handleEnableAllSlots = () => {
+    const updated: Record<string, DoctorSlotCategory> = {};
+    timeGrid.forEach((s) => {
+      if (!s.includes('12:30')) updated[s] = 'all';
     });
     setSlotAvailability(updated);
   };
 
   const handleDisableAllSlots = () => {
-    const updated: Record<string, 'available' | 'unavailable'> = {};
+    const updated: Record<string, DoctorSlotCategory> = {};
     timeGrid.forEach((s) => {
       if (!s.includes('12:30')) updated[s] = 'unavailable';
     });
@@ -133,7 +149,10 @@ export const DoctorCalendarView: React.FC<DoctorCalendarViewProps> = ({
   });
 
   const countTotalAppointments = appointments.length;
-  const countAvailableSlots = Object.values(slotAvailability).filter((v) => v === 'available').length;
+  const countSurgerySlots = Object.values(slotAvailability).filter((v) => v === 'surgery').length;
+  const countGeneralSlots = Object.values(slotAvailability).filter((v) => v === 'general').length;
+  const countAllSlots = Object.values(slotAvailability).filter((v) => v === 'all').length;
+  const countAvailableSlots = countSurgerySlots + countGeneralSlots + countAllSlots;
   const countBlockedSlots = Object.values(slotAvailability).filter((v) => v === 'unavailable').length;
 
   const getStatusBadge = (status: Appointment['status'], connectedToUnit?: boolean) => {
@@ -180,17 +199,9 @@ export const DoctorCalendarView: React.FC<DoctorCalendarViewProps> = ({
               <CalendarIcon className="w-5 h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base font-black text-slate-900 dark:text-slate-100">
-                  مدیریت تایم‌های کاری و زمان‌های حضور دندان‌پزشک
-                </h2>
-                <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-[#005581] text-[#ffd200] font-bold">
-                  همگام‌سازی آنلاین با پورتال منشی
-                </span>
-              </div>
-              <p className="text-xs text-slate-500">
-                در این بخش زمان‌های آزاد جهت نوبت‌دهی منشی را تعیین یا ویرایش کنید (امکان رزرو نوبت فقط در تایم‌های آزاد سبز رنگ توسط منشی وجود دارد).
-              </p>
+              <h2 className="text-base font-black text-slate-900 dark:text-slate-100">
+                مدیریت تایم‌های کاری و زمان‌های حضور دندان‌پزشک
+              </h2>
             </div>
           </div>
 
@@ -264,30 +275,44 @@ export const DoctorCalendarView: React.FC<DoctorCalendarViewProps> = ({
         {/* Summary Metric Badges & Doctor Availability Quick Actions */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
           <div className="flex flex-wrap items-center gap-2 text-xs">
-            <div className="px-3 py-1.5 rounded-xl bg-[#005581]/5 border border-[#005581]/20 text-[#005581] dark:text-[#72cdf4] font-bold flex items-center gap-1.5">
-              <Unlock className="w-3.5 h-3.5 text-[#005581]" />
-              <span>زمان‌های آزاد جهت وقت‌دهی منشی:</span>
-              <span className="font-mono text-sm font-black text-[#005581] dark:text-[#72cdf4]">{countAvailableSlots} بازه</span>
+            <div className="px-3 py-1.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-300 font-bold flex items-center gap-1.5">
+              <Scissors className="w-3.5 h-3.5 text-indigo-600" />
+              <span>مخصوص جراحی و عمل:</span>
+              <span className="font-mono text-sm font-black">{countSurgerySlots} بازه</span>
             </div>
 
-            <div className="px-3 py-1.5 rounded-xl bg-[#005581]/5 border border-[#005581]/20 text-[#005581] dark:text-[#72cdf4] font-bold flex items-center gap-1.5">
-              <UserCheck className="w-3.5 h-3.5 text-[#005581]" />
-              <span>نوبت‌های رزروشده امروز:</span>
-              <span className="font-mono text-sm font-black text-[#005581] dark:text-[#72cdf4]">{countTotalAppointments} بیمار</span>
+            <div className="px-3 py-1.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-800 dark:bg-blue-950/40 dark:text-blue-300 font-bold flex items-center gap-1.5">
+              <Stethoscope className="w-3.5 h-3.5 text-blue-600" />
+              <span>کارهای عمومی و ترمیمی:</span>
+              <span className="font-mono text-sm font-black">{countGeneralSlots} بازه</span>
+            </div>
+
+            <div className="px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 font-bold flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+              <span>همه خدمات:</span>
+              <span className="font-mono text-sm font-black">{countAllSlots} بازه</span>
             </div>
 
             <div className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 font-bold flex items-center gap-1.5">
               <Lock className="w-3.5 h-3.5 text-slate-500" />
-              <span>بازه‌های مسدود/مرخصی:</span>
+              <span>مسدود/مرخصی:</span>
               <span className="font-mono text-sm font-black">{countBlockedSlots} بازه</span>
             </div>
           </div>
 
           {/* Quick Doctor Actions */}
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={handleSetMorningSurgeryEveningGeneral}
+              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold text-xs shadow-xs transition flex items-center gap-1 cursor-pointer"
+              title="صبح‌ها جراحی و عصرها کارهای عمومی"
+            >
+              <Activity className="w-3.5 h-3.5" />
+              <span>صبح‌ها جراحی / عصرها عمومی</span>
+            </button>
             <button
               onClick={handleEnableAllSlots}
-              className="px-3 py-1.5 bg-[#005581] hover:bg-[#004266] text-white rounded-xl font-bold text-xs shadow transition flex items-center gap-1 cursor-pointer"
+              className="px-3 py-1.5 bg-[#005581] hover:bg-[#004266] text-white rounded-xl font-bold text-xs shadow-xs transition flex items-center gap-1 cursor-pointer"
             >
               <Check className="w-3.5 h-3.5 text-[#ffd200]" />
               <span>باز کردن تمام بازه‌ها</span>
@@ -297,31 +322,30 @@ export const DoctorCalendarView: React.FC<DoctorCalendarViewProps> = ({
               className="px-3 py-1.5 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 rounded-xl font-bold text-xs transition flex items-center gap-1 cursor-pointer"
             >
               <Lock className="w-3.5 h-3.5 text-slate-500" />
-              <span>مسدود کردن کل روز (مرخصی)</span>
+              <span>مسدود کردن روز (مرخصی)</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* VIEW MODE 1: DAY VIEW GRID (جدول تعاملی زمان‌های کاری دندان‌پزشک) */}
+      {/* VIEW MODE 1: DAY VIEW GRID */}
       {viewMode === 'day' && (
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm space-y-3">
           <div className="flex items-center justify-between text-xs font-black text-[#005581] dark:text-[#72cdf4] pb-2 border-b border-slate-100 dark:border-slate-800">
-            <span>جدول تعاملی زمان‌های کاری دندان‌پزشک ({currentDay.dayName} {currentDay.dateStr})</span>
-            <span className="text-slate-500 font-normal">
-              جهت تغییر وضعیت بازه (آزاد برای منشی / مسدود)، روی هر کارت کلیک کنید.
+            <span>جدول زمان‌بندی کاری پزشک ({currentDay.dayName} {currentDay.dateStr})</span>
+            <span className="text-slate-500 font-normal hidden sm:inline">
+              نوع بازه (جراحی یا عمومی) را تعیین کنید تا بیمار بر اساس دلیل مراجعه، بازه مناسب را ببیند.
             </span>
           </div>
 
           <div className="space-y-2">
             {timeGrid.map((slot, index) => {
-              // Check if an appointment exists for this slot
               const matchingApt = filteredAppointments.find(
                 (a) => a.timeSlot === slot || (index === 1 && a.status === 'in_unit')
               );
 
               const isLunchBreak = slot.includes('12:30');
-              const isAvailable = slotAvailability[slot] === 'available';
+              const currentCategory = slotAvailability[slot] || 'all';
 
               return (
                 <div
@@ -331,13 +355,17 @@ export const DoctorCalendarView: React.FC<DoctorCalendarViewProps> = ({
                       ? 'bg-amber-50/40 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/30'
                       : matchingApt
                       ? 'bg-[#005581]/5 border-[#005581] shadow-xs'
-                      : isAvailable
-                      ? 'bg-emerald-50/30 dark:bg-emerald-950/10 border-emerald-200 dark:border-emerald-900/30 hover:border-emerald-400'
+                      : currentCategory === 'surgery'
+                      ? 'bg-indigo-50/40 dark:bg-indigo-950/20 border-indigo-200 dark:border-indigo-900/30'
+                      : currentCategory === 'general'
+                      ? 'bg-blue-50/40 dark:bg-blue-950/20 border-blue-200 dark:border-blue-900/30'
+                      : currentCategory === 'all'
+                      ? 'bg-emerald-50/30 dark:bg-emerald-950/10 border-emerald-200 dark:border-emerald-900/30'
                       : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700'
                   }`}
                 >
                   {/* Slot Time Label Column */}
-                  <div className="w-full sm:w-36 flex sm:flex-col items-center justify-between sm:justify-center border-b sm:border-b-0 sm:border-l border-slate-200 dark:border-slate-700 pl-2 pb-2 sm:pb-0">
+                  <div className="w-full sm:w-40 flex sm:flex-col items-center justify-between sm:justify-center border-b sm:border-b-0 sm:border-l border-slate-200 dark:border-slate-700 pl-2 pb-2 sm:pb-0">
                     <span className="font-mono font-bold text-xs text-[#005581] dark:text-[#72cdf4] flex items-center gap-1">
                       <Clock className="w-3.5 h-3.5 text-slate-400" />
                       {slot}
@@ -348,13 +376,23 @@ export const DoctorCalendarView: React.FC<DoctorCalendarViewProps> = ({
                       </span>
                     ) : isLunchBreak ? (
                       <span className="text-[10px] font-bold text-amber-700">استراحت</span>
-                    ) : isAvailable ? (
+                    ) : currentCategory === 'surgery' ? (
+                      <span className="text-[10px] font-bold text-indigo-700 dark:text-indigo-400 flex items-center gap-0.5">
+                        <Scissors className="w-3 h-3" />
+                        مخصوص جراحی/عمل
+                      </span>
+                    ) : currentCategory === 'general' ? (
+                      <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 flex items-center gap-0.5">
+                        <Stethoscope className="w-3 h-3" />
+                        کارهای عمومی/ترمیمی
+                      </span>
+                    ) : currentCategory === 'all' ? (
                       <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5">
                         <Unlock className="w-3 h-3" />
-                        آزاد برای منشی
+                        آزاد (عمومی و جراحی)
                       </span>
                     ) : (
-                      <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 flex items-center gap-0.5">
+                      <span className="text-[10px] font-bold text-slate-500 flex items-center gap-0.5">
                         <Lock className="w-3 h-3" />
                         مسدود / مرخصی
                       </span>
@@ -386,11 +424,6 @@ export const DoctorCalendarView: React.FC<DoctorCalendarViewProps> = ({
                           <div className="text-xs text-slate-600 dark:text-slate-300 flex flex-wrap gap-3">
                             <span>علت مراجعه: <strong className="text-slate-900 dark:text-slate-100">{matchingApt.reason}</strong></span>
                             <span>تلفن تماس: <strong className="font-mono">{matchingApt.patientPhone}</strong></span>
-                            {matchingApt.receptionNoteToDoctor && (
-                              <span className="text-amber-700 dark:text-amber-300 font-bold">
-                                نوت منشی: {matchingApt.receptionNoteToDoctor}
-                              </span>
-                            )}
                           </div>
                         </div>
 
@@ -418,39 +451,64 @@ export const DoctorCalendarView: React.FC<DoctorCalendarViewProps> = ({
                         </div>
                       </div>
                     ) : (
-                      <div className="flex items-center justify-between text-xs py-1">
-                        {isAvailable ? (
-                          <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-300 font-bold">
-                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                            <span>بازه زمانی آزاد است (منشی در پورتال پذیرش می‌تواند نوبت ثبت کند)</span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2 text-slate-500 font-medium italic">
-                            <Lock className="w-3.5 h-3.5 text-rose-400" />
-                            <span>بازه زمانی مسدود گردیده (منشی امکان وقت‌دهی ندارد)</span>
-                          </div>
-                        )}
+                      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2 text-xs py-1">
+                        <div className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                          تعیین کاربری این بازه برای نوبت‌دهی:
+                        </div>
 
-                        <button
-                          onClick={() => handleToggleSlotAvailability(slot)}
-                          className={`px-3 py-1 rounded-xl font-bold text-[11px] transition shadow-xs cursor-pointer flex items-center gap-1 ${
-                            isAvailable
-                              ? 'bg-rose-100 hover:bg-rose-200 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300'
-                              : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                          }`}
-                        >
-                          {isAvailable ? (
-                            <>
-                              <Lock className="w-3 h-3" />
-                              <span>تغییر به مسدود / مرخصی</span>
-                            </>
-                          ) : (
-                            <>
-                              <Unlock className="w-3 h-3" />
-                              <span>باز کردن جهت نوبت‌دهی</span>
-                            </>
-                          )}
-                        </button>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => handleSetSlotCategory(slot, 'surgery')}
+                            className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition cursor-pointer flex items-center gap-1 ${
+                              currentCategory === 'surgery'
+                                ? 'bg-indigo-600 text-white shadow-xs ring-2 ring-indigo-400/40'
+                                : 'bg-indigo-100/80 hover:bg-indigo-200 text-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-300'
+                            }`}
+                          >
+                            <Scissors className="w-3 h-3" />
+                            <span>مخصوص جراحی/عمل</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleSetSlotCategory(slot, 'general')}
+                            className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition cursor-pointer flex items-center gap-1 ${
+                              currentCategory === 'general'
+                                ? 'bg-blue-600 text-white shadow-xs ring-2 ring-blue-400/40'
+                                : 'bg-blue-100/80 hover:bg-blue-200 text-blue-900 dark:bg-blue-950/40 dark:text-blue-300'
+                            }`}
+                          >
+                            <Stethoscope className="w-3 h-3" />
+                            <span>کارهای عمومی/ترمیمی</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleSetSlotCategory(slot, 'all')}
+                            className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition cursor-pointer flex items-center gap-1 ${
+                              currentCategory === 'all'
+                                ? 'bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-400/40'
+                                : 'bg-emerald-100/80 hover:bg-emerald-200 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300'
+                            }`}
+                          >
+                            <Sparkles className="w-3 h-3" />
+                            <span>همه موارد</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleSetSlotCategory(slot, 'unavailable')}
+                            className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition cursor-pointer flex items-center gap-1 ${
+                              currentCategory === 'unavailable'
+                                ? 'bg-slate-700 text-white shadow-xs'
+                                : 'bg-slate-200 hover:bg-slate-300 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                            }`}
+                          >
+                            <Lock className="w-3 h-3" />
+                            <span>مسدود</span>
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>

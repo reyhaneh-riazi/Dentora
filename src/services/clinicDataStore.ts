@@ -20,6 +20,8 @@ import {
   DoctorSubmission,
   DoctorRequestReminder,
   AuditLog,
+  PreTreatmentApproval,
+  RadiologyImagingLink,
 } from '../types';
 import {
   mockPatients,
@@ -49,6 +51,8 @@ export interface ClinicDataState {
   auditLogs: AuditLog[];
   patientQuestions: PatientQuestion[];
   insuranceDisputes: PatientInsuranceDispute[];
+  preTreatmentApprovals?: PreTreatmentApproval[];
+  radiologyLinks?: RadiologyImagingLink[];
   waitlist: WaitlistEntry[];
   users: UserProfile[];
   doctorSubmissions: DoctorSubmission[];
@@ -183,6 +187,106 @@ const defaultDoctorRequestsSeed: DoctorRequestReminder[] = [
   },
 ];
 
+export const defaultApprovalsSeed: PreTreatmentApproval[] = [
+  {
+    id: 'appr-1',
+    patientId: 'p-1',
+    patientName: 'علی رضایی',
+    patientPhone: '09129876543',
+    patientNationalId: '0012345678',
+    title: 'تأییدیه و ارزیابی بیهوشی و چکاپ قلبی قبل از جراحی ایمپلنت',
+    category: 'anesthesia',
+    categoryLabel: 'تأییدیه بیهوشی و سلامت قلب',
+    description: 'گواهی سلامت قلبی و آزمایش انعقادی INR از متخصص قلب دکتر حسنی جهت جراحی چندواحدی فک پایین',
+    fileName: 'anesthesia_clearance_ali_rezaei.pdf',
+    fileSize: '1.4 MB',
+    fileType: 'application/pdf',
+    uploadedAt: '۱۴۰۵/۰۵/۱۸ - ۰۹:۳۰',
+    status: 'approved',
+    reviewedBy: 'مریم امیری (منشی)',
+    reviewedAt: '۱۴۰۵/۰۵/۱۸ - ۱۱:۰۰',
+    receptionistNotes: 'مدارک پزشکی و تاییدیه متخصص قلب بررسی و در پرونده الکترونیک ثبت شد.',
+  },
+  {
+    id: 'appr-2',
+    patientId: 'p-2',
+    patientName: 'سارا احمدی',
+    patientPhone: '09351112233',
+    patientNationalId: '0023456789',
+    title: 'تأییدیه پیش‌درمان ارزیاب بیمه تکمیلی دانا برای روکش زیرکونیا و جراحی لثه',
+    category: 'insurance_prior_auth',
+    categoryLabel: 'تأییدیه پیش‌درمان بیمه تکمیلی',
+    description: 'کد تاییدیه ارزیاب آنلاین بیمه تکمیلی با سقف پوشش ۸,۵۰۰,۰۰۰ تومان صادر شده در پورتال دانا',
+    fileName: 'dana_insurance_prior_approval_46.jpg',
+    fileSize: '850 KB',
+    fileType: 'image/jpeg',
+    uploadedAt: '۱۴۰۵/۰۵/۱۹ - ۱۶:۱۵',
+    status: 'submitted',
+    receptionistNotes: 'در نوبت بررسی کارشناس پذیرش کلینیک',
+  },
+  {
+    id: 'appr-3',
+    patientId: 'p-3',
+    patientName: 'محمد کریمی',
+    patientPhone: '09123334455',
+    patientNationalId: '0034567890',
+    title: 'فرم رضایت‌نامه و تاییدیه پزشکی جراحی دندان عقل نهفته ماگزیلا',
+    category: 'consent_surgery',
+    categoryLabel: 'رضایت‌نامه آگاهانه جراحی',
+    description: 'امضای دیجیتال و بارگذاری تصویر برگه رضایت‌نامه بیمار با آگاهی کامل از عوارض',
+    fileName: 'surgical_consent_wisdom_tooth.pdf',
+    fileSize: '2.1 MB',
+    fileType: 'application/pdf',
+    uploadedAt: '۱۴۰۵/۰۵/۲۰ - ۰۸:۴۵',
+    status: 'approved',
+    reviewedBy: 'مریم امیری (منشی)',
+    reviewedAt: '۱۴۰۵/۰۵/۲۰ - ۰۹:۱۵',
+    receptionistNotes: 'فرم رضایت‌نامه امضا شده ضمیمه پرونده گردید.',
+  },
+];
+
+export const defaultRadiologyLinksSeed: RadiologyImagingLink[] = [
+  {
+    id: 'rad-link-1',
+    patientId: 'p-1',
+    patientName: 'علی رضایی',
+    patientPhone: '09129876543',
+    patientNationalId: '0012345678',
+    centerName: 'مرکز رادیولوژی و سی‌بی‌سی‌تی تخصصی فک و صورت دکتر پرتو',
+    url: 'https://pacs.parto-radiology.ir/viewer?studyId=98241&token=sec_ali98',
+    accessCode: 'PRT-98241',
+    studyType: 'CBCT سه بعدی فک پایین',
+    description: 'گرافی سه‌بعدی CBCT ناحیه دندان‌های ۳۶ و ۳۷ جهت سنجش ضخامت استخوان و فاصله تا عصب آلوئولار تحتانی',
+    createdAt: '۱۴۰۵/۰۵/۱۷ - ۱۱:۳۰',
+  },
+  {
+    id: 'rad-link-2',
+    patientId: 'p-2',
+    patientName: 'سارا احمدی',
+    patientPhone: '09351112233',
+    patientNationalId: '0023456789',
+    centerName: 'مرکز تصویربرداری دیجیتال دندان‌پزشکی آریا',
+    url: 'https://aria-imaging.com/view/opg/patient/0023456789',
+    accessCode: 'ARIA-4412',
+    studyType: 'OPG تمام‌فک دیجیتال',
+    description: 'رادیوگرافی پانورامیک OPG با کیفیت بالا جهت بررسی وضعیت ریشه‌ها و پوسیدگی‌های اینترپروگزیمال',
+    createdAt: '۱۴۰۵/۰۵/۱۸ - ۱۴:۰۰',
+  },
+  {
+    id: 'rad-link-3',
+    patientId: 'p-3',
+    patientName: 'محمد کریمی',
+    patientPhone: '09123334455',
+    patientNationalId: '0034567890',
+    centerName: 'مرکز پرتو نگار جم',
+    url: 'https://jam-pacs.ir/patient-imaging/study/77215',
+    accessCode: 'JAM-77215',
+    studyType: 'پری‌اپیکال دیجیتال (RVG)',
+    description: 'تصویر پری‌اپیکال دندان ۱۸ نهفته افقی با وضعیت دقیق ریشه مجاور سینوس ماگزیلاری',
+    createdAt: '۱۴۰۵/۰۵/۱۹ - ۱۰:۱۵',
+  },
+];
+
 const ZERO_MONEY_BOARD: TodayMoneyBoard = {
   receivedTodayCashPos: 0,
   insurancePendingTotal: 0,
@@ -240,8 +344,10 @@ export function loadClinicData(clinicId: string, clinicInfo?: ClinicRegistration
         claims: parsed.claims || [],
         labOrders: parsed.labOrders || [],
         auditLogs: parsed.auditLogs || [],
-        patientQuestions: parsed.patientQuestions || [],
-        insuranceDisputes: parsed.insuranceDisputes || [],
+        patientQuestions: parsed.patientQuestions || defaultQuestionsSeed,
+        insuranceDisputes: parsed.insuranceDisputes || defaultDisputesSeed,
+        preTreatmentApprovals: parsed.preTreatmentApprovals || defaultApprovalsSeed,
+        radiologyLinks: parsed.radiologyLinks || defaultRadiologyLinksSeed,
         waitlist: parsed.waitlist || [],
         users: parsed.users || [],
         doctorSubmissions: parsed.doctorSubmissions || [],
@@ -340,6 +446,8 @@ export function loadClinicData(clinicId: string, clinicInfo?: ClinicRegistration
       auditLogs: mockAuditLogs,
       patientQuestions: defaultQuestionsSeed,
       insuranceDisputes: defaultDisputesSeed,
+      preTreatmentApprovals: defaultApprovalsSeed,
+      radiologyLinks: defaultRadiologyLinksSeed,
       waitlist: mockWaitlist,
       users: mockUsers,
       doctorSubmissions: defaultSubmissionsSeed,
@@ -377,6 +485,8 @@ export function loadClinicData(clinicId: string, clinicInfo?: ClinicRegistration
     auditLogs: [],
     patientQuestions: [],
     insuranceDisputes: [],
+    preTreatmentApprovals: [],
+    radiologyLinks: [],
     waitlist: [],
     users: [ownerUser],
     doctorSubmissions: [],
@@ -762,6 +872,35 @@ export function setActiveLabStaffSession(staff: LabStaffAccount): void {
   } catch (e) {
     console.error('Error saving active lab staff:', e);
   }
+}
+
+// Pre-treatment Approvals Store Helpers
+export function addPreTreatmentApprovalToStore(clinicId: string, approval: PreTreatmentApproval): void {
+  const current = loadClinicData(clinicId);
+  const updatedApprovals = [approval, ...(current.preTreatmentApprovals || [])];
+  current.preTreatmentApprovals = updatedApprovals;
+  saveClinicData(clinicId, current);
+}
+
+export function updatePreTreatmentApprovalInStore(
+  clinicId: string,
+  approvalId: string,
+  updates: Partial<PreTreatmentApproval>
+): void {
+  const current = loadClinicData(clinicId);
+  const updatedApprovals = (current.preTreatmentApprovals || []).map((appr) =>
+    appr.id === approvalId ? { ...appr, ...updates } : appr
+  );
+  current.preTreatmentApprovals = updatedApprovals;
+  saveClinicData(clinicId, current);
+}
+
+// Radiology Links Store Helpers
+export function addRadiologyLinkToStore(clinicId: string, link: RadiologyImagingLink): void {
+  const current = loadClinicData(clinicId);
+  const updatedLinks = [link, ...(current.radiologyLinks || [])];
+  current.radiologyLinks = updatedLinks;
+  saveClinicData(clinicId, current);
 }
 
 

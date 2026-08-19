@@ -681,4 +681,45 @@ export interface PatientInsuranceDispute {
   createdAt: string;
 }
 
+export interface PreTreatmentApproval {
+  id: string;
+  patientId: string;
+  patientName: string;
+  patientPhone?: string;
+  patientNationalId?: string;
+  nationalId?: string;
+  title: string;
+  category: 'anesthesia' | 'insurance_prior_auth' | 'consent_surgery' | 'lab_clearance' | 'general';
+  categoryLabel?: string;
+  description?: string;
+  fileDataUrl?: string;
+  downloadUrl?: string;
+  fileName: string;
+  fileSize?: string;
+  fileType?: string;
+  uploadedAt: string;
+  status: 'submitted' | 'pending' | 'reviewed' | 'approved' | 'rejected';
+  receptionistNotes?: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+}
+
+export interface RadiologyImagingLink {
+  id: string;
+  patientId?: string;
+  patientName: string;
+  patientPhone?: string;
+  patientNationalId?: string;
+  nationalId?: string;
+  centerName?: string;
+  imagingCenterName?: string;
+  url: string;
+  accessCode?: string;
+  studyType?: string; // OPG, CBCT, Periapical, Bitewing, Cephalometry, Photo
+  description?: string;
+  notes?: string;
+  createdAt?: string;
+  registeredAt?: string;
+}
+
 

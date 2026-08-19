@@ -15,11 +15,13 @@ import {
   Invoice,
   UserProfile,
   ClinicRegistration,
+  PreTreatmentApproval,
 } from '../../types';
 import {
   SUGGESTED_BASE_INSURANCES,
   SUGGESTED_SUPPLEMENTARY_INSURANCES,
 } from '../../data/insuranceConstants';
+import { loadClinicData, updatePreTreatmentApprovalInStore, addPreTreatmentApprovalToStore } from '../../services/clinicDataStore';
 import { Odontogram } from '../dentist/Odontogram';
 import { ImageXrayViewer } from '../dentist/ImageXrayViewer';
 import { InsuranceDocsWorkspace } from './InsuranceDocsWorkspace';
@@ -136,6 +138,8 @@ interface AppointmentsViewProps {
   }) => void;
   users?: UserProfile[];
   currentClinic?: ClinicRegistration;
+  preTreatmentApprovals?: PreTreatmentApproval[];
+  onUpdateApprovalStatus?: (approvalId: string, status: 'approved' | 'rejected' | 'pending', notes?: string) => void;
 }
 
 // Right Sidebar Navigation Tabs
@@ -143,6 +147,7 @@ type ReceptionTab =
   | 'today_kanban'
   | 'call_center'
   | 'patient_records'
+  | 'pre_approvals'
   | 'insurance_docs'
   | 'insurance_inquiry'
   | 'create_raw_file'
@@ -270,6 +275,8 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
   onRegisterPayment,
   users = [],
   currentClinic,
+  preTreatmentApprovals: propsPreTreatmentApprovals,
+  onUpdateApprovalStatus,
 }) => {
   // Dynamic clinic dentists from clinic owner and users
   const clinicDentists = React.useMemo(() => {
@@ -323,6 +330,159 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
   const showReceptionToast = (text: string, type: 'success' | 'info' = 'success') => {
     setReceptionToast({ text, type });
     setTimeout(() => setReceptionToast(null), 4000);
+  };
+
+  // Pre-Treatment Approvals State (کارتابل تأییدیه‌های پیش از درمان)
+  const [approvalsList, setApprovalsList] = useState<PreTreatmentApproval[]>(() => {
+    if (propsPreTreatmentApprovals && propsPreTreatmentApprovals.length > 0) {
+      return propsPreTreatmentApprovals;
+    }
+    const clinicId = currentClinic?.id || 'main_clinic';
+    const store = loadClinicData(clinicId);
+    return store.preTreatmentApprovals || [];
+  });
+  const [approvalSearchQuery, setApprovalSearchQuery] = useState('');
+  const [approvalStatusFilter, setApprovalStatusFilter] = useState<string>('all');
+  const [approvalCategoryFilter, setApprovalCategoryFilter] = useState<string>('all');
+  const [selectedApprovalForReview, setSelectedApprovalForReview] = useState<PreTreatmentApproval | null>(null);
+  const [approvalReviewNotes, setApprovalReviewNotes] = useState('');
+  const [isDirectApprovalModalOpen, setIsDirectApprovalModalOpen] = useState(false);
+  const [newDirectPatientName, setNewDirectPatientName] = useState('');
+  const [newDirectPatientPhone, setNewDirectPatientPhone] = useState('');
+  const [newDirectPatientNationalId, setNewDirectPatientNationalId] = useState('');
+  const [newDirectTitle, setNewDirectTitle] = useState('');
+  const [newDirectCategory, setNewDirectCategory] = useState<'anesthesia' | 'insurance_prior_auth' | 'consent_surgery' | 'lab_clearance' | 'general'>('anesthesia');
+  const [newDirectDescription, setNewDirectDescription] = useState('');
+
+  // Synchronize approvals list with props/store
+  React.useEffect(() => {
+    if (propsPreTreatmentApprovals && propsPreTreatmentApprovals.length > 0) {
+      setApprovalsList(propsPreTreatmentApprovals);
+    } else {
+      const clinicId = currentClinic?.id || 'main_clinic';
+      const store = loadClinicData(clinicId);
+      if (store.preTreatmentApprovals && store.preTreatmentApprovals.length > 0) {
+        setApprovalsList(store.preTreatmentApprovals);
+      }
+    }
+  }, [propsPreTreatmentApprovals, currentClinic?.id]);
+
+  const handleDownloadApproval = (approval: PreTreatmentApproval) => {
+    // Generate text/file download or simulation
+    const fileContent = `--- تأییدیه پیش از درمان دنتورا ---
+نام بیمار: ${approval.patientName}
+کد ملی: ${approval.patientNationalId || 'ثبت‌نشده'}
+شماره تماس: ${approval.patientPhone || 'ثبت‌نشده'}
+عنوان مدرک: ${approval.title}
+دسته‌بندی: ${approval.categoryLabel || approval.category}
+تاریخ بارگذاری: ${approval.uploadedAt}
+نام فایل اصلی: ${approval.fileName}
+حجم فایل: ${approval.fileSize || 'نامشخص'}
+وضعیت: ${approval.status === 'approved' ? 'تأیید شده' : approval.status === 'rejected' ? 'ردشده / نیازمند اصلاح' : 'در انتظار بررسی'}
+توضیحات و شرح: ${approval.description || 'بدون شرح'}
+یادداشت منشی/پذیرش: ${approval.receptionistNotes || 'بدون یادداشت'}
+تأییدکننده: ${approval.reviewedBy || 'در حال بررسی'} (${approval.reviewedAt || '-'})
+------------------------------------------
+Dentora Dental Clinic OS - Document Management System`;
+
+    const blob = new Blob([fileContent], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = approval.fileName || `approval_${approval.patientName}_${approval.id}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    showReceptionToast(`فایل تأییدیه «${approval.fileName}» برای بیمار ${approval.patientName} با موفقیت دانلود شد.`, 'success');
+  };
+
+  const handleUpdateApproval = (approvalId: string, status: 'approved' | 'rejected' | 'pending', notes?: string) => {
+    const clinicId = currentClinic?.id || 'main_clinic';
+    const reviewerName = 'مریم امیری (پذیرش کلینیک)';
+    const todayFa = new Date().toLocaleDateString('fa-IR');
+    const timeFa = new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+
+    updatePreTreatmentApprovalInStore(clinicId, approvalId, {
+      status,
+      reviewedBy: reviewerName,
+      reviewedAt: `${todayFa} - ${timeFa}`,
+      receptionistNotes: notes || (status === 'approved' ? 'مدارک پزشکی و تأییدیه توسط پذیرش بررسی و تأیید شد.' : 'مدارک دارای نقص یا نیازمند بازبینی مجدد است.'),
+    });
+
+    setApprovalsList((prev) =>
+      prev.map((appr) =>
+        appr.id === approvalId
+          ? {
+              ...appr,
+              status,
+              reviewedBy: reviewerName,
+              reviewedAt: `${todayFa} - ${timeFa}`,
+              receptionistNotes: notes || (status === 'approved' ? 'مدارک پزشکی و تأییدیه توسط پذیرش بررسی و تأیید شد.' : 'مدارک دارای نقص یا نیازمند بازبینی مجدد است.'),
+            }
+          : appr
+      )
+    );
+
+    if (onUpdateApprovalStatus) {
+      onUpdateApprovalStatus(approvalId, status, notes);
+    }
+
+    setSelectedApprovalForReview(null);
+    showReceptionToast(
+      status === 'approved'
+        ? `تأییدیه بیمار با موفقیت تأیید و در پرونده ثبت شد.`
+        : `وضعیت مدرک به «${status === 'rejected' ? 'ردشده / نیازمند اصلاح' : 'در انتظار بررسی'}» تغییر یافت.`,
+      'success'
+    );
+  };
+
+  const handleDirectUploadApproval = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newDirectPatientName || !newDirectTitle) return;
+
+    const clinicId = currentClinic?.id || 'main_clinic';
+    const todayFa = new Date().toLocaleDateString('fa-IR');
+    const timeFa = new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+
+    const categoryLabels: Record<string, string> = {
+      anesthesia: 'تأییدیه بیهوشی و سلامت قلب',
+      insurance_prior_auth: 'تأییدیه پیش‌درمان بیمه تکمیلی',
+      consent_surgery: 'رضایت‌نامه آگاهانه جراحی',
+      lab_clearance: 'پاسخ آزمایشات و مجوز پزشکی',
+      general: 'سایر مدارک و تاییدات',
+    };
+
+    const newApproval: PreTreatmentApproval = {
+      id: `appr-rec-${Date.now()}`,
+      patientId: `p-rec-${Date.now()}`,
+      patientName: newDirectPatientName,
+      patientPhone: newDirectPatientPhone || undefined,
+      patientNationalId: newDirectPatientNationalId || undefined,
+      title: newDirectTitle,
+      category: newDirectCategory,
+      categoryLabel: categoryLabels[newDirectCategory] || 'تأییدیه پیش از درمان',
+      description: newDirectDescription || 'ثبت حضوری مدرک توسط منشی پذیرش',
+      fileName: `doc_${Date.now()}_${newDirectPatientName.replace(/\s+/g, '_')}.pdf`,
+      fileSize: '1.2 MB',
+      fileType: 'application/pdf',
+      uploadedAt: `${todayFa} - ${timeFa}`,
+      status: 'approved',
+      reviewedBy: 'مریم امیری (پذیرش کلینیک)',
+      reviewedAt: `${todayFa} - ${timeFa}`,
+      receptionistNotes: 'مدرک فیزیکی توسط منشی دریافت و در سیستم ثبت گردید.',
+    };
+
+    addPreTreatmentApprovalToStore(clinicId, newApproval);
+    setApprovalsList((prev) => [newApproval, ...prev]);
+    setIsDirectApprovalModalOpen(false);
+    setNewDirectPatientName('');
+    setNewDirectPatientPhone('');
+    setNewDirectPatientNationalId('');
+    setNewDirectTitle('');
+    setNewDirectDescription('');
+    showReceptionToast(`تأییدیه بیمار ${newApproval.patientName} با موفقیت ثبت شد.`, 'success');
   };
 
   // Mock initial Patient Questions for Receptionist (including appeal & complaint message with attached docs)
@@ -1384,6 +1544,29 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
             </button>
 
             <button
+              onClick={() => setActiveTab('pre_approvals')}
+              className={`w-full text-right p-3 rounded-xl font-bold text-xs transition flex items-center justify-between cursor-pointer ${
+                activeTab === 'pre_approvals'
+                  ? 'bg-[#005581] text-white shadow-md'
+                  : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <FileCheck2 className={`w-4 h-4 ${activeTab === 'pre_approvals' ? 'text-[#ffd200]' : 'text-[#005581]'}`} />
+                <span>تأییدیه‌های پیش از درمان</span>
+              </div>
+              {approvalsList.filter(a => a.status === 'submitted' || a.status === 'pending').length > 0 ? (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500 text-slate-900 font-mono font-black animate-pulse">
+                  {approvalsList.filter(a => a.status === 'submitted' || a.status === 'pending').length} بررسی
+                </span>
+              ) : (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900 text-[#005581] dark:text-[#72cdf4] font-mono font-bold">
+                  {approvalsList.length} مدرک
+                </span>
+              )}
+            </button>
+
+            <button
               onClick={() => setActiveTab('create_raw_file')}
               className={`w-full text-right p-3 rounded-xl font-bold text-xs transition flex items-center justify-between cursor-pointer ${
                 activeTab === 'create_raw_file'
@@ -2430,6 +2613,289 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                   })}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* TAB 2.5: PRE-TREATMENT APPROVALS WORKSPACE (کارتابل تأییدیه‌های پیش از درمان) */}
+          {activeTab === 'pre_approvals' && (
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-5">
+              {/* Header */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
+                <div>
+                  <h3 className="font-bold text-slate-900 dark:text-slate-100 text-base flex items-center gap-2">
+                    <FileCheck2 className="w-5 h-5 text-[#005581]" />
+                    <span>کارتابل جامع تأییدیه‌های پیش از درمان و مدارک پزشکی بیماران</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    بررسی مدارک بارگذاری‌شده توسط بیمار (تأییدیه بیهوشی، مجوز بیمه تکمیلی، رضایت‌نامه، آزمایشات) با امکان جستجو و دانلود
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsDirectApprovalModalOpen(true)}
+                    className="px-4 py-2 rounded-xl bg-[#005581] hover:bg-[#004266] text-white font-bold text-xs shadow transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Plus className="w-4 h-4 text-[#ffd200]" />
+                    <span>ثبت حضوری تأییدیه / مدرک</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Stats Counters */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60">
+                  <span className="text-[11px] text-slate-500 block">کل مدارک ثبت‌شده:</span>
+                  <span className="text-base font-black text-slate-900 dark:text-slate-100 font-mono">
+                    {approvalsList.length} مدرک
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+                  <span className="text-[11px] text-amber-700 dark:text-amber-300 block">در انتظار بررسی پذیرش:</span>
+                  <span className="text-base font-black text-amber-900 dark:text-amber-100 font-mono">
+                    {approvalsList.filter(a => a.status === 'submitted' || a.status === 'pending').length} مدرک
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800">
+                  <span className="text-[11px] text-emerald-700 dark:text-emerald-300 block">تأیید و ضمیمه پرونده:</span>
+                  <span className="text-base font-black text-emerald-900 dark:text-emerald-100 font-mono">
+                    {approvalsList.filter(a => a.status === 'approved').length} مدرک
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800">
+                  <span className="text-[11px] text-rose-700 dark:text-rose-300 block">ردشده / نیازمند اصلاح:</span>
+                  <span className="text-base font-black text-rose-900 dark:text-rose-100 font-mono">
+                    {approvalsList.filter(a => a.status === 'rejected').length} مدرک
+                  </span>
+                </div>
+              </div>
+
+              {/* Search Bar and Filters */}
+              <div className="flex flex-col sm:flex-row items-center gap-3">
+                <div className="relative flex-1 w-full">
+                  <Search className="w-4 h-4 absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={approvalSearchQuery}
+                    onChange={(e) => setApprovalSearchQuery(e.target.value)}
+                    placeholder="جستجوی نام بیمار، کد ملی، شماره تماس یا عنوان مدرک..."
+                    className="w-full pl-3 pr-10 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#005581]"
+                  />
+                  {approvalSearchQuery && (
+                    <button
+                      onClick={() => setApprovalSearchQuery('')}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1.5 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
+                  {[
+                    { key: 'all', label: 'همه وضعیت‌ها' },
+                    { key: 'submitted', label: 'در انتظار بررسی' },
+                    { key: 'approved', label: 'تأییدشده' },
+                    { key: 'rejected', label: 'ردشده/اصلاح' },
+                  ].map((st) => (
+                    <button
+                      key={st.key}
+                      onClick={() => setApprovalStatusFilter(st.key)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
+                        approvalStatusFilter === st.key
+                          ? 'bg-[#005581] text-white shadow-xs'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'
+                      }`}
+                    >
+                      {st.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Category Pills */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+                <span className="text-[11px] text-slate-500 font-bold shrink-0 ml-1">دسته‌بندی:</span>
+                {[
+                  { key: 'all', label: 'همه دسته‌ها' },
+                  { key: 'anesthesia', label: 'تأییدیه بیهوشی و قلب' },
+                  { key: 'insurance_prior_auth', label: 'تأییدیه بیمه تکمیلی' },
+                  { key: 'consent_surgery', label: 'رضایت‌نامه جراحی' },
+                  { key: 'lab_clearance', label: 'پاسخ آزمایشات' },
+                ].map((cat) => (
+                  <button
+                    key={cat.key}
+                    onClick={() => setApprovalCategoryFilter(cat.key)}
+                    className={`px-2.5 py-1 rounded-lg font-bold transition cursor-pointer shrink-0 ${
+                      approvalCategoryFilter === cat.key
+                        ? 'bg-[#005581]/15 text-[#005581] dark:text-[#72cdf4] border border-[#005581]/30 font-black'
+                        : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100'
+                    }`}
+                  >
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Approvals Table / Cards */}
+              <div className="space-y-3">
+                {(() => {
+                  const filtered = approvalsList.filter((item) => {
+                    const matchesSearch =
+                      !approvalSearchQuery ||
+                      (item.patientName && item.patientName.includes(approvalSearchQuery)) ||
+                      (item.patientNationalId && item.patientNationalId.includes(approvalSearchQuery)) ||
+                      (item.patientPhone && item.patientPhone.includes(approvalSearchQuery)) ||
+                      (item.title && item.title.includes(approvalSearchQuery)) ||
+                      (item.fileName && item.fileName.includes(approvalSearchQuery));
+
+                    const matchesStatus =
+                      approvalStatusFilter === 'all' ||
+                      (approvalStatusFilter === 'submitted' && (item.status === 'submitted' || item.status === 'pending')) ||
+                      item.status === approvalStatusFilter;
+
+                    const matchesCategory =
+                      approvalCategoryFilter === 'all' || item.category === approvalCategoryFilter;
+
+                    return matchesSearch && matchesStatus && matchesCategory;
+                  });
+
+                  if (filtered.length === 0) {
+                    return (
+                      <div className="p-8 text-center bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 text-slate-500 text-xs space-y-2">
+                        <FileCheck2 className="w-8 h-8 mx-auto text-slate-400" />
+                        <p className="font-bold text-slate-700 dark:text-slate-300">
+                          هیچ تأییدیه یا مدرکی با مشخصات جستجویافته پیدا نشد.
+                        </p>
+                        <p className="text-[11px] text-slate-400">
+                          بیماران می‌توانند از پورتال آنلاین دنتورا تأییدیه‌ها را بارگذاری کنند، یا پذیرش می‌تواند با دکمه «ثبت حضوری تأییدیه» مدارک را اسکن و ثبت نماید.
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="grid grid-cols-1 gap-3.5">
+                      {filtered.map((item) => (
+                        <div
+                          key={item.id}
+                          className="p-4 rounded-2xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/60 dark:bg-slate-800/30 hover:border-[#005581]/40 transition space-y-3 text-xs"
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-700 pb-2.5">
+                            <div className="flex items-center gap-2.5 flex-wrap">
+                              <span className="font-black text-sm text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                                <UserCheck className="w-4 h-4 text-[#005581]" />
+                                <span>نام بیمار: {item.patientName}</span>
+                              </span>
+                              {item.patientNationalId && (
+                                <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                                  کدملی: {item.patientNationalId}
+                                </span>
+                              )}
+                              {item.patientPhone && (
+                                <span className="font-mono text-[11px] text-slate-500">
+                                  تلفن: {item.patientPhone}
+                                </span>
+                              )}
+                              <span className="px-2.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-900 dark:text-blue-200 font-bold text-[11px]">
+                                {item.categoryLabel || item.category}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <span className="text-slate-500 text-[11px] flex items-center gap-1 font-mono">
+                                <Clock className="w-3.5 h-3.5" />
+                                {item.uploadedAt}
+                              </span>
+
+                              {item.status === 'approved' ? (
+                                <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 font-bold text-[11px] flex items-center gap-1">
+                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                  تأیید شده
+                                </span>
+                              ) : item.status === 'rejected' ? (
+                                <span className="px-2.5 py-1 rounded-full bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 font-bold text-[11px] flex items-center gap-1">
+                                  <XCircle className="w-3.5 h-3.5 text-rose-600" />
+                                  نیازمند اصلاح
+                                </span>
+                              ) : (
+                                <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 dark:bg-amber-950/80 dark:text-amber-300 font-bold text-[11px] flex items-center gap-1">
+                                  <Clock className="w-3.5 h-3.5 text-amber-600" />
+                                  در انتظار بررسی
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div>
+                            <h4 className="font-extrabold text-slate-900 dark:text-slate-100 text-xs mb-1">
+                              {item.title}
+                            </h4>
+                            {item.description && (
+                              <p className="text-slate-600 dark:text-slate-400 text-[11px] leading-relaxed">
+                                {item.description}
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Receptionist Review Note if any */}
+                          {item.receptionistNotes && (
+                            <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 text-[11px] text-slate-700 dark:text-slate-300 flex items-start justify-between gap-2">
+                              <div>
+                                <strong>یادداشت کارشناس پذیرش:</strong> {item.receptionistNotes}
+                              </div>
+                              {item.reviewedBy && (
+                                <span className="text-[10px] text-slate-400 shrink-0 font-mono">
+                                  {item.reviewedBy} ({item.reviewedAt || ''})
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* File Details and Action Buttons */}
+                          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700">
+                            <div className="flex items-center gap-2 text-[11px] text-slate-600 dark:text-slate-400">
+                              <FileText className="w-4 h-4 text-[#005581] shrink-0" />
+                              <span className="font-mono font-bold text-slate-800 dark:text-slate-200 truncate max-w-xs">
+                                {item.fileName}
+                              </span>
+                              {item.fileSize && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono">
+                                  {item.fileSize}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => handleDownloadApproval(item)}
+                                className="px-3.5 py-1.5 rounded-lg bg-[#005581] hover:bg-[#004266] text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition cursor-pointer"
+                              >
+                                <Download className="w-3.5 h-3.5 text-[#ffd200]" />
+                                <span>دانلود فایل تأییدیه</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedApprovalForReview(item);
+                                  setApprovalReviewNotes(item.receptionistNotes || '');
+                                }}
+                                className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-800 dark:text-slate-200 font-bold text-xs flex items-center gap-1 transition cursor-pointer"
+                              >
+                                <Edit3 className="w-3.5 h-3.5 text-[#005581]" />
+                                <span>بررسی و تغییر وضعیت</span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
             </div>
           )}
 
@@ -5627,6 +6093,241 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                 بستن
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* PRE-TREATMENT APPROVAL REVIEW & STATUS EDIT MODAL */}
+      {selectedApprovalForReview && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full border border-slate-200 dark:border-slate-800 shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-[#005581] text-white flex items-center justify-center font-black">
+                  <FileCheck2 className="w-5 h-5 text-[#ffd200]" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-900 dark:text-slate-100">
+                    بررسی و تعیین وضعیت تأییدیه پیش از درمان
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    بیمار: {selectedApprovalForReview.patientName} (کدملی: {selectedApprovalForReview.patientNationalId || 'ثبت‌نشده'})
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedApprovalForReview(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
+              <div>
+                <strong className="text-slate-900 dark:text-slate-100">{selectedApprovalForReview.title}</strong>
+                <span className="block text-[11px] text-slate-500 mt-0.5">
+                  دسته‌بندی: {selectedApprovalForReview.categoryLabel || selectedApprovalForReview.category}
+                </span>
+              </div>
+              {selectedApprovalForReview.description && (
+                <p className="text-slate-700 dark:text-slate-300 text-[11px] leading-relaxed">
+                  {selectedApprovalForReview.description}
+                </p>
+              )}
+              <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200 dark:border-slate-700 text-[11px] text-slate-500">
+                <span className="font-mono">{selectedApprovalForReview.fileName} ({selectedApprovalForReview.fileSize || '1.2 MB'})</span>
+                <button
+                  type="button"
+                  onClick={() => handleDownloadApproval(selectedApprovalForReview)}
+                  className="text-[#005581] dark:text-[#72cdf4] font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>دانلود فایل جهت مشاهده</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <label className="block font-bold text-slate-800 dark:text-slate-200">
+                یادداشت و توضیحات کارشناس پذیرش (جهت نمایش به بیمار و پزشک):
+              </label>
+              <textarea
+                rows={3}
+                value={approvalReviewNotes}
+                onChange={(e) => setApprovalReviewNotes(e.target.value)}
+                placeholder="توضیحات تکمیلی پذیرش، دلایل تأیید یا نواقص مدرک را اینجا بنویسید..."
+                className="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-medium text-slate-900 dark:text-slate-100"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => handleUpdateApproval(selectedApprovalForReview.id, 'approved', approvalReviewNotes)}
+                className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow cursor-pointer"
+              >
+                <Check className="w-4 h-4" />
+                <span>تأیید نهایی و ضمیمه پرونده</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleUpdateApproval(selectedApprovalForReview.id, 'rejected', approvalReviewNotes)}
+                className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow cursor-pointer"
+              >
+                <XCircle className="w-4 h-4" />
+                <span>رد مدرک / اعلام نقص به بیمار</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DIRECT UPLOAD PRE-TREATMENT APPROVAL MODAL (ثبت مدرک توسط منشی) */}
+      {isDirectApprovalModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full border border-slate-200 dark:border-slate-800 shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-[#005581] text-white flex items-center justify-center font-black">
+                  <Upload className="w-5 h-5 text-[#ffd200]" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-900 dark:text-slate-100">
+                    ثبت حضوری تأییدیه و مدرک پیش از درمان
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    ثبت اسکن یا گواهی‌های تحویل‌شده توسط بیمار در میز پذیرش
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsDirectApprovalModalOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleDirectUploadApproval} className="space-y-3.5 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    نام و نام خانوادگی بیمار: <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newDirectPatientName}
+                    onChange={(e) => setNewDirectPatientName(e.target.value)}
+                    placeholder="علی رضایی"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    کد ملی بیمار:
+                  </label>
+                  <input
+                    type="text"
+                    value={newDirectPatientNationalId}
+                    onChange={(e) => setNewDirectPatientNationalId(e.target.value)}
+                    placeholder="۰۰۱۲۳۴۵۶۷۸"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-mono font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    شماره تماس بیمار:
+                  </label>
+                  <input
+                    type="text"
+                    value={newDirectPatientPhone}
+                    onChange={(e) => setNewDirectPatientPhone(e.target.value)}
+                    placeholder="۰۹۱۲۹۸۷۶۵۴۳"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    نوع و دسته‌بندی تأییدیه: <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={newDirectCategory}
+                    onChange={(e) => setNewDirectCategory(e.target.value as any)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold"
+                  >
+                    <option value="anesthesia">تأییدیه بیهوشی و سلامت قلب</option>
+                    <option value="insurance_prior_auth">تأییدیه پیش‌درمان بیمه تکمیلی</option>
+                    <option value="consent_surgery">رضایت‌نامه آگاهانه جراحی</option>
+                    <option value="lab_clearance">پاسخ آزمایشات و مجوز پزشکی</option>
+                    <option value="general">سایر مدارک و تاییدات</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  عنوان مدرک یا گواهی: <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newDirectTitle}
+                  onChange={(e) => setNewDirectTitle(e.target.value)}
+                  placeholder="مثلاً: تأییدیه متخصص قلب و عروق جهت جراحی ایمپلنت"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  شرح و توضیحات مدرک:
+                </label>
+                <textarea
+                  rows={2}
+                  value={newDirectDescription}
+                  onChange={(e) => setNewDirectDescription(e.target.value)}
+                  placeholder="توضیحات مندرج در گواهی، نام پزشک معالج، آزمایشات پیوست..."
+                  className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs"
+                />
+              </div>
+
+              <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Paperclip className="w-4 h-4 text-[#005581]" />
+                  <span className="text-[11px] text-slate-600 dark:text-slate-400">
+                    فایل اسکن‌شده: <strong className="font-mono text-slate-900 dark:text-slate-100">scan_document.pdf (1.2 MB)</strong>
+                  </span>
+                </div>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold">
+                  آماده پیوست
+                </span>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setIsDirectApprovalModalOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold"
+                >
+                  انصراف
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2 rounded-xl bg-[#005581] hover:bg-[#004266] text-[#ffd200] font-black shadow-md flex items-center gap-2 cursor-pointer"
+                >
+                  <FileCheck2 className="w-4 h-4" />
+                  <span>ثبت و ضمیمه به پرونده بیمار</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

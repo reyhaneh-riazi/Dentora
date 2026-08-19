@@ -1,15 +1,31 @@
 import React, { useState, useEffect } from 'react';
-import { Patient, Appointment, Invoice, InstallmentPlan, ToothDetail, Claim, UserProfile, PatientQuestion, PatientInsuranceDispute, SavedBankCard, ClinicRegistration } from '../../types';
+import {
+  Patient,
+  Appointment,
+  Invoice,
+  InstallmentPlan,
+  ToothDetail,
+  Claim,
+  UserProfile,
+  PatientQuestion,
+  PatientInsuranceDispute,
+  SavedBankCard,
+  ClinicRegistration,
+  PreTreatmentApproval,
+  RadiologyImagingLink,
+} from '../../types';
 import { OnlineBookingModal } from '../booking/OnlineBookingModal';
 import { SimulatedPaymentGatewayModal } from '../booking/SimulatedPaymentGatewayModal';
 import { OdontogramChart } from './OdontogramChart';
 import { ImageXrayViewer } from '../dentist/ImageXrayViewer';
 import { PersianBirthDatePicker } from '../common/PersianBirthDatePicker';
 import { toPersianDigits, formatPricePersian } from '../../utils/persianDigits';
+import { getAppointmentDuration, generateDynamicSlots } from '../../utils/appointmentUtils';
 import {
   Heart,
   Calendar,
   Clock,
+  Scissors,
   CreditCard,
   Shield,
   Layers,
@@ -44,6 +60,12 @@ import {
   FileCheck,
   Cpu,
   ImageIcon,
+  UploadCloud,
+  Link as LinkIcon,
+  Copy,
+  CheckCheck,
+  ExternalLink,
+  Download,
 } from 'lucide-react';
 
 interface PatientPortalProps {
@@ -97,6 +119,10 @@ interface PatientPortalProps {
   onPayInvoice?: (invoiceId: string) => void;
   onPayInstallment?: (planId: string, installmentNo: number) => void;
   onUpdatePatientInfo?: (updatedPatient: Partial<Patient>) => void;
+  preTreatmentApprovals?: PreTreatmentApproval[];
+  onUploadPreTreatmentApproval?: (approval: PreTreatmentApproval) => void;
+  radiologyLinks?: RadiologyImagingLink[];
+  onRegisterRadiologyLink?: (link: RadiologyImagingLink) => void;
 }
 
 interface QAItem {
@@ -132,10 +158,14 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
   onPayInvoice,
   onPayInstallment,
   onUpdatePatientInfo,
+  preTreatmentApprovals = [],
+  onUploadPreTreatmentApproval,
+  radiologyLinks = [],
+  onRegisterRadiologyLink,
 }) => {
   // Navigation Tab State
   const [activeTab, setActiveTab] = useState<
-    'dashboard' | 'tooth_map' | 'radiography' | 'financial' | 'qa_portal' | 'insurance_claims' | 'consent_tokens' | 'profile'
+    'dashboard' | 'tooth_map' | 'radiography' | 'pre_approvals_imaging' | 'financial' | 'qa_portal' | 'insurance_claims' | 'consent_tokens' | 'profile'
   >('dashboard');
 
   // Chart view preferences
@@ -369,6 +399,121 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
     setSelectedClaimForObjection(null);
     alert('اعتراض بیمه‌ای شما با موفقیت ثبت گردید و به واحد بیمه کلینیک ارسال شد. کد پیگیری: ' + newObj.trackingCode);
   };
+
+  // Pre-treatment Approvals State
+  const [approvalTitle, setApprovalTitle] = useState('');
+  const [approvalCategory, setApprovalCategory] = useState<'anesthesia' | 'insurance_prior_auth' | 'consent_surgery' | 'lab_clearance' | 'general'>('anesthesia');
+  const [approvalDescription, setApprovalDescription] = useState('');
+  const [approvalFileName, setApprovalFileName] = useState('approval_document.pdf');
+  const [approvalFileSize, setApprovalFileSize] = useState('1.4 MB');
+  const [approvalSuccessMsg, setApprovalSuccessMsg] = useState<string | null>(null);
+
+  // PACS / Radiology Links State
+  const [radiologyCenterName, setRadiologyCenterName] = useState('');
+  const [radiologyStudyType, setRadiologyStudyType] = useState('OPG (پانورامیک دیجیتال)');
+  const [radiologyUrl, setRadiologyUrl] = useState('');
+  const [radiologyAccessCode, setRadiologyAccessCode] = useState('');
+  const [radiologyNotes, setRadiologyNotes] = useState('');
+  const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null);
+  const [radiologySuccessMsg, setRadiologySuccessMsg] = useState<string | null>(null);
+
+  // Pre-treatment Approvals & Radiology Links Handlers
+  const handleUploadApprovalSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!approvalTitle.trim()) {
+      alert('لطفاً عنوان تأییدیه پیش از درمان را وارد فرمایید.');
+      return;
+    }
+
+    const newApproval: PreTreatmentApproval = {
+      id: `appr-${Date.now()}`,
+      patientId: patient.id,
+      patientName: patient.fullName,
+      patientPhone: patient.phone,
+      nationalId: patient.nationalId,
+      title: approvalTitle.trim(),
+      category: approvalCategory,
+      fileName: approvalFileName,
+      fileSize: approvalFileSize,
+      uploadedAt: new Date().toLocaleDateString('fa-IR'),
+      status: 'pending',
+      description: approvalDescription.trim() || undefined,
+      downloadUrl: '#',
+    };
+
+    if (onUploadPreTreatmentApproval) {
+      onUploadPreTreatmentApproval(newApproval);
+    }
+    setApprovalSuccessMsg(`تأییدیه «${approvalTitle}» با موفقیت بارگذاری شد و در لیست تأییدیه‌های منشی قرار گرفت.`);
+    setApprovalTitle('');
+    setApprovalDescription('');
+    setTimeout(() => setApprovalSuccessMsg(null), 5000);
+  };
+
+  const handleRegisterRadiologySubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!radiologyUrl.trim()) {
+      alert('لطفاً آدرس اینترنتی یا لینک تصویربرداری را وارد فرمایید.');
+      return;
+    }
+
+    let validUrl = radiologyUrl.trim();
+    if (!validUrl.startsWith('http://') && !validUrl.startsWith('https://')) {
+      validUrl = `https://${validUrl}`;
+    }
+
+    const newLink: RadiologyImagingLink = {
+      id: `rad-link-${Date.now()}`,
+      patientId: patient.id,
+      patientName: patient.fullName,
+      patientPhone: patient.phone,
+      nationalId: patient.nationalId,
+      imagingCenterName: radiologyCenterName.trim() || 'مرکز رادیولوژی فک و صورت',
+      studyType: radiologyStudyType,
+      url: validUrl,
+      accessCode: radiologyAccessCode.trim() || undefined,
+      registeredAt: new Date().toLocaleDateString('fa-IR'),
+      notes: radiologyNotes.trim() || undefined,
+    };
+
+    if (onRegisterRadiologyLink) {
+      onRegisterRadiologyLink(newLink);
+    }
+    setRadiologySuccessMsg(`لینک تصویربرداری «${newLink.imagingCenterName}» با موفقیت ثبت شد و در دسترس پزشک قرار گرفت.`);
+    setRadiologyCenterName('');
+    setRadiologyUrl('');
+    setRadiologyAccessCode('');
+    setRadiologyNotes('');
+    setTimeout(() => setRadiologySuccessMsg(null), 5000);
+  };
+
+  const handleCopyLinkToClipboard = (link: RadiologyImagingLink) => {
+    try {
+      navigator.clipboard.writeText(link.url);
+      setCopiedLinkId(link.id);
+      setTimeout(() => setCopiedLinkId(null), 3000);
+    } catch (e) {
+      console.error('Clipboard copy error:', e);
+    }
+  };
+
+  // Filtered Pre-treatment Approvals for active patient
+  const patientApprovalsList = (preTreatmentApprovals || []).filter(
+    (a) =>
+      a.patientId === patient.id ||
+      a.nationalId === patient.nationalId ||
+      a.patientPhone === patient.phone ||
+      (a.patientName && a.patientName === patient.fullName)
+  );
+
+  // Filtered Radiology Links for active patient
+  const patientRadiologyLinksList = (radiologyLinks || []).filter(
+    (l) =>
+      l.patientId === patient.id ||
+      l.nationalId === patient.nationalId ||
+      l.patientPhone === patient.phone ||
+      (l.patientName && l.patientName === patient.fullName)
+  );
 
   // Submit Consent Token Handler
   const handleIssueConsentTokenSubmit = (e: React.FormEvent) => {
@@ -660,32 +805,22 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
     }
   }, [activeTab, isInsuranceClaimsTabVisible]);
 
-  // Dynamic slot calculation: Show empty/available timeslots determined by doctor & receptionist schedule
-  const defaultMorningMasterSlots = ['۰۹:۰۰', '۰۹:۳۰', '۱۰:۰۰', '۱۰:۳۰', '۱۱:۰۰', '۱۱:۳۰', '۱۲:۰۰'];
-  const defaultEveningMasterSlots = ['۱۶:۰۰', '۱۶:۳۰', '۱۷:۰۰', '۱۷:۳۰', '۱۸:۰۰', '۱۸:۳۰', '۱۹:۰۰', '۱۹:۳۰'];
+  // Dynamic Duration and Slots based on Reason for Visit
+  const durationInfo = React.useMemo(() => {
+    return getAppointmentDuration(bookingReason);
+  }, [bookingReason]);
 
-  const selectedDentistObj = availableDentists.find((d) => d.id === bookingDentist) || availableDentists[0];
-  const selectedDentistName = selectedDentistObj?.name || '';
+  const dynamicMorningSlots = React.useMemo(() => {
+    return generateDynamicSlots(durationInfo.durationMinutes, 'morning');
+  }, [durationInfo.durationMinutes]);
 
-  // Filter out slots that are already booked for this doctor on this day
-  const bookedSlotsOnDay = (appointments || [])
-    .filter((apt) => {
-      if (apt.status === 'cancelled') return false;
-      const isDocMatch =
-        apt.dentistId === bookingDentist ||
-        (selectedDentistName && apt.dentistName && selectedDentistName.includes(apt.dentistName)) ||
-        (apt.dentistName && selectedDentistName && apt.dentistName.includes(selectedDentistName));
-      return isDocMatch;
-    })
-    .map((apt) => apt.time);
+  const dynamicEveningSlots = React.useMemo(() => {
+    return generateDynamicSlots(durationInfo.durationMinutes, 'evening');
+  }, [durationInfo.durationMinutes]);
 
-  const availableMorningSlots = defaultMorningMasterSlots.filter((slot) => !bookedSlotsOnDay.includes(slot));
-  const availableEveningSlots = defaultEveningMasterSlots.filter((slot) => !bookedSlotsOnDay.includes(slot));
-
-  const morningSlots = availableMorningSlots.length > 0 ? availableMorningSlots : ['۰۹:۳۰', '۱۰:۳۰', '۱۱:۳۰'];
-  const eveningSlots = availableEveningSlots.length > 0 ? availableEveningSlots : ['۱۶:۳۰', '۱۷:۳۰', '۱۸:۳۰'];
-
-  const fastestAvailableSlot = morningSlots[0] || eveningSlots[0] || '۱۰:۳۰';
+  const morningSlots = dynamicMorningSlots.map((s) => s.label);
+  const eveningSlots = dynamicEveningSlots.map((s) => s.label);
+  const fastestAvailableSlot = morningSlots[0] || eveningSlots[0] || '۰۸:۳۰ تا ۰۹:۰۰';
 
   const daysList = [
     { title: 'امروز', dateStr: '۲۰ مرداد' },
@@ -804,6 +939,29 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
                 activeTab === 'radiography' ? 'bg-white/20 text-white' : 'bg-blue-100 dark:bg-blue-900/40 text-[#005581] dark:text-[#72cdf4]'
               }`}>
                 {(patient.patientImages || []).length}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('pre_approvals_imaging')}
+            className={`w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-xs font-bold transition cursor-pointer ${
+              activeTab === 'pre_approvals_imaging'
+                ? 'bg-[#005581] text-white shadow-md'
+                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <FileCheck className="w-4 h-4" />
+              <span>تأییدیه‌ها و لینک تصویربرداری</span>
+            </div>
+            {(patientApprovalsList.length > 0 || patientRadiologyLinksList.length > 0) && (
+              <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-full ${
+                activeTab === 'pre_approvals_imaging'
+                  ? 'bg-white/20 text-white'
+                  : 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300'
+              }`}>
+                {patientApprovalsList.length + patientRadiologyLinksList.length}
               </span>
             )}
           </button>
@@ -1247,6 +1405,428 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
                   patientImages={patient.patientImages || []}
                   readOnly={true}
                 />
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================== */}
+          {/* TAB 2.6: PRE-TREATMENT APPROVALS & RADIOLOGY LINKS         */}
+          {/* ========================================================== */}
+          {activeTab === 'pre_approvals_imaging' && (
+            <div className="space-y-6">
+              {/* Header & Metric Summary */}
+              <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 shadow-xs space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
+                  <div>
+                    <h3 className="font-black text-slate-900 dark:text-slate-100 text-base flex items-center gap-2">
+                      <FileCheck className="w-5 h-5 text-[#005581]" />
+                      <span>بارگذاری تأییدیه‌های پیش از درمان و ثبت لینک‌های تصویربرداری</span>
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                      مدارک و تاییدیه‌های پزشکی/بیمه‌ای خود را بارگذاری کنید تا منشی پذیرش بررسی و دانلود کند، یا لینک‌های رادیولوژی آنلاین (PACS) را ثبت نمایید تا مستقیماً در اختیار دندان‌پزشک قرار گیرد.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="px-3 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-blue-900 dark:text-blue-300 text-xs font-bold flex items-center gap-1.5">
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>تأییدیه‌ها: <strong>{patientApprovalsList.length}</strong></span>
+                    </span>
+                    <span className="px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-300 text-xs font-bold flex items-center gap-1.5">
+                      <LinkIcon className="w-3.5 h-3.5" />
+                      <span>لینک‌ها: <strong>{patientRadiologyLinksList.length}</strong></span>
+                    </span>
+                  </div>
+                </div>
+
+                {/* Success Notifications */}
+                {approvalSuccessMsg && (
+                  <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 text-emerald-900 dark:text-emerald-200 text-xs flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>{approvalSuccessMsg}</span>
+                  </div>
+                )}
+
+                {radiologySuccessMsg && (
+                  <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 text-emerald-900 dark:text-emerald-200 text-xs flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>{radiologySuccessMsg}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Two Column Grid: Left is Approvals Upload, Right is Radiology Links Registration */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                
+                {/* 1. Pre-treatment Approval Upload Panel */}
+                <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 shadow-xs space-y-4">
+                  <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
+                    <div className="w-8 h-8 rounded-xl bg-blue-100 dark:bg-blue-950/60 text-[#005581] flex items-center justify-center font-bold">
+                      <UploadCloud className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-sm text-slate-900 dark:text-slate-100">
+                        ۱. آپلود تأییدیه پیش از درمان
+                      </h4>
+                      <span className="text-[11px] text-slate-500">
+                        جهت مشاهده، ارزیابی و دانلود توسط منشی پذیرش
+                      </span>
+                    </div>
+                  </div>
+
+                  <form onSubmit={handleUploadApprovalSubmit} className="space-y-3.5 text-xs">
+                    <div>
+                      <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        عنوان مدرک یا تأییدیه <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={approvalTitle}
+                        onChange={(e) => setApprovalTitle(e.target.value)}
+                        placeholder="مثال: تأییدیه بیهوشی و سلامت قلب، رضایت‌نامه جراحی، آزمایش انعقادی"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#005581]"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                          نوع تأییدیه
+                        </label>
+                        <select
+                          value={approvalCategory}
+                          onChange={(e: any) => setApprovalCategory(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#005581]"
+                        >
+                          <option value="anesthesia">تأییدیه بیهوشی / مشاوره قلب</option>
+                          <option value="insurance_prior_auth">تأییدیه پیش‌درمان بیمه تکمیلی</option>
+                          <option value="consent_surgery">رضایت‌نامه کتبی عمل / جراحی</option>
+                          <option value="lab_clearance">برگه آزمایش خون و سلامت</option>
+                          <option value="general">سایر مدارک و نامه‌های بالینی</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                          فایل تأییدیه (PDF یا تصویر)
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="file"
+                            id="patient-approval-file-input"
+                            className="hidden"
+                            accept=".pdf,.jpg,.jpeg,.png"
+                            onChange={(e) => {
+                              if (e.target.files && e.target.files[0]) {
+                                const file = e.target.files[0];
+                                setApprovalFileName(file.name);
+                                setApprovalFileSize(`${(file.size / (1024 * 1024)).toFixed(2)} MB`);
+                              }
+                            }}
+                          />
+                          <label
+                            htmlFor="patient-approval-file-input"
+                            className="w-full flex items-center justify-between px-3 py-2 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 text-slate-700 dark:text-slate-300 cursor-pointer"
+                          >
+                            <span className="truncate text-[11px] max-w-[140px]">{approvalFileName}</span>
+                            <span className="text-[10px] px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-900 text-[#005581] font-bold">
+                              انتخاب فایل
+                            </span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        توضیحات تکمیلی (اختیاری)
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={approvalDescription}
+                        onChange={(e) => setApprovalDescription(e.target.value)}
+                        placeholder="در صورت داشتن نکات خاص، شماره تماس پزشک مشاوره دهنده یا دستورات پیوست..."
+                        className="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:outline-none focus:ring-2 focus:ring-[#005581]"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="w-full py-2.5 px-4 rounded-xl bg-[#005581] hover:bg-[#004266] text-white font-bold text-xs shadow transition flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <UploadCloud className="w-4 h-4" />
+                      <span>ثبت و ارسال تأییدیه به پذیرش کلینیک</span>
+                    </button>
+                  </form>
+
+                  {/* List of uploaded approvals for this patient */}
+                  <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-3">
+                    <h5 className="font-bold text-xs text-slate-800 dark:text-slate-200">
+                      تأییدیه‌های ثبت‌شده توسط شما:
+                    </h5>
+
+                    {patientApprovalsList.length === 0 ? (
+                      <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 text-center text-slate-400 text-xs">
+                        هنوز تأییدیه‌ای بارگذاری نکرده‌اید.
+                      </div>
+                    ) : (
+                      <div className="space-y-2.5">
+                        {patientApprovalsList.map((appr) => (
+                          <div
+                            key={appr.id}
+                            className="p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 text-xs space-y-2"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <strong className="font-bold text-slate-900 dark:text-slate-100 block">
+                                  {appr.title}
+                                </strong>
+                                <div className="text-[11px] text-slate-500 flex items-center gap-2 mt-0.5">
+                                  <span>تاریخ: <strong className="font-mono">{appr.uploadedAt}</strong></span>
+                                  <span>•</span>
+                                  <span>فایل: <strong className="font-mono">{appr.fileName}</strong> ({appr.fileSize || '1.2 MB'})</span>
+                                </div>
+                              </div>
+
+                              <span
+                                className={`text-[10px] px-2.5 py-1 rounded-full font-bold shrink-0 ${
+                                  appr.status === 'approved'
+                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                    : appr.status === 'rejected'
+                                    ? 'bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300'
+                                    : 'bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200'
+                                }`}
+                              >
+                                {appr.status === 'approved'
+                                  ? 'تأییدشده توسط پذیرش'
+                                  : appr.status === 'rejected'
+                                  ? 'نیازمند اصلاح مدرک'
+                                  : 'در حال بررسی منشی'}
+                              </span>
+                            </div>
+
+                            {appr.description && (
+                              <p className="text-[11px] text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-900 p-2 rounded-xl border border-slate-200 dark:border-slate-800">
+                                {appr.description}
+                              </p>
+                            )}
+
+                            {appr.reviewedNotes && (
+                              <div className="text-[11px] text-blue-900 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/50 p-2 rounded-xl border border-blue-200 dark:border-blue-900">
+                                <strong>یادداشت پذیرش:</strong> {appr.reviewedNotes}
+                              </div>
+                            )}
+
+                            <div className="flex justify-end pt-1">
+                              <a
+                                href={appr.downloadUrl || '#'}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  alert(`دانلود فایل تأییدیه «${appr.fileName}» آغاز گردید.`);
+                                }}
+                                className="px-3 py-1 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 text-slate-800 dark:text-slate-200 rounded-lg font-bold text-[11px] flex items-center gap-1.5 transition"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                <span>دانلود تأییدیه</span>
+                              </a>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* 2. PACS & Online Radiology Links Panel */}
+                <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 shadow-xs space-y-4">
+                  <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 flex items-center justify-center font-bold">
+                      <LinkIcon className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-sm text-slate-900 dark:text-slate-100">
+                        ۲. تایپ یا پیست لینک تصویربرداری آنلاین
+                      </h4>
+                      <span className="text-[11px] text-slate-500">
+                        لینک سامانه رادیولوژی جهت مشاهده مستقیم و کپی توسط دندان‌پزشک
+                      </span>
+                    </div>
+                  </div>
+
+                  <form onSubmit={handleRegisterRadiologySubmit} className="space-y-3.5 text-xs">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                          نام مرکز تصویربرداری / رادیولوژی
+                        </label>
+                        <input
+                          type="text"
+                          value={radiologyCenterName}
+                          onChange={(e) => setRadiologyCenterName(e.target.value)}
+                          placeholder="مثال: رادیولوژی فک و صورت دکتر پرتو"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#005581]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                          نوع تصویربرداری
+                        </label>
+                        <select
+                          value={radiologyStudyType}
+                          onChange={(e) => setRadiologyStudyType(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#005581]"
+                        >
+                          <option value="OPG (پانورامیک دیجیتال)">OPG (پانورامیک دیجیتال)</option>
+                          <option value="CBCT سه‌بعدی فک و صورت">CBCT سه‌بعدی فک و صورت</option>
+                          <option value="پری‌اپیکال دیجیتال RVG">پری‌اپیکال دیجیتال RVG</option>
+                          <option value="بایت‌وینگ (Bitewing)">بایت‌وینگ (Bitewing)</option>
+                          <option value="فتوگرافی بالینی و ارتودنسی">فتوگرافی بالینی و ارتودنسی</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        آدرس اینترنتی یا لینک تصویربرداری (PACS URL) <span className="text-red-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          required
+                          dir="ltr"
+                          value={radiologyUrl}
+                          onChange={(e) => setRadiologyUrl(e.target.value)}
+                          placeholder="https://pacs.clinic-radiology.ir/study/view?id=8492"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-mono text-left focus:outline-none focus:ring-2 focus:ring-[#005581]"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                          کد دسترسی یا شناسه پرونده رادیولوژی (اختیاری)
+                        </label>
+                        <input
+                          type="text"
+                          dir="ltr"
+                          value={radiologyAccessCode}
+                          onChange={(e) => setRadiologyAccessCode(e.target.value)}
+                          placeholder="مثال: RAD-9842 یا کد پیامک‌شده"
+                          className="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-mono text-left focus:outline-none focus:ring-2 focus:ring-[#005581]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                          یادداشت برای پزشک (اختیاری)
+                        </label>
+                        <input
+                          type="text"
+                          value={radiologyNotes}
+                          onChange={(e) => setRadiologyNotes(e.target.value)}
+                          placeholder="مثال: گرافی پس از کشیدن دندان عقل"
+                          className="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#005581]"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow transition flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <LinkIcon className="w-4 h-4" />
+                      <span>ثبت لینک و ارسال به کارتابل پزشک</span>
+                    </button>
+                  </form>
+
+                  {/* List of registered links for this patient */}
+                  <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-3">
+                    <h5 className="font-bold text-xs text-slate-800 dark:text-slate-200">
+                      لینک‌های رادیولوژی ثبت‌شده شما:
+                    </h5>
+
+                    {patientRadiologyLinksList.length === 0 ? (
+                      <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 text-center text-slate-400 text-xs">
+                        هنوز لینک تصویربرداری ثبت نکرده‌اید.
+                      </div>
+                    ) : (
+                      <div className="space-y-2.5">
+                        {patientRadiologyLinksList.map((item) => (
+                          <div
+                            key={item.id}
+                            className="p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 text-xs space-y-2"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <strong className="font-bold text-slate-900 dark:text-slate-100 block">
+                                  {item.imagingCenterName}
+                                </strong>
+                                <div className="text-[11px] text-slate-500 flex items-center gap-2 mt-0.5">
+                                  <span>نوع: <strong>{item.studyType}</strong></span>
+                                  <span>•</span>
+                                  <span>تاریخ ثبت: <strong className="font-mono">{item.registeredAt}</strong></span>
+                                </div>
+                              </div>
+
+                              {item.accessCode && (
+                                <span className="text-[10px] px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-700 font-mono text-slate-700 dark:text-slate-300">
+                                  کد دسترسی: {item.accessCode}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-mono text-[11px] text-slate-700 dark:text-slate-300 break-all dir-ltr text-left">
+                              {item.url}
+                            </div>
+
+                            {item.notes && (
+                              <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                                {item.notes}
+                              </p>
+                            )}
+
+                            <div className="flex items-center justify-end gap-2 pt-1">
+                              <button
+                                onClick={() => handleCopyLinkToClipboard(item)}
+                                className={`px-3 py-1 rounded-lg font-bold text-[11px] flex items-center gap-1 transition cursor-pointer ${
+                                  copiedLinkId === item.id
+                                    ? 'bg-emerald-600 text-white'
+                                    : 'bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 text-slate-800 dark:text-slate-200'
+                                }`}
+                              >
+                                {copiedLinkId === item.id ? (
+                                  <>
+                                    <CheckCheck className="w-3.5 h-3.5 text-[#ffd200]" />
+                                    <span>کپی شد!</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-3.5 h-3.5" />
+                                    <span>کپی لینک</span>
+                                  </>
+                                )}
+                              </button>
+
+                              <a
+                                href={item.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-3 py-1 bg-[#005581] hover:bg-[#004266] text-white rounded-lg font-bold text-[11px] flex items-center gap-1 transition"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                                <span>مشاهده در سامانه</span>
+                              </a>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
               </div>
             </div>
           )}
@@ -2460,9 +3040,40 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
                         type="text"
                         value={bookingReason}
                         onChange={(e) => setBookingReason(e.target.value)}
-                        placeholder="مثلاً: معاینه دوره‌ای، عصب‌کشی، پرکردن دندان..."
+                        placeholder="مثلاً: معاینه دوره‌ای، عصب‌کشی، پرکردن دندان، جراحی یا عمل..."
                         className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs outline-none focus:border-[#005581]"
                       />
+
+                      {/* Live Dynamic Duration Preview */}
+                      {bookingReason.trim() && (
+                        <div
+                          className={`mt-2 p-2.5 rounded-xl border transition text-xs flex items-center justify-between gap-2 ${
+                            durationInfo.isSurgical
+                              ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 text-rose-900 dark:text-rose-200'
+                              : 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 text-blue-900 dark:text-blue-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            {durationInfo.isSurgical ? (
+                              <Scissors className="w-4 h-4 text-rose-600" />
+                            ) : (
+                              <Clock className="w-4 h-4 text-[#005581]" />
+                            )}
+                            <span className="font-bold">
+                              بازه زمانی محاسبه‌شده: {toPersianDigits(durationInfo.durationLabel)}
+                            </span>
+                          </div>
+                          <span
+                            className={`text-[10px] px-2 py-0.5 rounded-md font-black ${
+                              durationInfo.isSurgical
+                                ? 'bg-rose-200 text-rose-900'
+                                : 'bg-blue-200 text-blue-900'
+                            }`}
+                          >
+                            {durationInfo.categoryTitle}
+                          </span>
+                        </div>
+                      )}
                     </div>
 
                     <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-between">
@@ -2495,8 +3106,27 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
               {bookingStep === 'calendar_select' && (
                 <div className="space-y-4">
                   <h4 className="font-extrabold text-slate-900 dark:text-slate-100 text-sm text-center">
-                    انتخاب زمان نوبت
+                    انتخاب بازه زمانی نوبت
                   </h4>
+
+                  {/* Reason & Dynamic Duration Notice Banner */}
+                  <div
+                    className={`p-3 rounded-2xl border text-xs flex items-center justify-between gap-2 ${
+                      durationInfo.isSurgical
+                        ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 text-rose-900 dark:text-rose-200'
+                        : 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 text-blue-900 dark:text-blue-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-[#005581]" />
+                      <span>
+                        طول بازه نوبت: <strong>{toPersianDigits(durationInfo.durationLabel)}</strong> (بر اساس: {bookingReason})
+                      </span>
+                    </div>
+                    <span className="text-[10px] px-2 py-0.5 rounded-md font-black bg-white/70 dark:bg-slate-800 border">
+                      {durationInfo.categoryTitle}
+                    </span>
+                  </div>
 
                   {/* Radio Box 1: Fastest Available Slot */}
                   <div
@@ -2512,9 +3142,9 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
                     }`}
                   >
                     <div>
-                      <span className="text-slate-500 text-[11px] block">زودترین زمان نوبت خالی:</span>
+                      <span className="text-slate-500 text-[11px] block">زودترین بازه زمانی خالی پیشنهادی:</span>
                       <strong className="text-slate-900 dark:text-slate-100 font-bold text-xs">
-                        امروز (سه‌شنبه) - ساعت {fastestAvailableSlot}
+                        امروز (سه‌شنبه) - بازه {toPersianDigits(fastestAvailableSlot)}
                       </strong>
                     </div>
                     <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
@@ -2534,7 +3164,7 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
                     }`}
                   >
                     <span className="font-bold text-slate-900 dark:text-slate-100 text-xs">
-                      انتخاب زمان دیگر
+                      انتخاب بازه زمانی دیگر
                     </span>
                     <div className="w-5 h-5 rounded-full bg-blue-600 flex items-center justify-center text-white">
                       <Check className="w-3.5 h-3.5" />
@@ -2556,7 +3186,7 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
                                 : 'border-transparent text-slate-500'
                             }`}
                           >
-                            صبح
+                            شیفت صبح ({toPersianDigits(morningSlots.length)} بازه)
                           </button>
                           <button
                             onClick={() => setSelectedShift('evening')}
@@ -2566,25 +3196,25 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
                                 : 'border-transparent text-slate-500'
                             }`}
                           >
-                            عصر
+                            شیفت عصر ({toPersianDigits(eveningSlots.length)} بازه)
                           </button>
                         </div>
 
                         {/* Slots Grid */}
-                        <div className="grid grid-cols-3 gap-2">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                           {(selectedShift === 'morning' ? morningSlots : eveningSlots).map((slot) => {
                             const isSelected = bookingSlot === slot;
                             return (
                               <button
                                 key={slot}
                                 onClick={() => setBookingSlot(slot)}
-                                className={`py-2 rounded-xl border font-mono font-bold text-xs transition cursor-pointer text-center ${
+                                className={`py-2 px-1 rounded-xl border font-mono font-bold text-xs transition cursor-pointer text-center ${
                                   isSelected
                                     ? 'border-[#005581] bg-[#005581] text-white shadow-xs'
                                     : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 hover:border-slate-400'
                                 }`}
                               >
-                                {slot}
+                                {toPersianDigits(slot)}
                               </button>
                             );
                           })}
@@ -2606,7 +3236,7 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
                               }`}
                             >
                               <div className="font-bold">{d.title}</div>
-                              <div className="text-[10px] opacity-80">{d.dateStr}</div>
+                              <div className="text-[10px] opacity-80">{toPersianDigits(d.dateStr)}</div>
                             </button>
                           );
                         })}
@@ -2624,9 +3254,9 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
                     </button>
                     <button
                       onClick={handleSelectSlotAndLock}
-                      className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs rounded-xl shadow-md transition cursor-pointer"
+                      className="px-8 py-3 bg-[#005581] hover:bg-[#004266] text-white font-black text-xs rounded-xl shadow-md transition cursor-pointer"
                     >
-                      ادامه
+                      قفل اسلات ({toPersianDigits(bookingSlot)}) و ادامه
                     </button>
                   </div>
                 </div>

@@ -174,6 +174,7 @@ export interface Patient {
   allergies: string[];
   clinicalNotes?: string[];
   prescriptions?: PatientPrescription[];
+  electronicPrescriptions?: ElectronicPrescription[];
   patientImages?: PatientImageRecord[];
   savedCards?: SavedBankCard[];
   isLegalGuardian?: boolean;
@@ -721,5 +722,52 @@ export interface RadiologyImagingLink {
   createdAt?: string;
   registeredAt?: string;
 }
+
+export interface PrescriptionItem {
+  id: string;
+  prescriptionId?: string;
+  medicationId?: string;
+  medicationName: string;
+  dosage: string;
+  form: string;
+  quantity: number;
+  unit: string;
+  frequency: string;
+  duration: string;
+  instructions?: string;
+  notes?: string;
+}
+
+export interface ElectronicPrescription {
+  id: string;
+  prescriptionNumber: string;
+  patientId: string;
+  patientName: string;
+  nationalId: string;
+  visitId: string;
+  doctorId: string;
+  doctorName: string;
+  doctorMedicalCode?: string;
+  doctorSpecialty?: string;
+  clinicId: string;
+  clinicName: string;
+  insuranceId?: string;
+  insuranceProvider: string;
+  supplementaryInsuranceProvider?: string;
+  status: 'draft' | 'submitted' | 'accepted' | 'failed' | 'cancelled';
+  externalPrescriptionId?: string;
+  trackingCode: string;
+  items: PrescriptionItem[];
+  diagnosis?: string;
+  procedureNotes?: string;
+  toothFdi?: number;
+  patientAllergies?: string[];
+  patientMedicalHistory?: string[];
+  allergyWarnings?: string[];
+  notes?: string;
+  createdAt: string;
+  submittedAt?: string;
+}
+
 
 

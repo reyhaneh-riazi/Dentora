@@ -14,6 +14,7 @@ import {
   PatientImageRecord,
   Invoice,
   RadiologyImagingLink,
+  ElectronicPrescription,
 } from '../../types';
 import { mockPatients } from '../../data/mockData';
 import { Odontogram } from './Odontogram';
@@ -21,9 +22,15 @@ import { ImageXrayViewer } from './ImageXrayViewer';
 import { DoctorCalendarView } from './DoctorCalendarView';
 import { PatientRecordsView } from './PatientRecordsView';
 import { DoctorFinancialView } from './DoctorFinancialView';
+import { ElectronicPrescriptionWorkbench } from './ElectronicPrescriptionWorkbench';
 import { OwnerWorkspace } from '../owner/OwnerWorkspace';
 import { getStoredLabAccounts } from '../../services/authService';
-import { getStoredLabs, loadClinicData, addRadiologyLinkToStore } from '../../services/clinicDataStore';
+import {
+  getStoredLabs,
+  loadClinicData,
+  addRadiologyLinkToStore,
+  addElectronicPrescriptionToStore,
+} from '../../services/clinicDataStore';
 import { getClinicalProfileByReason } from '../../utils/clinicalReasonMapping';
 import {
   Stethoscope,
@@ -204,19 +211,10 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
   // Main Navigation Tab
   const [activeNavTab, setActiveNavTab] = useState<DentistNavTab>(initialTab || 'clinical_workbench');
 
-  // Patients list state for records and messaging
-  const [patientsList, setPatientsList] = useState<Patient[]>(
-    allPatients && allPatients.length > 0 ? allPatients : mockPatients
-  );
-
-  React.useEffect(() => {
-    if (allPatients && allPatients.length > 0) {
-      setPatientsList(allPatients);
-    }
-  }, [allPatients]);
+  // Patients list for records and messaging
+  const patientsList = allPatients && allPatients.length > 0 ? allPatients : mockPatients;
 
   const handleUpdatePatientInList = (updated: Patient) => {
-    setPatientsList((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
     if (onUpdatePatient) {
       onUpdatePatient(updated);
     }
@@ -294,7 +292,17 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
     setInsuranceNarrative(profile.insuranceNarrative);
     setNextVisitDate('');
     setTreatmentCostTotal(profile.estimatedCost);
-    setEPrescriptionSent(false);
+    const existingRx = (activePatient.electronicPrescriptions && activePatient.electronicPrescriptions.length > 0)
+      ? activePatient.electronicPrescriptions[0]
+      : null;
+    setActiveElectronicPrescription(existingRx);
+    if (existingRx && existingRx.status === 'sent_to_insurer') {
+      setEPrescriptionSent(true);
+      setEPrescriptionTrackingCode(existingRx.trackingCode || 'IR-170075');
+      setEPrescriptionSentTime(existingRx.createdAt ? existingRx.createdAt.split(' ')[1] || 'هم‌اکنون' : '');
+    } else {
+      setEPrescriptionSent(false);
+    }
     setIsSendingEPrescription(false);
     setCopilotChatHistory([
       {
@@ -343,6 +351,11 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
   const [followupSentToReception, setFollowupSentToReception] = useState(false);
 
   // Step 5: Electronic Prescription System Transmission State
+  const [activeElectronicPrescription, setActiveElectronicPrescription] = useState<ElectronicPrescription | null>(() => {
+    return (activePatient.electronicPrescriptions && activePatient.electronicPrescriptions.length > 0)
+      ? activePatient.electronicPrescriptions[0]
+      : null;
+  });
   const [isSendingEPrescription, setIsSendingEPrescription] = useState(false);
   const [ePrescriptionSent, setEPrescriptionSent] = useState(false);
   const [ePrescriptionTrackingCode, setEPrescriptionTrackingCode] = useState('IR-170075');
@@ -713,10 +726,26 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
   // Keep synced with store
   React.useEffect(() => {
     const clinicId = currentClinic?.id || 'main_clinic';
-    const store = loadClinicData(clinicId);
-    if (store.radiologyLinks && store.radiologyLinks.length > 0) {
-      setRadiologyLinksList(store.radiologyLinks);
-    }
+    const refreshData = () => {
+      const store = loadClinicData(clinicId);
+      if (store.radiologyLinks) {
+        setRadiologyLinksList(store.radiologyLinks);
+      }
+    };
+    refreshData();
+
+    const handleStoreChange = (e: any) => {
+      if (!e.detail || e.detail.clinicId === clinicId) {
+        refreshData();
+      }
+    };
+
+    window.addEventListener('dentora_store_changed', handleStoreChange);
+    window.addEventListener('storage', refreshData);
+    return () => {
+      window.removeEventListener('dentora_store_changed', handleStoreChange);
+      window.removeEventListener('storage', refreshData);
+    };
   }, [currentClinic?.id]);
 
   const handleCopyRadiologyLink = (link: RadiologyImagingLink) => {
@@ -1902,130 +1931,51 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
                   <div>
                     <h3 className="font-bold text-slate-900 dark:text-slate-100 text-base flex items-center gap-2">
                       <FileSpreadsheet className="w-5 h-5 text-[#005581]" />
-                      <span>مرحله ۵: تنظیم نسخه دارویی، نوت و زمان مراجعه بعدی</span>
+                      <span>مرحله ۵: ثبت نسخه الکترونیک، یادداشت بالینی و زمان مراجعه بعدی</span>
                     </h3>
                     <p className="text-xs text-slate-500">
-                      ویرایش نسخه پیشنهادی دارویی، ثبت یادداشت بالینی و ارسال پیام زمان مراجعه به منشی
+                      صدور و ارسال برخط نسخه الکترونیک (تامین اجتماعی / بیمه سلامت / سپاس)، ثبت تذکرات دارویی و هماهنگی نوبت بعدی با منشی
                     </p>
                   </div>
                   <span className="px-3 py-1 bg-[#005581] text-white font-bold text-xs rounded-lg">گام ۵ از ۷</span>
                 </div>
 
-                {/* Editable Prescription List */}
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3 text-xs">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-                      <FileText className="w-4 h-4 text-[#005581]" />
-                      <span>نسخه دارویی (قابل ویرایش):</span>
-                    </h4>
-                    <button
-                      onClick={() => setProposedPrescription([...proposedPrescription, 'داروی جدید'])}
-                      className="text-[11px] text-[#005581] font-bold underline cursor-pointer"
-                    >
-                      + افزودن داروی جدید
-                    </button>
-                  </div>
-
-                  <div className="space-y-2">
-                    {proposedPrescription.map((rx, idx) => (
-                      <div key={idx} className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={rx}
-                          onChange={(e) => {
-                            const updated = [...proposedPrescription];
-                            updated[idx] = e.target.value;
-                            setProposedPrescription(updated);
-                          }}
-                          className="flex-1 p-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs"
-                        />
-                        <button
-                          onClick={() => setProposedPrescription(proposedPrescription.filter((_, i) => i !== idx))}
-                          className="text-rose-500 font-bold text-xs px-2 cursor-pointer"
-                        >
-                          حذف
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Electronic Prescription System Submission Card */}
-                <div className="p-4 rounded-xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/60 space-y-3 text-xs">
-                  <div className="flex items-center justify-between flex-wrap gap-2">
-                    <div className="flex items-center gap-2">
-                      <ShieldCheck className="w-5 h-5 text-emerald-600" />
-                      <div>
-                        <h4 className="font-bold text-slate-900 dark:text-slate-100 text-xs">
-                          سامانه نسخه الکترونیک (بیمه سلامت / تامین اجتماعی)
-                        </h4>
-                        <p className="text-[11px] text-slate-500">
-                          ارسال مستقیم و آنی اقلام نسخه به درگاه الکترونیک سازمان‌های بیمه‌گر
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 text-[11px] font-mono text-slate-600 dark:text-slate-300">
-                      <span>کد ملی: <strong className="text-slate-900 dark:text-slate-100">{activePatient.nationalId || '۰۰۱۲۳۴۵۶۷۸'}</strong></span>
-                      <span className="text-slate-300">|</span>
-                      <span>بیمه پایه: <strong className="text-slate-900 dark:text-slate-100">{activePatient.baseInsurance?.companyName || 'تأمین اجتماعی'}</strong></span>
-                    </div>
-                  </div>
-
-                  {!ePrescriptionSent ? (
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2 border-t border-emerald-100 dark:border-emerald-900/50">
-                      <span className="text-slate-600 dark:text-slate-400 text-xs">
-                        اقلام نسخه دارویی آماده تایید و ارسال به سامانه نسخه الکترونیک است.
-                      </span>
-                      <button
-                        type="button"
-                        onClick={handleSendEPrescription}
-                        disabled={isSendingEPrescription}
-                        className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow transition cursor-pointer disabled:opacity-70 whitespace-nowrap"
-                      >
-                        {isSendingEPrescription ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin text-white" />
-                            <span>در حال ارسال به سامانه نسخه الکترونیک...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Send className="w-4 h-4 text-emerald-200" />
-                            <span>ارسال به سامانه نسخه الکترونیک</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="p-3.5 rounded-xl bg-emerald-100/80 dark:bg-emerald-950/60 border-2 border-emerald-500 text-emerald-950 dark:text-emerald-100 space-y-2">
-                      <div className="flex items-center justify-between flex-wrap gap-2">
-                        <div className="text-sm font-black text-emerald-900 dark:text-emerald-200 flex items-center gap-2">
-                          <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                          <span>✓ ارسال شد — کد پیگیری: {ePrescriptionTrackingCode}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[11px] font-mono font-bold bg-white/80 dark:bg-slate-900/80 px-2.5 py-1 rounded-md text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
-                            زمان ثبت: {ePrescriptionSentTime || 'هم‌اکنون'}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={handleSendEPrescription}
-                            disabled={isSendingEPrescription}
-                            className="text-[10px] text-emerald-800 dark:text-emerald-300 underline font-bold cursor-pointer"
-                          >
-                            {isSendingEPrescription ? 'در حال ارسال...' : 'ارسال مجدد / ویرایش'}
-                          </button>
-                        </div>
-                      </div>
-                      <p className="text-xs text-emerald-800 dark:text-emerald-300 leading-relaxed font-medium">
-                        نسخه دارویی در درگاه یکپارچه خدمات الکترونیک سلامت کشور ثبت قطعی شد. بیمار می‌تواند با ارائه کد ملی و کد رهگیری به تمامی داروخانه‌ها مراجعه نماید.
-                      </p>
-                    </div>
-                  )}
-                </div>
+                {/* Integrated Electronic Prescription Workbench */}
+                <ElectronicPrescriptionWorkbench
+                  activePatient={activePatient}
+                  appointment={appointment}
+                  currentClinic={currentClinic}
+                  currentUserName={currentUserName}
+                  treatmentDiagnosis={proposedTreatmentPlan}
+                  selectedToothFdi={selectedToothFdi || undefined}
+                  existingPrescription={activeElectronicPrescription}
+                  onSavePrescription={(savedRx) => {
+                    setActiveElectronicPrescription(savedRx);
+                    setEPrescriptionSent(savedRx.status === 'sent_to_insurer');
+                    if (savedRx.trackingCode) {
+                      setEPrescriptionTrackingCode(savedRx.trackingCode);
+                    }
+                    if (savedRx.createdAt) {
+                      setEPrescriptionSentTime(savedRx.createdAt.split(' ')[1] || 'هم‌اکنون');
+                    }
+                    // Update clinic store with Dual-Write
+                    const clinicId = currentClinic?.id || 'clinic-alborz';
+                    addElectronicPrescriptionToStore(clinicId, savedRx);
+                    // Update patient state if callback available
+                    if (onUpdatePatient) {
+                      const currentE = activePatient.electronicPrescriptions || [];
+                      const updatedE = [savedRx, ...currentE.filter((e) => e.id !== savedRx.id)];
+                      onUpdatePatient({ electronicPrescriptions: updatedE });
+                    }
+                  }}
+                  onUpdateLegacyPrescriptionStrings={(rxStrings) => {
+                    setProposedPrescription(rxStrings);
+                  }}
+                />
 
                 {/* Clinical Note & Next Visit Date (Optional) */}
                 <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3 text-xs">
-                  <h4 className="font-bold text-slate-900 dark:text-slate-100">یادداشت بالینی و ثبت زمان مراجعه بعدی:</h4>
+                  <h4 className="font-bold text-slate-900 dark:text-slate-100">یادداشت بالینی تکمیلی و ثبت زمان مراجعه بعدی:</h4>
                   <textarea
                     rows={2}
                     value={clinicalNotes}
@@ -2450,18 +2400,6 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
                   مشاهده و کپی کلیپ‌بورد لینک‌های ارسال‌شده توسط بیمار یا مراکز تصویربرداری با جستجوی نام بیمار
                 </p>
               </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setNewRadPatientName(activePatient.fullName);
-                  setIsDoctorNewRadModalOpen(true);
-                }}
-                className="px-4 py-2.5 rounded-xl bg-[#005581] hover:bg-[#004266] text-white font-bold text-xs shadow transition cursor-pointer flex items-center gap-2 shrink-0"
-              >
-                <Plus className="w-4 h-4 text-[#ffd200]" />
-                <span>ثبت لینک رادیولوژی جدید</span>
-              </button>
             </div>
 
             {/* Search Bar and Filters */}
@@ -2529,7 +2467,7 @@ export const DentistWorkspace: React.FC<DentistWorkspaceProps> = ({
                         هیچ لینک تصویربرداری با این مشخصات یافت نشد.
                       </p>
                       <p className="text-[11px] text-slate-400">
-                        بیماران می‌توانند از طریق پورتال بیمار لینک‌های PACS را ثبت کنند یا می‌توانید از دکمه بالا برای ثبت دستی اقدام کنید.
+                        بیماران می‌توانند از طریق پورتال بیمار لینک‌های تصویربرداری PACS را ثبت کنند تا مستقیماً در این کارتابل نمایش داده شود.
                       </p>
                     </div>
                   );

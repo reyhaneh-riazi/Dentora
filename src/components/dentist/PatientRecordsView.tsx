@@ -499,15 +499,82 @@ export const PatientRecordsView: React.FC<PatientRecordsViewProps> = ({
                   </div>
                 )}
 
-                {/* Prescriptions issued */}
-                {selectedPatient.prescriptions && selectedPatient.prescriptions.length > 0 && (
-                  <div className="p-3.5 rounded-xl border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/50 dark:bg-emerald-950/20 space-y-2">
-                    <h5 className="text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
-                      <FileCheck className="w-4 h-4" />
-                      <span>نسخه‌های دارویی صادرشده:</span>
-                    </h5>
-                    <div className="space-y-2 text-xs">
-                      {selectedPatient.prescriptions.map((rx) => (
+                {/* Prescriptions issued (Electronic & Legacy) */}
+                {((selectedPatient.electronicPrescriptions && selectedPatient.electronicPrescriptions.length > 0) ||
+                  (selectedPatient.prescriptions && selectedPatient.prescriptions.length > 0)) && (
+                  <div className="p-3.5 rounded-xl border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/50 dark:bg-emerald-950/20 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h5 className="text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+                        <FileCheck className="w-4 h-4 text-emerald-600" />
+                        <span>نسخه‌های دارویی و نسخه الکترونیک بیمار:</span>
+                      </h5>
+                      <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+                        {((selectedPatient.electronicPrescriptions?.length || 0) + (selectedPatient.prescriptions?.length || 0))} نسخه ثبت‌شده
+                      </span>
+                    </div>
+
+                    <div className="space-y-2.5 text-xs">
+                      {/* Modern Electronic Prescriptions */}
+                      {selectedPatient.electronicPrescriptions?.map((eRx) => (
+                        <div
+                          key={eRx.id}
+                          className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-800 shadow-xs space-y-2"
+                        >
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 font-bold text-[10px] flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                نسخه الکترونیک ({eRx.insurerType === 'tamin' ? 'تأمین اجتماعی' : eRx.insurerType === 'salamat' ? 'بیمه سلامت' : eRx.insurerType === 'armed_forces' ? 'نیروهای مسلح' : 'آزاد'})
+                              </span>
+                              <span className="font-bold text-slate-800 dark:text-slate-200">
+                                تجویز: {eRx.doctorName}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {eRx.trackingCode && (
+                                <span className="font-mono text-[11px] font-bold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-emerald-700 dark:text-emerald-400 border border-slate-200 dark:border-slate-700">
+                                  رهگیری: {eRx.trackingCode}
+                                </span>
+                              )}
+                              <span className="font-mono text-slate-400 text-[11px]">{eRx.createdAt}</span>
+                            </div>
+                          </div>
+
+                          {eRx.diagnosis && (
+                            <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                              تشخیص / علت تجویز: <strong>{eRx.diagnosis}</strong>
+                              {eRx.toothFdi && <span className="mr-1">(دندان {eRx.toothFdi})</span>}
+                            </p>
+                          )}
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
+                            {eRx.items.map((item, idx) => (
+                              <div
+                                key={item.id || idx}
+                                className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 flex flex-col justify-between text-[11px]"
+                              >
+                                <div className="font-bold text-slate-800 dark:text-slate-200 flex justify-between">
+                                  <span>{item.genericNameFa || item.genericName}</span>
+                                  <span className="font-mono text-emerald-700 dark:text-emerald-400">تعداد: {item.quantity}</span>
+                                </div>
+                                <div className="text-[10px] text-slate-500 mt-0.5 flex justify-between">
+                                  <span>دستور: {item.dosageInstruction}</span>
+                                  <span>{item.timing}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+
+                          {eRx.doctorNotes && (
+                            <p className="text-[11px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 p-1.5 rounded-lg">
+                              تذکر پزشک: {eRx.doctorNotes}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+
+                      {/* Legacy Prescriptions if any */}
+                      {selectedPatient.prescriptions?.map((rx) => (
                         <div key={rx.id} className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
                           <div className="flex justify-between font-bold text-slate-800 dark:text-slate-200 mb-1">
                             <span>پزشک: {rx.dentistName}</span>

@@ -22,6 +22,7 @@ import {
   AuditLog,
   PreTreatmentApproval,
   RadiologyImagingLink,
+  ElectronicPrescription,
 } from '../types';
 import {
   mockPatients,
@@ -53,6 +54,7 @@ export interface ClinicDataState {
   insuranceDisputes: PatientInsuranceDispute[];
   preTreatmentApprovals?: PreTreatmentApproval[];
   radiologyLinks?: RadiologyImagingLink[];
+  electronicPrescriptions?: ElectronicPrescription[];
   waitlist: WaitlistEntry[];
   users: UserProfile[];
   doctorSubmissions: DoctorSubmission[];
@@ -287,6 +289,116 @@ export const defaultRadiologyLinksSeed: RadiologyImagingLink[] = [
   },
 ];
 
+const defaultPrescriptionsSeed: ElectronicPrescription[] = [
+  {
+    id: 'RX-992101',
+    prescriptionNumber: 'RX-992101',
+    patientId: 'p-1',
+    patientName: 'علی رضایی',
+    nationalId: '0012345678',
+    visitId: 'apt-101',
+    doctorId: 'u-dentist1',
+    doctorName: 'دکتر محمدرضا کاویانی',
+    doctorMedicalCode: '۹۸۴۲۱',
+    doctorSpecialty: 'متخصص جراحی دهان، فک و صورت',
+    clinicId: 'clinic-alborz',
+    clinicName: 'کلینیک تخصصی دندان‌پزشکی البرز',
+    insuranceProvider: 'بیمه تامین اجتماعی',
+    supplementaryInsuranceProvider: 'بیمه تکمیلی دانا',
+    status: 'accepted',
+    externalPrescriptionId: 'SEPAS-881920-DENT',
+    trackingCode: 'IR-481920194821',
+    toothFdi: 36,
+    diagnosis: 'پالپیت نکروتیک و آبسه پری‌آپیکال حاد دندان ۳۶',
+    procedureNotes: 'عصب‌کشی کامل کانال‌های مزیال و دیستال + درناژ موضعی',
+    patientAllergies: [],
+    notes: 'مصرف منظم داروها راس ساعت مقرر الزامی است. پس از ۷ روز جهت پرکردن تاج مراجعه شود.',
+    createdAt: '۱۴۰۵/۰۵/۱۴ - ۱۰:۳۰',
+    submittedAt: '۱۴۰۵/۰۵/۱۴ - ۱۰:۳۰',
+    items: [
+      {
+        id: 'item-1',
+        medicationId: 'med-amox-500',
+        medicationName: 'کپسول آموکسی‌سیلین ۵۰۰ میلی‌گرم',
+        dosage: '500 mg',
+        form: 'کپسول',
+        quantity: 20,
+        unit: 'عدد',
+        frequency: 'هر ۸ ساعت (۳ بار در روز)',
+        duration: '۷ روز کامل',
+        instructions: 'با یک لیوان کامل آب، رأس ساعت مقرر میل شود.',
+        notes: 'تا اتمام کامل دوره دارویی مصرف ادامه یابد.',
+      },
+      {
+        id: 'item-2',
+        medicationId: 'med-gelofen-400',
+        medicationName: 'کپسول ژلاتینی ژلوفن ۴۰۰ میلی‌گرم',
+        dosage: '400 mg',
+        form: 'کپسول ژلاتینی نرم',
+        quantity: 20,
+        unit: 'عدد',
+        frequency: 'هر ۶ الی ۸ ساعت در صورت درد',
+        duration: '۴ روز',
+        instructions: 'حتماً بعد از وعده غذایی میل شود.',
+      },
+    ],
+  },
+  {
+    id: 'RX-992102',
+    prescriptionNumber: 'RX-992102',
+    patientId: 'p-2',
+    patientName: 'سارا احمدی',
+    nationalId: '0023456789',
+    visitId: 'apt-102',
+    doctorId: 'u-dentist1',
+    doctorName: 'دکتر محمدرضا کاویانی',
+    doctorMedicalCode: '۹۸۴۲۱',
+    doctorSpecialty: 'متخصص جراحی دهان، فک و صورت',
+    clinicId: 'clinic-alborz',
+    clinicName: 'کلینیک تخصصی دندان‌پزشکی البرز',
+    insuranceProvider: 'بیمه خدمات درمانی (سلامت)',
+    supplementaryInsuranceProvider: 'بیمه تکمیلی ایران',
+    status: 'accepted',
+    externalPrescriptionId: 'SEPAS-772184-DENT',
+    trackingCode: 'IR-772184918234',
+    toothFdi: 18,
+    diagnosis: 'جراحی خارج‌کردن دندان عقل نهفته فک بالا',
+    procedureNotes: 'اکسیزیون فلپ موکوپریوستال و کشیدن جراحی دندان ۱۸ بدون عارضه',
+    patientAllergies: ['پنی‌سیلین'],
+    allergyWarnings: ['بیمار به پنی‌سیلین حساسیت دارد. کلیندامایسین به عنوان جایگزین تجویز گردید.'],
+    notes: 'کمپرس سرد تا ۲۴ ساعت اول، شستشو با دهان‌شویه از روز دوم.',
+    createdAt: '۱۴۰۵/۰۵/۱۶ - ۱۱:۰۰',
+    submittedAt: '۱۴۰۵/۰۵/۱۶ - ۱۱:۰۰',
+    items: [
+      {
+        id: 'item-3',
+        medicationId: 'med-clinda-300',
+        medicationName: 'کپسول کلیندامایسین ۳۰۰ میلی‌گرم',
+        dosage: '300 mg',
+        form: 'کپسول',
+        quantity: 16,
+        unit: 'عدد',
+        frequency: 'هر ۶ ساعت (۴ بار در روز)',
+        duration: '۵ الی ۷ روز',
+        instructions: 'با یک لیوان بزرگ آب میل شود و تا ۳۰ دقیقه بعد دراز نکشید.',
+        notes: 'جایگزین ایمن آموکسی‌سیلین به علت حساسیت به پنی‌سیلین',
+      },
+      {
+        id: 'item-4',
+        medicationId: 'med-chx-02',
+        medicationName: 'دهان‌شویه کلرهگزیدین ۰.۲ درصد',
+        dosage: '0.2%',
+        form: 'دهان‌شویه',
+        quantity: 1,
+        unit: 'بطری',
+        frequency: 'روزی ۲ بار (صبح و شب)',
+        duration: '۷ روز',
+        instructions: '۱۵ سی‌سی را به مدت ۱ دقیقه غرغره و تخلیه نمایید.',
+      },
+    ],
+  },
+];
+
 const ZERO_MONEY_BOARD: TodayMoneyBoard = {
   receivedTodayCashPos: 0,
   insurancePendingTotal: 0,
@@ -448,6 +560,7 @@ export function loadClinicData(clinicId: string, clinicInfo?: ClinicRegistration
       insuranceDisputes: defaultDisputesSeed,
       preTreatmentApprovals: defaultApprovalsSeed,
       radiologyLinks: defaultRadiologyLinksSeed,
+      electronicPrescriptions: defaultPrescriptionsSeed,
       waitlist: mockWaitlist,
       users: mockUsers,
       doctorSubmissions: defaultSubmissionsSeed,
@@ -540,6 +653,9 @@ export function saveClinicData(clinicId: string, data: ClinicDataState): void {
   try {
     const storageKey = `dentora_data_${clinicId}`;
     localStorage.setItem(storageKey, JSON.stringify(data));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('dentora_store_changed', { detail: { clinicId } }));
+    }
   } catch (e) {
     console.error(`Error saving clinic data for ${clinicId}:`, e);
   }
@@ -902,6 +1018,48 @@ export function addRadiologyLinkToStore(clinicId: string, link: RadiologyImaging
   current.radiologyLinks = updatedLinks;
   saveClinicData(clinicId, current);
 }
+
+// Electronic Prescription Store Helpers
+export function addElectronicPrescriptionToStore(clinicId: string, prescription: ElectronicPrescription): void {
+  const current = loadClinicData(clinicId);
+  const updatedPrescriptions = [prescription, ...(current.electronicPrescriptions || [])];
+  current.electronicPrescriptions = updatedPrescriptions;
+
+  // Also sync with patient's own dossier
+  if (prescription.patientId) {
+    const patientIndex = (current.patients || []).findIndex((p) => p.id === prescription.patientId);
+    if (patientIndex !== -1) {
+      const patient = current.patients[patientIndex];
+      const patientElectronicPrescriptions = [prescription, ...(patient.electronicPrescriptions || [])];
+      
+      // Also add legacy summary format to prescriptions array if present
+      const summaryItems = prescription.items.map(
+        (it) => `${it.medicationName} (${it.dosage || ''} - ${it.form || ''}) - تعداد: ${it.quantity} ${it.unit} - دستور: ${it.frequency} (${it.duration})`
+      );
+      const legacyPrescription = {
+        id: prescription.id,
+        date: prescription.submittedAt || prescription.createdAt,
+        dentistName: prescription.doctorName,
+        items: summaryItems,
+        instructions: prescription.notes || prescription.diagnosis,
+      };
+
+      current.patients[patientIndex] = {
+        ...patient,
+        electronicPrescriptions: patientElectronicPrescriptions,
+        prescriptions: [legacyPrescription, ...(patient.prescriptions || [])],
+      };
+    }
+  }
+
+  saveClinicData(clinicId, current);
+}
+
+export function getStoredElectronicPrescriptions(clinicId: string): ElectronicPrescription[] {
+  const current = loadClinicData(clinicId);
+  return current.electronicPrescriptions || [];
+}
+
 
 
 

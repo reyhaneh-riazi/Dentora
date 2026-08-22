@@ -21,6 +21,7 @@ import { ImageXrayViewer } from '../dentist/ImageXrayViewer';
 import { PersianBirthDatePicker } from '../common/PersianBirthDatePicker';
 import { toPersianDigits, formatPricePersian } from '../../utils/persianDigits';
 import { getAppointmentDuration, generateDynamicSlots } from '../../utils/appointmentUtils';
+import { addPreTreatmentApprovalToStore, addRadiologyLinkToStore } from '../../services/clinicDataStore';
 import {
   Heart,
   Calendar,
@@ -402,18 +403,72 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
 
   // Pre-treatment Approvals State
   const [approvalTitle, setApprovalTitle] = useState('');
-  const [approvalCategory, setApprovalCategory] = useState<'anesthesia' | 'insurance_prior_auth' | 'consent_surgery' | 'lab_clearance' | 'general'>('anesthesia');
   const [approvalDescription, setApprovalDescription] = useState('');
   const [approvalFileName, setApprovalFileName] = useState('approval_document.pdf');
   const [approvalFileSize, setApprovalFileSize] = useState('1.4 MB');
+  const [approvalFileType, setApprovalFileType] = useState('application/pdf');
+  const [approvalFileDataUrl, setApprovalFileDataUrl] = useState<string | null>(null);
   const [approvalSuccessMsg, setApprovalSuccessMsg] = useState<string | null>(null);
+
+  // Download handler that safely handles real base64 or generates readable file
+  const handleDownloadApproval = (appr: PreTreatmentApproval) => {
+    try {
+      if (appr.fileDataUrl) {
+        const link = document.createElement('a');
+        link.href = appr.fileDataUrl;
+        link.download = appr.fileName || `approval_${appr.id}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        return;
+      }
+
+      // Safe HTML document generation for legacy entries
+      const content = `<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>${appr.title}</title>
+<style>
+body { font-family: Tahoma, sans-serif; padding: 32px; color: #1e293b; direction: rtl; background: #f8fafc; }
+.card { background: white; border: 1px solid #cbd5e1; border-radius: 16px; padding: 24px; max-width: 600px; margin: 0 auto; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+h2 { color: #005581; margin-top: 0; }
+.row { margin: 12px 0; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px; }
+.label { font-weight: bold; color: #64748b; }
+.val { font-weight: bold; }
+</style>
+</head>
+<body>
+<div class="card">
+<h2>تأییدیه پیش از درمان کلینیک دندان‌پزشکی دنتورا</h2>
+<div class="row"><span class="label">عنوان مدرک: </span><span class="val">${appr.title}</span></div>
+<div class="row"><span class="label">نام بیمار: </span><span class="val">${appr.patientName}</span></div>
+<div class="row"><span class="label">کد ملی: </span><span class="val">${appr.nationalId || 'ثبت‌نشده'}</span></div>
+<div class="row"><span class="label">شماره تماس: </span><span class="val">${appr.patientPhone || 'ثبت‌نشده'}</span></div>
+<div class="row"><span class="label">تاریخ بارگذاری: </span><span class="val">${appr.uploadedAt}</span></div>
+<div class="row"><span class="label">توضیحات: </span><span class="val">${appr.description || 'ندارد'}</span></div>
+</div>
+</body>
+</html>`;
+      const blob = new Blob([content], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${appr.fileName.replace(/\.[^/.]+$/, "")}.html`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('Error downloading approval:', e);
+      alert('خطا در دانلود فایل تأییدیه.');
+    }
+  };
 
   // PACS / Radiology Links State
   const [radiologyCenterName, setRadiologyCenterName] = useState('');
   const [radiologyStudyType, setRadiologyStudyType] = useState('OPG (پانورامیک دیجیتال)');
   const [radiologyUrl, setRadiologyUrl] = useState('');
-  const [radiologyAccessCode, setRadiologyAccessCode] = useState('');
-  const [radiologyNotes, setRadiologyNotes] = useState('');
   const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null);
   const [radiologySuccessMsg, setRadiologySuccessMsg] = useState<string | null>(null);
 
@@ -431,15 +486,22 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
       patientName: patient.fullName,
       patientPhone: patient.phone,
       nationalId: patient.nationalId,
+      patientNationalId: patient.nationalId,
       title: approvalTitle.trim(),
-      category: approvalCategory,
+      category: 'general',
+      categoryLabel: 'تأییدیه پیش از درمان',
       fileName: approvalFileName,
       fileSize: approvalFileSize,
+      fileType: approvalFileType,
+      fileDataUrl: approvalFileDataUrl || undefined,
       uploadedAt: new Date().toLocaleDateString('fa-IR'),
       status: 'pending',
       description: approvalDescription.trim() || undefined,
       downloadUrl: '#',
     };
+
+    const clinicId = currentClinic?.id || 'clinic-alborz';
+    addPreTreatmentApprovalToStore(clinicId, newApproval);
 
     if (onUploadPreTreatmentApproval) {
       onUploadPreTreatmentApproval(newApproval);
@@ -447,6 +509,7 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
     setApprovalSuccessMsg(`تأییدیه «${approvalTitle}» با موفقیت بارگذاری شد و در لیست تأییدیه‌های منشی قرار گرفت.`);
     setApprovalTitle('');
     setApprovalDescription('');
+    setApprovalFileDataUrl(null);
     setTimeout(() => setApprovalSuccessMsg(null), 5000);
   };
 
@@ -468,13 +531,17 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
       patientName: patient.fullName,
       patientPhone: patient.phone,
       nationalId: patient.nationalId,
+      patientNationalId: patient.nationalId,
+      centerName: radiologyCenterName.trim() || 'مرکز رادیولوژی فک و صورت',
       imagingCenterName: radiologyCenterName.trim() || 'مرکز رادیولوژی فک و صورت',
       studyType: radiologyStudyType,
       url: validUrl,
-      accessCode: radiologyAccessCode.trim() || undefined,
+      createdAt: new Date().toLocaleDateString('fa-IR'),
       registeredAt: new Date().toLocaleDateString('fa-IR'),
-      notes: radiologyNotes.trim() || undefined,
     };
+
+    const clinicId = currentClinic?.id || 'clinic-alborz';
+    addRadiologyLinkToStore(clinicId, newLink);
 
     if (onRegisterRadiologyLink) {
       onRegisterRadiologyLink(newLink);
@@ -482,8 +549,6 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
     setRadiologySuccessMsg(`لینک تصویربرداری «${newLink.imagingCenterName}» با موفقیت ثبت شد و در دسترس پزشک قرار گرفت.`);
     setRadiologyCenterName('');
     setRadiologyUrl('');
-    setRadiologyAccessCode('');
-    setRadiologyNotes('');
     setTimeout(() => setRadiologySuccessMsg(null), 5000);
   };
 
@@ -1422,20 +1487,6 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
                       <FileCheck className="w-5 h-5 text-[#005581]" />
                       <span>بارگذاری تأییدیه‌های پیش از درمان و ثبت لینک‌های تصویربرداری</span>
                     </h3>
-                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                      مدارک و تاییدیه‌های پزشکی/بیمه‌ای خود را بارگذاری کنید تا منشی پذیرش بررسی و دانلود کند، یا لینک‌های رادیولوژی آنلاین (PACS) را ثبت نمایید تا مستقیماً در اختیار دندان‌پزشک قرار گیرد.
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <span className="px-3 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-blue-900 dark:text-blue-300 text-xs font-bold flex items-center gap-1.5">
-                      <FileText className="w-3.5 h-3.5" />
-                      <span>تأییدیه‌ها: <strong>{patientApprovalsList.length}</strong></span>
-                    </span>
-                    <span className="px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-300 text-xs font-bold flex items-center gap-1.5">
-                      <LinkIcon className="w-3.5 h-3.5" />
-                      <span>لینک‌ها: <strong>{patientRadiologyLinksList.length}</strong></span>
-                    </span>
                   </div>
                 </div>
 
@@ -1484,57 +1535,46 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
                         required
                         value={approvalTitle}
                         onChange={(e) => setApprovalTitle(e.target.value)}
-                        placeholder="مثال: تأییدیه بیهوشی و سلامت قلب، رضایت‌نامه جراحی، آزمایش انعقادی"
+                        placeholder="مثال: تأییدیه بیهوشی و سلامت قلب، رضایت‌نامه جراحی، برگه آزمایش"
                         className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#005581]"
                       />
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                          نوع تأییدیه
-                        </label>
-                        <select
-                          value={approvalCategory}
-                          onChange={(e: any) => setApprovalCategory(e.target.value)}
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#005581]"
-                        >
-                          <option value="anesthesia">تأییدیه بیهوشی / مشاوره قلب</option>
-                          <option value="insurance_prior_auth">تأییدیه پیش‌درمان بیمه تکمیلی</option>
-                          <option value="consent_surgery">رضایت‌نامه کتبی عمل / جراحی</option>
-                          <option value="lab_clearance">برگه آزمایش خون و سلامت</option>
-                          <option value="general">سایر مدارک و نامه‌های بالینی</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                          فایل تأییدیه (PDF یا تصویر)
-                        </label>
-                        <div className="relative">
-                          <input
-                            type="file"
-                            id="patient-approval-file-input"
-                            className="hidden"
-                            accept=".pdf,.jpg,.jpeg,.png"
-                            onChange={(e) => {
-                              if (e.target.files && e.target.files[0]) {
-                                const file = e.target.files[0];
-                                setApprovalFileName(file.name);
-                                setApprovalFileSize(`${(file.size / (1024 * 1024)).toFixed(2)} MB`);
-                              }
-                            }}
-                          />
-                          <label
-                            htmlFor="patient-approval-file-input"
-                            className="w-full flex items-center justify-between px-3 py-2 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 text-slate-700 dark:text-slate-300 cursor-pointer"
-                          >
-                            <span className="truncate text-[11px] max-w-[140px]">{approvalFileName}</span>
-                            <span className="text-[10px] px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-900 text-[#005581] font-bold">
-                              انتخاب فایل
+                    <div>
+                      <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        فایل مدرک یا تأییدیه (PDF، تصویر یا سند)
+                      </label>
+                      <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 space-y-2">
+                        <input
+                          type="file"
+                          id="patient-approval-file-input"
+                          accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              setApprovalFileName(file.name);
+                              const sizeInMb = (file.size / (1024 * 1024)).toFixed(2);
+                              setApprovalFileSize(`${sizeInMb} MB`);
+                              setApprovalFileType(file.type);
+                              const reader = new FileReader();
+                              reader.onload = () => {
+                                setApprovalFileDataUrl(reader.result as string);
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                          className="w-full text-xs text-slate-500 file:mr-0 file:ml-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-[#005581] file:text-white hover:file:bg-[#004266] cursor-pointer"
+                        />
+                        {approvalFileName && (
+                          <div className="flex items-center justify-between pt-1 border-t border-slate-200 dark:border-slate-700 text-[11px]">
+                            <span className="font-mono text-slate-800 dark:text-slate-200 font-bold">
+                              {approvalFileName} ({approvalFileSize})
                             </span>
-                          </label>
-                        </div>
+                            <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold">
+                              فایل انتخاب شد
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -1546,7 +1586,7 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
                         rows={2}
                         value={approvalDescription}
                         onChange={(e) => setApprovalDescription(e.target.value)}
-                        placeholder="در صورت داشتن نکات خاص، شماره تماس پزشک مشاوره دهنده یا دستورات پیوست..."
+                        placeholder="در صورت داشتن نکات خاص، نام پزشک معالج یا دستورات پیوست..."
                         className="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:outline-none focus:ring-2 focus:ring-[#005581]"
                       />
                     </div>
@@ -1619,17 +1659,14 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
                             )}
 
                             <div className="flex justify-end pt-1">
-                              <a
-                                href={appr.downloadUrl || '#'}
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  alert(`دانلود فایل تأییدیه «${appr.fileName}» آغاز گردید.`);
-                                }}
-                                className="px-3 py-1 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 text-slate-800 dark:text-slate-200 rounded-lg font-bold text-[11px] flex items-center gap-1.5 transition"
+                              <button
+                                type="button"
+                                onClick={() => handleDownloadApproval(appr)}
+                                className="px-3 py-1 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 text-slate-800 dark:text-slate-200 rounded-lg font-bold text-[11px] flex items-center gap-1.5 transition cursor-pointer"
                               >
                                 <Download className="w-3.5 h-3.5" />
                                 <span>دانلود تأییدیه</span>
-                              </a>
+                              </button>
                             </div>
                           </div>
                         ))}
@@ -1700,35 +1737,6 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
                           onChange={(e) => setRadiologyUrl(e.target.value)}
                           placeholder="https://pacs.clinic-radiology.ir/study/view?id=8492"
                           className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-mono text-left focus:outline-none focus:ring-2 focus:ring-[#005581]"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                          کد دسترسی یا شناسه پرونده رادیولوژی (اختیاری)
-                        </label>
-                        <input
-                          type="text"
-                          dir="ltr"
-                          value={radiologyAccessCode}
-                          onChange={(e) => setRadiologyAccessCode(e.target.value)}
-                          placeholder="مثال: RAD-9842 یا کد پیامک‌شده"
-                          className="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-mono text-left focus:outline-none focus:ring-2 focus:ring-[#005581]"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                          یادداشت برای پزشک (اختیاری)
-                        </label>
-                        <input
-                          type="text"
-                          value={radiologyNotes}
-                          onChange={(e) => setRadiologyNotes(e.target.value)}
-                          placeholder="مثال: گرافی پس از کشیدن دندان عقل"
-                          className="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#005581]"
                         />
                       </div>
                     </div>

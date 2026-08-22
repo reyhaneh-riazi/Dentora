@@ -333,9 +333,6 @@ export const DoctorCalendarView: React.FC<DoctorCalendarViewProps> = ({
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm space-y-3">
           <div className="flex items-center justify-between text-xs font-black text-[#005581] dark:text-[#72cdf4] pb-2 border-b border-slate-100 dark:border-slate-800">
             <span>جدول زمان‌بندی کاری پزشک ({currentDay.dayName} {currentDay.dateStr})</span>
-            <span className="text-slate-500 font-normal hidden sm:inline">
-              نوع بازه (جراحی یا عمومی) را تعیین کنید تا بیمار بر اساس دلیل مراجعه، بازه مناسب را ببیند.
-            </span>
           </div>
 
           <div className="space-y-2">

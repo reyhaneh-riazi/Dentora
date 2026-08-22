@@ -23,6 +23,8 @@ import {
   PatientQuestionReply,
   PatientInsuranceDispute,
   PatientImageRecord,
+  PreTreatmentApproval,
+  RadiologyImagingLink,
 } from './types';
 import {
   mockPatients,
@@ -131,6 +133,8 @@ export default function App() {
   const [insuranceDisputes, setInsuranceDisputes] = useState<PatientInsuranceDispute[]>(() => initialClinicData.insuranceDisputes);
   const [baseInsurances, setBaseInsurances] = useState<BaseInsuranceContract[]>(() => initialClinicData.baseInsurances);
   const [supplementaryInsurances, setSupplementaryInsurances] = useState<SupplementaryInsuranceContract[]>(() => initialClinicData.supplementaryInsurances);
+  const [preTreatmentApprovals, setPreTreatmentApprovals] = useState<PreTreatmentApproval[]>(() => initialClinicData.preTreatmentApprovals || []);
+  const [radiologyLinks, setRadiologyLinks] = useState<RadiologyImagingLink[]>(() => initialClinicData.radiologyLinks || []);
 
   // Function to load a clinic's full data bundle into state
   const loadClinicDataIntoState = (clinicId: string) => {
@@ -152,6 +156,8 @@ export default function App() {
     setInsuranceDisputes(data.insuranceDisputes);
     setBaseInsurances(data.baseInsurances);
     setSupplementaryInsurances(data.supplementaryInsurances);
+    setPreTreatmentApprovals(data.preTreatmentApprovals || []);
+    setRadiologyLinks(data.radiologyLinks || []);
     if (data.patients.length > 0) {
       setActivePatientId(data.patients[0].id);
     }
@@ -177,6 +183,8 @@ export default function App() {
       insuranceDisputes,
       baseInsurances,
       supplementaryInsurances,
+      preTreatmentApprovals,
+      radiologyLinks,
     });
   }, [
     currentClinic.id,
@@ -197,7 +205,17 @@ export default function App() {
     insuranceDisputes,
     baseInsurances,
     supplementaryInsurances,
+    preTreatmentApprovals,
+    radiologyLinks,
   ]);
+
+  const handleUploadPreTreatmentApproval = (approval: PreTreatmentApproval) => {
+    setPreTreatmentApprovals((prev) => [approval, ...prev]);
+  };
+
+  const handleRegisterRadiologyLink = (link: RadiologyImagingLink) => {
+    setRadiologyLinks((prev) => [link, ...prev]);
+  };
 
   // Insurance & Owner Handlers
   const handleToggleBaseInsuranceContracted = (id: string) => {
@@ -1903,6 +1921,8 @@ export default function App() {
             onRegisterPayment={handleRegisterPatientPayment}
             users={users}
             currentClinic={currentClinic}
+            preTreatmentApprovals={preTreatmentApprovals}
+            onUploadPreTreatmentApproval={handleUploadPreTreatmentApproval}
           />
         )}
 
@@ -1949,6 +1969,8 @@ export default function App() {
             patientQuestions={patientQuestions}
             onReplyQuestion={handleReplyQuestion}
             invoices={invoices}
+            radiologyLinks={radiologyLinks}
+            onRegisterRadiologyLink={handleRegisterRadiologyLink}
           />
         )}
 
@@ -2023,6 +2045,8 @@ export default function App() {
               onUpdateLabOrderStatus={handleUpdateLabOrderStatus}
               patientQuestions={patientQuestions}
               onReplyQuestion={handleReplyQuestion}
+              radiologyLinks={radiologyLinks}
+              onRegisterRadiologyLink={handleRegisterRadiologyLink}
             />
           ) : currentClinic.ownerRole === 'manager' ? (
             <ManagerWorkspace
@@ -2165,6 +2189,10 @@ export default function App() {
             onAskQuestion={handleAskQuestion}
             insuranceDisputes={insuranceDisputes}
             onSubmitDispute={handleSubmitInsuranceDispute}
+            preTreatmentApprovals={preTreatmentApprovals}
+            onUploadPreTreatmentApproval={handleUploadPreTreatmentApproval}
+            radiologyLinks={radiologyLinks}
+            onRegisterRadiologyLink={handleRegisterRadiologyLink}
             onBookOnline={(dId, slot, dt, reason, isFirstVisit, checkInFormCompleted) => {
               const matchedDoctor = users.find((u) => u.id === dId);
               const docName =

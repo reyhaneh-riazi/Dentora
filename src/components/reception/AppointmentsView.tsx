@@ -332,7 +332,7 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
     setTimeout(() => setReceptionToast(null), 4000);
   };
 
-  // Pre-Treatment Approvals State (کارتابل تأییدیه‌های پیش از درمان)
+  // Pre-Treatment Approvals State (کارتابل مدارک و تأییدیه‌های پیش از درمان)
   const [approvalsList, setApprovalsList] = useState<PreTreatmentApproval[]>(() => {
     if (propsPreTreatmentApprovals && propsPreTreatmentApprovals.length > 0) {
       return propsPreTreatmentApprovals;
@@ -342,100 +342,109 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
     return store.preTreatmentApprovals || [];
   });
   const [approvalSearchQuery, setApprovalSearchQuery] = useState('');
-  const [approvalStatusFilter, setApprovalStatusFilter] = useState<string>('all');
-  const [approvalCategoryFilter, setApprovalCategoryFilter] = useState<string>('all');
-  const [selectedApprovalForReview, setSelectedApprovalForReview] = useState<PreTreatmentApproval | null>(null);
-  const [approvalReviewNotes, setApprovalReviewNotes] = useState('');
   const [isDirectApprovalModalOpen, setIsDirectApprovalModalOpen] = useState(false);
   const [newDirectPatientName, setNewDirectPatientName] = useState('');
   const [newDirectPatientPhone, setNewDirectPatientPhone] = useState('');
   const [newDirectPatientNationalId, setNewDirectPatientNationalId] = useState('');
   const [newDirectTitle, setNewDirectTitle] = useState('');
-  const [newDirectCategory, setNewDirectCategory] = useState<'anesthesia' | 'insurance_prior_auth' | 'consent_surgery' | 'lab_clearance' | 'general'>('anesthesia');
   const [newDirectDescription, setNewDirectDescription] = useState('');
+  const [newDirectFileName, setNewDirectFileName] = useState('');
+  const [newDirectFileSize, setNewDirectFileSize] = useState('');
+  const [newDirectFileType, setNewDirectFileType] = useState('');
+  const [newDirectFileDataUrl, setNewDirectFileDataUrl] = useState<string | null>(null);
 
-  // Synchronize approvals list with props/store
+  // Synchronize approvals list with props/store and reactive events
   React.useEffect(() => {
-    if (propsPreTreatmentApprovals && propsPreTreatmentApprovals.length > 0) {
-      setApprovalsList(propsPreTreatmentApprovals);
-    } else {
-      const clinicId = currentClinic?.id || 'main_clinic';
+    const clinicId = currentClinic?.id || 'main_clinic';
+    const refreshData = () => {
       const store = loadClinicData(clinicId);
-      if (store.preTreatmentApprovals && store.preTreatmentApprovals.length > 0) {
+      if (store.preTreatmentApprovals) {
         setApprovalsList(store.preTreatmentApprovals);
       }
-    }
+    };
+    refreshData();
+
+    const handleStoreChange = (e: any) => {
+      if (!e.detail || e.detail.clinicId === clinicId) {
+        refreshData();
+      }
+    };
+
+    window.addEventListener('dentora_store_changed', handleStoreChange);
+    window.addEventListener('storage', refreshData);
+    return () => {
+      window.removeEventListener('dentora_store_changed', handleStoreChange);
+      window.removeEventListener('storage', refreshData);
+    };
   }, [propsPreTreatmentApprovals, currentClinic?.id]);
 
   const handleDownloadApproval = (approval: PreTreatmentApproval) => {
-    // Generate text/file download or simulation
-    const fileContent = `--- تأییدیه پیش از درمان دنتورا ---
-نام بیمار: ${approval.patientName}
-کد ملی: ${approval.patientNationalId || 'ثبت‌نشده'}
-شماره تماس: ${approval.patientPhone || 'ثبت‌نشده'}
-عنوان مدرک: ${approval.title}
-دسته‌بندی: ${approval.categoryLabel || approval.category}
-تاریخ بارگذاری: ${approval.uploadedAt}
-نام فایل اصلی: ${approval.fileName}
-حجم فایل: ${approval.fileSize || 'نامشخص'}
-وضعیت: ${approval.status === 'approved' ? 'تأیید شده' : approval.status === 'rejected' ? 'ردشده / نیازمند اصلاح' : 'در انتظار بررسی'}
-توضیحات و شرح: ${approval.description || 'بدون شرح'}
-یادداشت منشی/پذیرش: ${approval.receptionistNotes || 'بدون یادداشت'}
-تأییدکننده: ${approval.reviewedBy || 'در حال بررسی'} (${approval.reviewedAt || '-'})
-------------------------------------------
-Dentora Dental Clinic OS - Document Management System`;
+    if (approval.fileDataUrl) {
+      // Real uploaded file (PDF / Image / etc.)
+      const link = document.createElement('a');
+      link.href = approval.fileDataUrl;
+      link.download = approval.fileName || `approval_${approval.patientName || 'doc'}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showReceptionToast(`فایل تأییدیه «${approval.fileName}» با موفقیت دانلود شد.`, 'success');
+      return;
+    }
 
-    const blob = new Blob([fileContent], { type: 'text/plain;charset=utf-8' });
+    // For demo records without binary Data URL, generate a valid, clean HTML file that opens properly
+    const htmlContent = `<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <title>تأییدیه پیش از درمان - ${approval.title}</title>
+  <style>
+    body { font-family: Tahoma, 'Vazirmatn', sans-serif; background-color: #f8fafc; padding: 40px; color: #1e293b; direction: rtl; }
+    .card { max-width: 650px; margin: 0 auto; background: #ffffff; border: 2px solid #005581; border-radius: 16px; padding: 32px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+    .header { text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 24px; }
+    .header h1 { color: #005581; margin: 0 0 6px 0; font-size: 20px; }
+    .header p { color: #64748b; font-size: 13px; margin: 0; }
+    .row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px dashed #e2e8f0; font-size: 14px; }
+    .label { font-weight: bold; color: #475569; }
+    .value { font-weight: bold; color: #0f172a; }
+    .desc-box { background: #f1f5f9; padding: 14px; border-radius: 8px; margin-top: 18px; font-size: 13px; line-height: 1.6; }
+    .footer { text-align: center; margin-top: 30px; font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 14px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>سامانه کلینیک دندان‌پزشکی دنتورا</h1>
+      <p>برگه تأییدیه و مدرک پیش از درمان</p>
+    </div>
+    <div class="row"><span class="label">نام بیمار:</span><span class="value">${approval.patientName}</span></div>
+    <div class="row"><span class="label">کد ملی:</span><span class="value">${approval.patientNationalId || approval.nationalId || 'ثبت‌نشده'}</span></div>
+    <div class="row"><span class="label">شماره تماس:</span><span class="value">${approval.patientPhone || 'ثبت‌نشده'}</span></div>
+    <div class="row"><span class="label">عنوان مدرک:</span><span class="value">${approval.title}</span></div>
+    <div class="row"><span class="label">تاریخ ثبت:</span><span class="value">${approval.uploadedAt}</span></div>
+    <div class="row"><span class="label">نام فایل مرجع:</span><span class="value">${approval.fileName}</span></div>
+    <div class="desc-box">
+      <strong>شرح و توضیحات مدرک:</strong><br/>
+      ${approval.description || 'تأییدیه و مدرک معتبر ثبت‌شده در سامانه کلینیک.'}
+    </div>
+    <div class="footer">
+      سامانه یکپارچه دنتورا (Dentora Dental OS)
+    </div>
+  </div>
+</body>
+</html>`;
+
+    const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = approval.fileName || `approval_${approval.patientName}_${approval.id}.txt`;
+    const baseName = (approval.fileName || 'approval_doc').replace(/\.[^/.]+$/, '');
+    link.download = `${baseName}_document.html`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
 
-    showReceptionToast(`فایل تأییدیه «${approval.fileName}» برای بیمار ${approval.patientName} با موفقیت دانلود شد.`, 'success');
-  };
-
-  const handleUpdateApproval = (approvalId: string, status: 'approved' | 'rejected' | 'pending', notes?: string) => {
-    const clinicId = currentClinic?.id || 'main_clinic';
-    const reviewerName = 'مریم امیری (پذیرش کلینیک)';
-    const todayFa = new Date().toLocaleDateString('fa-IR');
-    const timeFa = new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
-
-    updatePreTreatmentApprovalInStore(clinicId, approvalId, {
-      status,
-      reviewedBy: reviewerName,
-      reviewedAt: `${todayFa} - ${timeFa}`,
-      receptionistNotes: notes || (status === 'approved' ? 'مدارک پزشکی و تأییدیه توسط پذیرش بررسی و تأیید شد.' : 'مدارک دارای نقص یا نیازمند بازبینی مجدد است.'),
-    });
-
-    setApprovalsList((prev) =>
-      prev.map((appr) =>
-        appr.id === approvalId
-          ? {
-              ...appr,
-              status,
-              reviewedBy: reviewerName,
-              reviewedAt: `${todayFa} - ${timeFa}`,
-              receptionistNotes: notes || (status === 'approved' ? 'مدارک پزشکی و تأییدیه توسط پذیرش بررسی و تأیید شد.' : 'مدارک دارای نقص یا نیازمند بازبینی مجدد است.'),
-            }
-          : appr
-      )
-    );
-
-    if (onUpdateApprovalStatus) {
-      onUpdateApprovalStatus(approvalId, status, notes);
-    }
-
-    setSelectedApprovalForReview(null);
-    showReceptionToast(
-      status === 'approved'
-        ? `تأییدیه بیمار با موفقیت تأیید و در پرونده ثبت شد.`
-        : `وضعیت مدرک به «${status === 'rejected' ? 'ردشده / نیازمند اصلاح' : 'در انتظار بررسی'}» تغییر یافت.`,
-      'success'
-    );
+    showReceptionToast(`فایل تأییدیه «${approval.title}» با موفقیت دانلود شد.`, 'success');
   };
 
   const handleDirectUploadApproval = (e: React.FormEvent) => {
@@ -446,13 +455,8 @@ Dentora Dental Clinic OS - Document Management System`;
     const todayFa = new Date().toLocaleDateString('fa-IR');
     const timeFa = new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
 
-    const categoryLabels: Record<string, string> = {
-      anesthesia: 'تأییدیه بیهوشی و سلامت قلب',
-      insurance_prior_auth: 'تأییدیه پیش‌درمان بیمه تکمیلی',
-      consent_surgery: 'رضایت‌نامه آگاهانه جراحی',
-      lab_clearance: 'پاسخ آزمایشات و مجوز پزشکی',
-      general: 'سایر مدارک و تاییدات',
-    };
+    const finalFileName = newDirectFileName || `doc_${Date.now()}_${newDirectPatientName.replace(/\s+/g, '_')}.pdf`;
+    const finalFileSize = newDirectFileSize || '1.2 MB';
 
     const newApproval: PreTreatmentApproval = {
       id: `appr-rec-${Date.now()}`,
@@ -461,17 +465,18 @@ Dentora Dental Clinic OS - Document Management System`;
       patientPhone: newDirectPatientPhone || undefined,
       patientNationalId: newDirectPatientNationalId || undefined,
       title: newDirectTitle,
-      category: newDirectCategory,
-      categoryLabel: categoryLabels[newDirectCategory] || 'تأییدیه پیش از درمان',
-      description: newDirectDescription || 'ثبت حضوری مدرک توسط منشی پذیرش',
-      fileName: `doc_${Date.now()}_${newDirectPatientName.replace(/\s+/g, '_')}.pdf`,
-      fileSize: '1.2 MB',
-      fileType: 'application/pdf',
+      category: 'general',
+      categoryLabel: 'تأییدیه پیش از درمان',
+      description: newDirectDescription || 'ثبت حضوری مدرک در میز پذیرش کلینیک',
+      fileName: finalFileName,
+      fileSize: finalFileSize,
+      fileType: newDirectFileType || 'application/pdf',
+      fileDataUrl: newDirectFileDataUrl || undefined,
       uploadedAt: `${todayFa} - ${timeFa}`,
       status: 'approved',
-      reviewedBy: 'مریم امیری (پذیرش کلینیک)',
+      reviewedBy: 'پذیرش کلینیک',
       reviewedAt: `${todayFa} - ${timeFa}`,
-      receptionistNotes: 'مدرک فیزیکی توسط منشی دریافت و در سیستم ثبت گردید.',
+      receptionistNotes: 'مدرک دریافت و ثبت گردید.',
     };
 
     addPreTreatmentApprovalToStore(clinicId, newApproval);
@@ -482,6 +487,10 @@ Dentora Dental Clinic OS - Document Management System`;
     setNewDirectPatientNationalId('');
     setNewDirectTitle('');
     setNewDirectDescription('');
+    setNewDirectFileName('');
+    setNewDirectFileSize('');
+    setNewDirectFileType('');
+    setNewDirectFileDataUrl(null);
     showReceptionToast(`تأییدیه بیمار ${newApproval.patientName} با موفقیت ثبت شد.`, 'success');
   };
 
@@ -2624,10 +2633,10 @@ Dentora Dental Clinic OS - Document Management System`;
                 <div>
                   <h3 className="font-bold text-slate-900 dark:text-slate-100 text-base flex items-center gap-2">
                     <FileCheck2 className="w-5 h-5 text-[#005581]" />
-                    <span>کارتابل جامع تأییدیه‌های پیش از درمان و مدارک پزشکی بیماران</span>
+                    <span>کارتابل تأییدیه‌ها و مدارک پیش از درمان بیماران</span>
                   </h3>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    بررسی مدارک بارگذاری‌شده توسط بیمار (تأییدیه بیهوشی، مجوز بیمه تکمیلی، رضایت‌نامه، آزمایشات) با امکان جستجو و دانلود
+                    مدارک بارگذاری‌شده توسط بیماران با امکان جستجو و دانلود مستقیم فایل‌ها
                   </p>
                 </div>
 
@@ -2643,99 +2652,24 @@ Dentora Dental Clinic OS - Document Management System`;
                 </div>
               </div>
 
-              {/* Stats Counters */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60">
-                  <span className="text-[11px] text-slate-500 block">کل مدارک ثبت‌شده:</span>
-                  <span className="text-base font-black text-slate-900 dark:text-slate-100 font-mono">
-                    {approvalsList.length} مدرک
-                  </span>
-                </div>
-                <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
-                  <span className="text-[11px] text-amber-700 dark:text-amber-300 block">در انتظار بررسی پذیرش:</span>
-                  <span className="text-base font-black text-amber-900 dark:text-amber-100 font-mono">
-                    {approvalsList.filter(a => a.status === 'submitted' || a.status === 'pending').length} مدرک
-                  </span>
-                </div>
-                <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800">
-                  <span className="text-[11px] text-emerald-700 dark:text-emerald-300 block">تأیید و ضمیمه پرونده:</span>
-                  <span className="text-base font-black text-emerald-900 dark:text-emerald-100 font-mono">
-                    {approvalsList.filter(a => a.status === 'approved').length} مدرک
-                  </span>
-                </div>
-                <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800">
-                  <span className="text-[11px] text-rose-700 dark:text-rose-300 block">ردشده / نیازمند اصلاح:</span>
-                  <span className="text-base font-black text-rose-900 dark:text-rose-100 font-mono">
-                    {approvalsList.filter(a => a.status === 'rejected').length} مدرک
-                  </span>
-                </div>
-              </div>
-
-              {/* Search Bar and Filters */}
-              <div className="flex flex-col sm:flex-row items-center gap-3">
-                <div className="relative flex-1 w-full">
-                  <Search className="w-4 h-4 absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    value={approvalSearchQuery}
-                    onChange={(e) => setApprovalSearchQuery(e.target.value)}
-                    placeholder="جستجوی نام بیمار، کد ملی، شماره تماس یا عنوان مدرک..."
-                    className="w-full pl-3 pr-10 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#005581]"
-                  />
-                  {approvalSearchQuery && (
-                    <button
-                      onClick={() => setApprovalSearchQuery('')}
-                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-1.5 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
-                  {[
-                    { key: 'all', label: 'همه وضعیت‌ها' },
-                    { key: 'submitted', label: 'در انتظار بررسی' },
-                    { key: 'approved', label: 'تأییدشده' },
-                    { key: 'rejected', label: 'ردشده/اصلاح' },
-                  ].map((st) => (
-                    <button
-                      key={st.key}
-                      onClick={() => setApprovalStatusFilter(st.key)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
-                        approvalStatusFilter === st.key
-                          ? 'bg-[#005581] text-white shadow-xs'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'
-                      }`}
-                    >
-                      {st.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Category Pills */}
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
-                <span className="text-[11px] text-slate-500 font-bold shrink-0 ml-1">دسته‌بندی:</span>
-                {[
-                  { key: 'all', label: 'همه دسته‌ها' },
-                  { key: 'anesthesia', label: 'تأییدیه بیهوشی و قلب' },
-                  { key: 'insurance_prior_auth', label: 'تأییدیه بیمه تکمیلی' },
-                  { key: 'consent_surgery', label: 'رضایت‌نامه جراحی' },
-                  { key: 'lab_clearance', label: 'پاسخ آزمایشات' },
-                ].map((cat) => (
+              {/* Search Bar */}
+              <div className="relative w-full">
+                <Search className="w-4 h-4 absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={approvalSearchQuery}
+                  onChange={(e) => setApprovalSearchQuery(e.target.value)}
+                  placeholder="جستجوی نام بیمار، کد ملی، شماره تماس یا عنوان مدرک..."
+                  className="w-full pl-3 pr-10 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#005581]"
+                />
+                {approvalSearchQuery && (
                   <button
-                    key={cat.key}
-                    onClick={() => setApprovalCategoryFilter(cat.key)}
-                    className={`px-2.5 py-1 rounded-lg font-bold transition cursor-pointer shrink-0 ${
-                      approvalCategoryFilter === cat.key
-                        ? 'bg-[#005581]/15 text-[#005581] dark:text-[#72cdf4] border border-[#005581]/30 font-black'
-                        : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100'
-                    }`}
+                    onClick={() => setApprovalSearchQuery('')}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                   >
-                    {cat.label}
+                    <X className="w-3.5 h-3.5" />
                   </button>
-                ))}
+                )}
               </div>
 
               {/* Approvals Table / Cards */}
@@ -2750,15 +2684,7 @@ Dentora Dental Clinic OS - Document Management System`;
                       (item.title && item.title.includes(approvalSearchQuery)) ||
                       (item.fileName && item.fileName.includes(approvalSearchQuery));
 
-                    const matchesStatus =
-                      approvalStatusFilter === 'all' ||
-                      (approvalStatusFilter === 'submitted' && (item.status === 'submitted' || item.status === 'pending')) ||
-                      item.status === approvalStatusFilter;
-
-                    const matchesCategory =
-                      approvalCategoryFilter === 'all' || item.category === approvalCategoryFilter;
-
-                    return matchesSearch && matchesStatus && matchesCategory;
+                    return matchesSearch;
                   });
 
                   if (filtered.length === 0) {
@@ -2769,7 +2695,7 @@ Dentora Dental Clinic OS - Document Management System`;
                           هیچ تأییدیه یا مدرکی با مشخصات جستجویافته پیدا نشد.
                         </p>
                         <p className="text-[11px] text-slate-400">
-                          بیماران می‌توانند از پورتال آنلاین دنتورا تأییدیه‌ها را بارگذاری کنند، یا پذیرش می‌تواند با دکمه «ثبت حضوری تأییدیه» مدارک را اسکن و ثبت نماید.
+                          بیماران می‌توانند از پورتال آنلاین دنتورا تأییدیه‌ها را بارگذاری کنند، یا پذیرش می‌تواند با دکمه «ثبت حضوری تأییدیه» مدارک را ثبت نماید.
                         </p>
                       </div>
                     );
@@ -2798,9 +2724,6 @@ Dentora Dental Clinic OS - Document Management System`;
                                   تلفن: {item.patientPhone}
                                 </span>
                               )}
-                              <span className="px-2.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-900 dark:text-blue-200 font-bold text-[11px]">
-                                {item.categoryLabel || item.category}
-                              </span>
                             </div>
 
                             <div className="flex items-center gap-2">
@@ -2808,23 +2731,6 @@ Dentora Dental Clinic OS - Document Management System`;
                                 <Clock className="w-3.5 h-3.5" />
                                 {item.uploadedAt}
                               </span>
-
-                              {item.status === 'approved' ? (
-                                <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 font-bold text-[11px] flex items-center gap-1">
-                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
-                                  تأیید شده
-                                </span>
-                              ) : item.status === 'rejected' ? (
-                                <span className="px-2.5 py-1 rounded-full bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 font-bold text-[11px] flex items-center gap-1">
-                                  <XCircle className="w-3.5 h-3.5 text-rose-600" />
-                                  نیازمند اصلاح
-                                </span>
-                              ) : (
-                                <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 dark:bg-amber-950/80 dark:text-amber-300 font-bold text-[11px] flex items-center gap-1">
-                                  <Clock className="w-3.5 h-3.5 text-amber-600" />
-                                  در انتظار بررسی
-                                </span>
-                              )}
                             </div>
                           </div>
 
@@ -2839,21 +2745,7 @@ Dentora Dental Clinic OS - Document Management System`;
                             )}
                           </div>
 
-                          {/* Receptionist Review Note if any */}
-                          {item.receptionistNotes && (
-                            <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 text-[11px] text-slate-700 dark:text-slate-300 flex items-start justify-between gap-2">
-                              <div>
-                                <strong>یادداشت کارشناس پذیرش:</strong> {item.receptionistNotes}
-                              </div>
-                              {item.reviewedBy && (
-                                <span className="text-[10px] text-slate-400 shrink-0 font-mono">
-                                  {item.reviewedBy} ({item.reviewedAt || ''})
-                                </span>
-                              )}
-                            </div>
-                          )}
-
-                          {/* File Details and Action Buttons */}
+                          {/* File Details and Download Button */}
                           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700">
                             <div className="flex items-center gap-2 text-[11px] text-slate-600 dark:text-slate-400">
                               <FileText className="w-4 h-4 text-[#005581] shrink-0" />
@@ -2871,22 +2763,10 @@ Dentora Dental Clinic OS - Document Management System`;
                               <button
                                 type="button"
                                 onClick={() => handleDownloadApproval(item)}
-                                className="px-3.5 py-1.5 rounded-lg bg-[#005581] hover:bg-[#004266] text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition cursor-pointer"
+                                className="px-4 py-2 rounded-lg bg-[#005581] hover:bg-[#004266] text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition cursor-pointer"
                               >
-                                <Download className="w-3.5 h-3.5 text-[#ffd200]" />
+                                <Download className="w-4 h-4 text-[#ffd200]" />
                                 <span>دانلود فایل تأییدیه</span>
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSelectedApprovalForReview(item);
-                                  setApprovalReviewNotes(item.receptionistNotes || '');
-                                }}
-                                className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-800 dark:text-slate-200 font-bold text-xs flex items-center gap-1 transition cursor-pointer"
-                              >
-                                <Edit3 className="w-3.5 h-3.5 text-[#005581]" />
-                                <span>بررسی و تغییر وضعیت</span>
                               </button>
                             </div>
                           </div>
@@ -6097,93 +5977,6 @@ Dentora Dental Clinic OS - Document Management System`;
         </div>
       )}
 
-      {/* PRE-TREATMENT APPROVAL REVIEW & STATUS EDIT MODAL */}
-      {selectedApprovalForReview && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full border border-slate-200 dark:border-slate-800 shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-9 h-9 rounded-xl bg-[#005581] text-white flex items-center justify-center font-black">
-                  <FileCheck2 className="w-5 h-5 text-[#ffd200]" />
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-sm text-slate-900 dark:text-slate-100">
-                    بررسی و تعیین وضعیت تأییدیه پیش از درمان
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    بیمار: {selectedApprovalForReview.patientName} (کدملی: {selectedApprovalForReview.patientNationalId || 'ثبت‌نشده'})
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setSelectedApprovalForReview(null)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
-              <div>
-                <strong className="text-slate-900 dark:text-slate-100">{selectedApprovalForReview.title}</strong>
-                <span className="block text-[11px] text-slate-500 mt-0.5">
-                  دسته‌بندی: {selectedApprovalForReview.categoryLabel || selectedApprovalForReview.category}
-                </span>
-              </div>
-              {selectedApprovalForReview.description && (
-                <p className="text-slate-700 dark:text-slate-300 text-[11px] leading-relaxed">
-                  {selectedApprovalForReview.description}
-                </p>
-              )}
-              <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200 dark:border-slate-700 text-[11px] text-slate-500">
-                <span className="font-mono">{selectedApprovalForReview.fileName} ({selectedApprovalForReview.fileSize || '1.2 MB'})</span>
-                <button
-                  type="button"
-                  onClick={() => handleDownloadApproval(selectedApprovalForReview)}
-                  className="text-[#005581] dark:text-[#72cdf4] font-bold hover:underline flex items-center gap-1 cursor-pointer"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>دانلود فایل جهت مشاهده</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-2 text-xs">
-              <label className="block font-bold text-slate-800 dark:text-slate-200">
-                یادداشت و توضیحات کارشناس پذیرش (جهت نمایش به بیمار و پزشک):
-              </label>
-              <textarea
-                rows={3}
-                value={approvalReviewNotes}
-                onChange={(e) => setApprovalReviewNotes(e.target.value)}
-                placeholder="توضیحات تکمیلی پذیرش، دلایل تأیید یا نواقص مدرک را اینجا بنویسید..."
-                className="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-medium text-slate-900 dark:text-slate-100"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-              <button
-                type="button"
-                onClick={() => handleUpdateApproval(selectedApprovalForReview.id, 'approved', approvalReviewNotes)}
-                className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow cursor-pointer"
-              >
-                <Check className="w-4 h-4" />
-                <span>تأیید نهایی و ضمیمه پرونده</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleUpdateApproval(selectedApprovalForReview.id, 'rejected', approvalReviewNotes)}
-                className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow cursor-pointer"
-              >
-                <XCircle className="w-4 h-4" />
-                <span>رد مدرک / اعلام نقص به بیمار</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* DIRECT UPLOAD PRE-TREATMENT APPROVAL MODAL (ثبت مدرک توسط منشی) */}
       {isDirectApprovalModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
@@ -6198,7 +5991,7 @@ Dentora Dental Clinic OS - Document Management System`;
                     ثبت حضوری تأییدیه و مدرک پیش از درمان
                   </h3>
                   <p className="text-xs text-slate-500">
-                    ثبت اسکن یا گواهی‌های تحویل‌شده توسط بیمار در میز پذیرش
+                    ثبت اسکن یا مدارک تحویل‌شده توسط بیمار در میز پذیرش
                   </p>
                 </div>
               </div>
@@ -6256,34 +6049,17 @@ Dentora Dental Clinic OS - Document Management System`;
 
                 <div>
                   <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    نوع و دسته‌بندی تأییدیه: <span className="text-rose-500">*</span>
+                    عنوان مدرک یا گواهی: <span className="text-rose-500">*</span>
                   </label>
-                  <select
-                    value={newDirectCategory}
-                    onChange={(e) => setNewDirectCategory(e.target.value as any)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold"
-                  >
-                    <option value="anesthesia">تأییدیه بیهوشی و سلامت قلب</option>
-                    <option value="insurance_prior_auth">تأییدیه پیش‌درمان بیمه تکمیلی</option>
-                    <option value="consent_surgery">رضایت‌نامه آگاهانه جراحی</option>
-                    <option value="lab_clearance">پاسخ آزمایشات و مجوز پزشکی</option>
-                    <option value="general">سایر مدارک و تاییدات</option>
-                  </select>
+                  <input
+                    type="text"
+                    required
+                    value={newDirectTitle}
+                    onChange={(e) => setNewDirectTitle(e.target.value)}
+                    placeholder="مثلاً: تأییدیه سلامت و مجوز جراحی"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs"
+                  />
                 </div>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  عنوان مدرک یا گواهی: <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newDirectTitle}
-                  onChange={(e) => setNewDirectTitle(e.target.value)}
-                  placeholder="مثلاً: تأییدیه متخصص قلب و عروق جهت جراحی ایمپلنت"
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs"
-                />
               </div>
 
               <div>
@@ -6294,21 +6070,48 @@ Dentora Dental Clinic OS - Document Management System`;
                   rows={2}
                   value={newDirectDescription}
                   onChange={(e) => setNewDirectDescription(e.target.value)}
-                  placeholder="توضیحات مندرج در گواهی، نام پزشک معالج، آزمایشات پیوست..."
+                  placeholder="توضیحات مندرج در گواهی، نام پزشک معالج، توضیحات پیوست..."
                   className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs"
                 />
               </div>
 
-              <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Paperclip className="w-4 h-4 text-[#005581]" />
-                  <span className="text-[11px] text-slate-600 dark:text-slate-400">
-                    فایل اسکن‌شده: <strong className="font-mono text-slate-900 dark:text-slate-100">scan_document.pdf (1.2 MB)</strong>
-                  </span>
+              {/* Real File Upload Input */}
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  انتخاب و بارگذاری فایل مدرک (PDF، تصویر یا سند):
+                </label>
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 space-y-2">
+                  <input
+                    type="file"
+                    id="secretary-approval-file-input"
+                    accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        setNewDirectFileName(file.name);
+                        const sizeInMb = (file.size / (1024 * 1024)).toFixed(2);
+                        setNewDirectFileSize(`${sizeInMb} MB`);
+                        setNewDirectFileType(file.type);
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                          setNewDirectFileDataUrl(reader.result as string);
+                        };
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                    className="w-full text-xs text-slate-500 file:mr-0 file:ml-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-[#005581] file:text-white hover:file:bg-[#004266] cursor-pointer"
+                  />
+                  {newDirectFileName && (
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-200 dark:border-slate-700 text-[11px]">
+                      <span className="font-mono text-slate-800 dark:text-slate-200 font-bold">
+                        {newDirectFileName} ({newDirectFileSize})
+                      </span>
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold">
+                        فایل انتخاب شد
+                      </span>
+                    </div>
+                  )}
                 </div>
-                <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold">
-                  آماده پیوست
-                </span>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
